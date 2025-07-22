@@ -1,0 +1,219 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id        String   @id @default(cuid())
+  email     String   @unique
+  name      String
+  password  String
+  role      UserRole @default(STUDENT)
+  expertise String? // JSON string for areas of expertise
+  avatar    String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Relationships
+  papers      Paper[]
+  annotations Annotation[]
+  comments    Comment[]
+  reactions   Reaction[]
+  notes       QuickNote[]
+  messages    ChatMessage[]
+  stuckHelps  StuckHelp[]
+
+  @@map("users")
+}
+
+model Paper {
+  id          String   @id @default(cuid())
+  title       String
+  filename    String
+  filepath    String
+  uploadedBy  String
+  uploadedAt  DateTime @default(now())
+  description String?
+  tags        String? // JSON string for academic tags
+
+  // Relationships
+  uploader     User           @relation(fields: [uploadedBy], references: [id])
+  annotations  Annotation[]
+  quickNotes   QuickNote[]
+  chatMessages ChatMessage[]
+  stuckHelps   StuckHelp[]
+  summaries    AISummary[]
+
+  @@map("papers")
+}
+
+model Annotation {
+  id       String         @id @default(cuid())
+  paperId  String
+  userId   String
+  text     String // Selected text
+  comment  String // User's comment
+  page     Int
+  position Json // Position data for highlighting
+  type     AnnotationType @default(HIGHLIGHT)
+  color    String         @default("#ffeb3b")
+  createdAt DateTime      @default(now())
+  updatedAt DateTime      @updatedAt
+
+  // Relationships
+  paper    Paper     @relation(fields: [paperId], references: [id], onDelete: Cascade)
+  user     User      @relation(fields: [userId], references: [id])
+  comments Comment[]
+
+  @@map("annotations")
+}
+
+model Comment {
+  id           String   @id @default(cuid())
+  annotationId String
+  userId       String
+  content      String
+  parentId     String? // For threaded replies
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  // Relationships
+  annotation Annotation @relation(fields: [annotationId], references: [id], onDelete: Cascade)
+  user       User       @relation(fields: [userId], references: [id])
+  parent     Comment?   @relation("CommentReplies", fields: [parentId], references: [id])
+  replies    Comment[]  @relation("CommentReplies")
+
+  @@map("comments")
+}
+
+model Reaction {
+  id           String       @id @default(cuid())
+  userId       String
+  type         ReactionType
+  targetType   String // "annotation" or "comment"
+  targetId     String
+  createdAt    DateTime     @default(now())
+
+  // Relationships
+  user User @relation(fields: [userId], references: [id])
+
+  @@unique([userId, targetType, targetId, type])
+  @@map("reactions")
+}
+
+model QuickNote {
+  id        String   @id @default(cuid())
+  paperId   String
+  userId    String
+  section   String // Section identifier
+  content   String
+  page      Int
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Relationships
+  paper Paper @relation(fields: [paperId], references: [id], onDelete: Cascade)
+  user  User  @relation(fields: [userId], references: [id])
+
+  @@map("quick_notes")
+}
+
+model ChatMessage {
+  id        String      @id @default(cuid())
+  paperId   String
+  userId    String
+  content   String
+  type      MessageType @default(TEXT)
+  metadata  Json? // For AI messages or special content
+  createdAt DateTime    @default(now())
+  updatedAt DateTime    @updatedAt
+
+  // Relationships
+  paper Paper @relation(fields: [paperId], references: [id], onDelete: Cascade)
+  user  User  @relation(fields: [userId], references: [id])
+
+  @@map("chat_messages")
+}
+
+model StuckHelp {
+  id          String     @id @default(cuid())
+  paperId     String
+  userId      String
+  section     String
+  description String
+  page        Int
+  position    Json // Position where user is stuck
+  isResolved  Boolean    @default(false)
+  isAnonymous Boolean    @default(false)
+  status      HelpStatus @default(OPEN)
+  createdAt   DateTime   @default(now())
+  updatedAt   DateTime   @updatedAt
+
+  // Relationships
+  paper Paper @relation(fields: [paperId], references: [id], onDelete: Cascade)
+  user  User  @relation(fields: [userId], references: [id])
+
+  @@map("stuck_helps")
+}
+
+model AISummary {
+  id        String   @id @default(cuid())
+  paperId   String
+  section   String
+  content   String
+  version   Int      @default(1)
+  metadata  Json? // Sources, confidence, etc.
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Relationships
+  paper Paper @relation(fields: [paperId], references: [id], onDelete: Cascade)
+
+  @@unique([paperId, section])
+  @@map("ai_summaries")
+}
+
+// Enums
+enum UserRole {
+  STUDENT
+  RESEARCHER
+  PROFESSOR
+  ADMIN
+}
+
+enum AnnotationType {
+  HIGHLIGHT
+  UNDERLINE
+  STRIKETHROUGH
+  NOTE
+}
+
+enum ReactionType {
+  LIKE
+  DISLIKE
+  ENDORSE
+  DISAGREE
+  HELPFUL
+  CONFUSING
+}
+
+enum MessageType {
+  TEXT
+  AI_RESPONSE
+  SYSTEM
+  CLARIFICATION
+}
+
+enum HelpStatus {
+  OPEN
+  IN_PROGRESS
+  RESOLVED
+  EXPERT_NEEDED
+} 

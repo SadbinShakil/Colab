@@ -1,0 +1,413 @@
+@import "tailwindcss";
+
+:root {
+  /* Elegant Academic Color Palette */
+  --color-background: 0 0% 100%;  /* Pure white */
+  --color-foreground: 0 0% 9%;    /* Rich charcoal */
+  --color-card: 0 0% 100%;
+  --color-card-foreground: 0 0% 9%;
+  --color-popover: 0 0% 100%;
+  --color-popover-foreground: 0 0% 9%;
+  
+  /* Refined Academic Blue */
+  --color-primary: 212 100% 47%;  /* Sophisticated academic blue */
+  --color-primary-foreground: 0 0% 100%;
+  
+  /* Elegant Neutrals */
+  --color-secondary: 210 20% 98%;  /* Whisper gray */
+  --color-secondary-foreground: 210 20% 20%;
+  
+  /* Sophisticated Muted Tones */
+  --color-muted: 210 20% 97%;
+  --color-muted-foreground: 210 15% 46%;
+  --color-accent: 210 20% 95%;
+  --color-accent-foreground: 210 20% 25%;
+  
+  /* Refined Semantic Colors */
+  --color-destructive: 0 72% 51%;
+  --color-destructive-foreground: 0 0% 98%;
+  --color-success: 142 69% 38%;
+  --color-success-foreground: 0 0% 98%;
+  --color-warning: 38 92% 50%;
+  --color-warning-foreground: 0 0% 98%;
+  --color-info: 212 100% 47%;
+  --color-info-foreground: 0 0% 98%;
+  
+  /* Elegant UI Framework */
+  --color-border: 210 20% 89%;
+  --color-input: 210 20% 96%;
+  --color-ring: 212 100% 47%;
+  
+  /* Professional Feature Colors */
+  --color-collaboration: 212 100% 47%;
+  --color-ai-primary: 258 90% 66%;     /* Elegant purple */
+  --color-ai-secondary: 200 100% 67%;  /* Refined cyan */
+  --color-insight: 45 93% 58%;         /* Warm gold */
+  --color-discovery: 162 63% 41%;      /* Professional teal */
+  --color-research: 142 69% 38%;       /* Academic green */
+  
+  --radius: 0.75rem;  /* Elegant rounded corners */
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    /* Elegant Dark Reading Mode */
+    --color-background: 0 0% 4%;     /* Deep charcoal */
+    --color-foreground: 0 0% 95%;    /* Soft white */
+    --color-card: 0 0% 6%;
+    --color-card-foreground: 0 0% 95%;
+    --color-popover: 0 0% 6%;
+    --color-popover-foreground: 0 0% 95%;
+    
+    /* Enhanced Primary for Dark Mode */
+    --color-primary: 212 100% 60%;
+    --color-primary-foreground: 0 0% 4%;
+    
+    /* Dark Mode Elegance */
+    --color-secondary: 210 20% 8%;
+    --color-secondary-foreground: 210 20% 80%;
+    
+    /* Dark Sophistication */
+    --color-muted: 210 20% 7%;
+    --color-muted-foreground: 210 15% 65%;
+    --color-accent: 210 20% 10%;
+    --color-accent-foreground: 210 20% 85%;
+    
+    /* Dark Semantic Refinement */
+    --color-destructive: 0 72% 60%;
+    --color-success: 142 69% 50%;
+    --color-warning: 38 92% 60%;
+    --color-info: 212 100% 60%;
+    
+    /* Dark UI Excellence */
+    --color-border: 210 20% 15%;
+    --color-input: 210 20% 8%;
+    --color-ring: 212 100% 60%;
+    
+    /* Dark Professional Colors */
+    --color-collaboration: 212 100% 60%;
+    --color-ai-primary: 258 90% 70%;
+    --color-ai-secondary: 200 100% 70%;
+    --color-insight: 45 93% 65%;
+    --color-discovery: 162 63% 50%;
+    --color-research: 142 69% 50%;
+  }
+}
+
+/* Elegant Typography Foundation */
+* {
+  box-sizing: border-box;
+  border-color: hsl(var(--color-border));
+}
+
+html, body, #__next {
+  height: 100%;
+  width: 100%;
+  min-height: 100vh;
+  min-width: 100vw;
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+img, video, svg {
+  max-width: 100%;
+  height: auto;
+  display: block;
+}
+
+table {
+  width: 100%;
+  max-width: 100%;
+  border-collapse: collapse;
+  overflow-x: auto;
+  display: block;
+}
+
+pre, code {
+  max-width: 100%;
+  overflow-x: auto;
+  word-break: break-word;
+}
+
+body {
+  background-color: hsl(var(--color-background));
+  color: hsl(var(--color-foreground));
+  margin: 0;
+  padding: 0;
+  line-height: 1.65;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  text-rendering: optimizeLegibility;
+  font-feature-settings: "cv02", "cv03", "cv04", "cv11";
+  font-family: 'Inter', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+  font-optical-sizing: auto;
+  font-variation-settings: "slnt" 0;
+}
+
+/* Elegant Professional Animations */
+@keyframes fade-in { 
+  from { opacity: 0; transform: translateY(8px); } 
+  to { opacity: 1; transform: translateY(0); } 
+}
+
+@keyframes slide-up { 
+  from { opacity: 0; transform: translateY(24px); } 
+  to { opacity: 1; transform: translateY(0); } 
+}
+
+@keyframes slide-down { 
+  from { opacity: 0; transform: translateY(-16px); } 
+  to { opacity: 1; transform: translateY(0); } 
+}
+
+@keyframes gentle-pulse {
+  0%, 100% {
+    box-shadow: 0 0 0 0 hsl(var(--color-primary) / 0.15);
+  }
+  50% {
+    box-shadow: 0 0 0 8px hsl(var(--color-primary) / 0);
+  }
+}
+
+@keyframes elegant-shine {
+  0% { transform: translateX(-100%) skewX(-15deg); }
+  100% { transform: translateX(200%) skewX(-15deg); }
+}
+
+/* Sophisticated Typography Hierarchy */
+h1, h2, h3, h4, h5, h6 {
+  font-weight: 650;
+  letter-spacing: -0.025em;
+  line-height: 1.25;
+  color: hsl(var(--color-foreground));
+  font-feature-settings: "cv02", "cv03", "cv04", "cv11";
+}
+
+h1 {
+  font-size: clamp(2.5rem, 5vw, 4rem);
+  font-weight: 700;
+  letter-spacing: -0.035em;
+  line-height: 1.1;
+}
+
+h2 {
+  font-size: clamp(2rem, 4vw, 3rem);
+  font-weight: 650;
+  letter-spacing: -0.03em;
+  line-height: 1.15;
+}
+
+h3 {
+  font-size: clamp(1.5rem, 3vw, 2rem);
+  font-weight: 600;
+  letter-spacing: -0.02em;
+  line-height: 1.2;
+}
+
+/* Elegant Paragraph Styling */
+p {
+  line-height: 1.7;
+  font-weight: 400;
+  letter-spacing: -0.01em;
+  color: hsl(var(--color-foreground) / 0.9);
+}
+
+.lead {
+  font-size: 1.25rem;
+  line-height: 1.6;
+  font-weight: 400;
+  color: hsl(var(--color-muted-foreground));
+}
+
+/* Refined Focus States */
+*:focus-visible {
+  outline: 2px solid hsl(var(--color-primary));
+  outline-offset: 2px;
+  border-radius: calc(var(--radius) - 2px);
+  transition: outline-offset 0.2s ease;
+}
+
+/* Elegant Selection */
+::selection {
+  background-color: hsl(var(--color-primary) / 0.12);
+  color: hsl(var(--color-foreground));
+}
+
+/* Premium Academic Reading */
+.prose {
+  max-width: 70ch;
+  line-height: 1.75;
+  font-size: 1.0625rem;
+  color: hsl(var(--color-foreground) / 0.9);
+}
+
+/* Sophisticated Scrollbars */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: hsl(var(--color-muted));
+  border-radius: 3px;
+}
+
+::-webkit-scrollbar-thumb {
+  background: hsl(var(--color-muted-foreground) / 0.3);
+  border-radius: 3px;
+  transition: background 0.2s ease;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: hsl(var(--color-muted-foreground) / 0.5);
+}
+
+/* Elegant Card Enhancements */
+.card-elegant {
+  background: hsl(var(--color-card));
+  border: 1px solid hsl(var(--color-border));
+  border-radius: var(--radius);
+  box-shadow: 
+    0 1px 3px hsl(var(--color-foreground) / 0.05),
+    0 1px 2px hsl(var(--color-foreground) / 0.1);
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.card-elegant:hover {
+  border-color: hsl(var(--color-border));
+  box-shadow: 
+    0 4px 12px hsl(var(--color-foreground) / 0.08),
+    0 2px 4px hsl(var(--color-foreground) / 0.06);
+  transform: translateY(-2px);
+}
+
+/* Professional Button Enhancements */
+.btn-elegant {
+  font-weight: 500;
+  letter-spacing: -0.01em;
+  transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+  position: relative;
+  overflow: hidden;
+}
+
+.btn-elegant::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: -100%;
+  width: 100%;
+  height: 100%;
+  background: linear-gradient(
+    90deg,
+    transparent,
+    hsl(var(--color-background) / 0.2),
+    transparent
+  );
+  transition: left 0.5s ease;
+}
+
+.btn-elegant:hover::before {
+  left: 100%;
+}
+
+/* Sophisticated Gradients */
+.gradient-elegant {
+  background: linear-gradient(
+    135deg,
+    hsl(var(--color-primary) / 0.05) 0%,
+    hsl(var(--color-ai-primary) / 0.03) 100%
+  );
+}
+
+.gradient-border {
+  position: relative;
+  background: hsl(var(--color-background));
+  border-radius: var(--radius);
+}
+
+.gradient-border::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  padding: 1px;
+  background: linear-gradient(
+    135deg,
+    hsl(var(--color-primary) / 0.2),
+    hsl(var(--color-border)),
+    hsl(var(--color-primary) / 0.1)
+  );
+  border-radius: var(--radius);
+  mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
+  mask-composite: xor;
+  -webkit-mask-composite: xor;
+}
+
+/* Elegant Spacing Utilities */
+.elegant-container {
+  max-width: 1200px;
+  margin: 0 auto;
+  padding: 0 1.5rem;
+}
+
+.elegant-section {
+  padding: 5rem 0;
+}
+
+.elegant-grid {
+  display: grid;
+  gap: 2rem;
+  grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+}
+
+/* Premium Micro-interactions */
+.interactive-scale {
+  transition: transform 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.interactive-scale:hover {
+  transform: scale(1.02);
+}
+
+.interactive-lift {
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.interactive-lift:hover {
+  transform: translateY(-4px);
+  box-shadow: 
+    0 8px 25px hsl(var(--color-foreground) / 0.1),
+    0 4px 12px hsl(var(--color-foreground) / 0.08);
+}
+
+/* Responsive Refinements */
+@media (max-width: 768px) {
+  .elegant-section {
+    padding: 3rem 0;
+  }
+  
+  .elegant-container {
+    padding: 0 1rem;
+  }
+  
+  h1 {
+    line-height: 1.15;
+  }
+  
+  .prose {
+    font-size: 1rem;
+    line-height: 1.65;
+  }
+}
+
+/* Reduced Motion Respect */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+         scroll-behavior: auto !important;
+   }
+}
