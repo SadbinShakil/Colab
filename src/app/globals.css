@@ -411,3 +411,16 @@ p {
          scroll-behavior: auto !important;
    }
 }
+
+/* Fade-in-up animation for landing page sections and steps */
+.fade-in-up {
+  opacity: 0;
+  transform: translateY(20px);
+  animation: fadeInUp 0.8s forwards;
+}
+@keyframes fadeInUp {
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}

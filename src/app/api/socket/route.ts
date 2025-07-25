@@ -16,6 +16,7 @@ const documentHighlights = new Map<string, any[]>()
 const documentMessages = new Map<string, any[]>()
 const documentInvites = new Map<string, any[]>()
 const userRoles = new Map<string, Map<string, 'viewer' | 'editor' | 'admin'>>()
+const documentPdfUrls = new Map<string, string>() // documentId -> pdfUrl
 
 // Initialize with sample messages for new documents
 const initializeSampleMessages = (documentId: string) => {
@@ -324,6 +325,21 @@ export async function POST(req: NextRequest) {
           message: 'Invitation accepted',
           role: invite.role
         }), { status: 200 })
+
+      case 'pdf-replaced':
+        // Store the new PDF URL for this document
+        if (!documentId || !body.pdfUrl) {
+          return new Response(JSON.stringify({ error: 'documentId and pdfUrl are required' }), { status: 400 })
+        }
+        documentPdfUrls.set(documentId, body.pdfUrl)
+        // In a real app, you would broadcast to all users here
+        return new Response(JSON.stringify({ success: true, message: 'PDF replaced', pdfUrl: body.pdfUrl }), { status: 200 })
+
+      case 'get-pdf-url':
+        if (!documentId) {
+          return new Response(JSON.stringify({ error: 'documentId is required' }), { status: 400 })
+        }
+        return new Response(JSON.stringify({ pdfUrl: documentPdfUrls.get(documentId) || null }), { status: 200 })
 
       default:
         return new Response(JSON.stringify({ 

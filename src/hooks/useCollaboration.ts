@@ -123,6 +123,9 @@ export function useCollaboration({ documentId, userId, userName }: UseCollaborat
   useEffect(() => {
     if (!isConnected) return
 
+    let consecutiveFailures = 0;
+    const maxFailures = 10;
+
     const pollInterval = setInterval(async () => {
       try {
         // Get active users
@@ -170,10 +173,16 @@ export function useCollaboration({ documentId, userId, userName }: UseCollaborat
           })
           setChatMessages(publicMessages)
         }
-
-
+        consecutiveFailures = 0; // Reset on success
       } catch (error) {
-        console.error('Failed to poll for updates:', error)
+        consecutiveFailures++;
+        if (process.env.NODE_ENV === 'development') {
+          console.error('Failed to poll for updates:', error)
+        }
+        // Optionally, stop polling after too many failures
+        if (consecutiveFailures >= maxFailures) {
+          clearInterval(pollInterval);
+        }
       }
     }, 2000) // Poll every 2 seconds
 

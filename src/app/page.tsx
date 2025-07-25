@@ -20,8 +20,13 @@ import {
   ChevronRight,
   Sparkles,
   Award,
-  Globe2
+  Globe2,
+  Twitter,
+  Linkedin,
+  Github,
+  MailIcon
 } from 'lucide-react'
+import Image from 'next/image'
 
 export default function HomePage() {
   const [hoveredFeature, setHoveredFeature] = useState<string | null>(null)
@@ -188,6 +193,19 @@ export default function HomePage() {
         </div>
       </section>
 
+      {/* Trusted By Logo Bar */}
+      <section className="py-8 bg-white border-b border-gray-100">
+        <div className="max-w-5xl mx-auto px-6 flex flex-col sm:flex-row items-center justify-center gap-8">
+          <span className="text-gray-500 text-sm font-semibold mb-2 sm:mb-0">Trusted by:</span>
+          <div className="flex flex-wrap gap-6 items-center justify-center">
+            <Image src="/vercel.svg" alt="Vercel Logo" width={80} height={24} className="opacity-80 grayscale hover:grayscale-0 transition-all duration-300" />
+            <Image src="/next.svg" alt="Next.js Logo" width={80} height={24} className="opacity-80 grayscale hover:grayscale-0 transition-all duration-300" />
+            <Image src="/globe.svg" alt="Global Research Logo" width={32} height={32} className="opacity-80 grayscale hover:grayscale-0 transition-all duration-300" />
+            <Image src="/file.svg" alt="File Collaboration Logo" width={32} height={32} className="opacity-80 grayscale hover:grayscale-0 transition-all duration-300" />
+          </div>
+        </div>
+      </section>
+
       {/* Core Features */}
       <section id="features" className="py-20 bg-white">
         <div className="max-w-7xl mx-auto px-6">
@@ -302,6 +320,38 @@ export default function HomePage() {
         </div>
       </section>
 
+      {/* How It Works Section */}
+      <section className="py-20 bg-white" id="how-it-works">
+        <div className="max-w-7xl mx-auto px-6">
+          <div className="max-w-3xl mx-auto text-center mb-16">
+            <h2 className="text-3xl font-bold text-gray-900 mb-6">How It Works</h2>
+            <p className="text-lg text-gray-600">Get started in just a few steps and experience seamless research collaboration.</p>
+          </div>
+          <div className="grid md:grid-cols-4 gap-8 max-w-4xl mx-auto">
+            <div className="flex flex-col items-center text-center fade-in-up">
+              <div className="w-12 h-12 bg-blue-100 rounded-2xl flex items-center justify-center mb-4"><FileText className="w-6 h-6 text-blue-600" /></div>
+              <span className="font-semibold text-gray-900 mb-2">Sign Up</span>
+              <span className="text-gray-500 text-sm">Create your free account to access all features.</span>
+            </div>
+            <div className="flex flex-col items-center text-center fade-in-up" style={{ animationDelay: '0.1s' }}>
+              <div className="w-12 h-12 bg-green-100 rounded-2xl flex items-center justify-center mb-4"><BookOpen className="w-6 h-6 text-green-600" /></div>
+              <span className="font-semibold text-gray-900 mb-2">Upload Papers</span>
+              <span className="text-gray-500 text-sm">Import your research documents and organize your library.</span>
+            </div>
+            <div className="flex flex-col items-center text-center fade-in-up" style={{ animationDelay: '0.2s' }}>
+              <div className="w-12 h-12 bg-yellow-100 rounded-2xl flex items-center justify-center mb-4"><PenTool className="w-6 h-6 text-yellow-600" /></div>
+              <span className="font-semibold text-gray-900 mb-2">Collaborate</span>
+              <span className="text-gray-500 text-sm">Annotate, discuss, and share insights with your team in real-time.</span>
+            </div>
+            <div className="flex flex-col items-center text-center fade-in-up" style={{ animationDelay: '0.3s' }}>
+              <div className="w-12 h-12 bg-purple-100 rounded-2xl flex items-center justify-center mb-4"><Brain className="w-6 h-6 text-purple-600" /></div>
+              <span className="font-semibold text-gray-900 mb-2">Leverage AI</span>
+              <span className="text-gray-500 text-sm">Get summaries, answers, and research suggestions from AI.</span>
+            </div>
+          </div>
+        </div>
+      </section>
+
       {/* Testimonials */}
       <section className="py-20 bg-white">
         <div className="max-w-7xl mx-auto px-6">
@@ -374,64 +424,96 @@ export default function HomePage() {
         </div>
       </section>
 
+      {/* Add at the top of the footer section */}
+      <section aria-hidden="true" className="-mb-1">
+        <svg viewBox="0 0 1440 100" fill="none" xmlns="http://www.w3.org/2000/svg" className="w-full h-20">
+          <path d="M0,40 C480,120 960,0 1440,80 L1440,100 L0,100 Z" fill="#1e293b" fillOpacity="0.95" />
+        </svg>
+      </section>
       {/* Footer */}
-      <footer className="bg-gray-900 text-white py-16">
+      <footer className="relative bg-white/80 backdrop-blur-xl text-gray-900 py-16 fade-in-up shadow-2xl border-t border-gray-200">
         <div className="max-w-7xl mx-auto px-6">
-          <div className="grid md:grid-cols-4 gap-12 mb-12">
-            <div>
+          <div className="grid md:grid-cols-5 gap-12 mb-12 items-center">
+            {/* Brand & Social */}
+            <div className="flex flex-col items-center md:items-start text-center md:text-left col-span-2">
               <div className="flex items-center space-x-3 mb-6">
-                <div className="w-8 h-8 bg-blue-600 rounded-xl flex items-center justify-center">
-                  <FileText className="w-4 h-4 text-white" />
+                <div className="w-10 h-10 bg-blue-600 rounded-2xl flex items-center justify-center shadow-lg">
+                  <FileText className="w-6 h-6 text-white" />
                 </div>
-                <span className="text-xl font-semibold">PaperPal</span>
+                <span className="text-2xl font-bold tracking-tight">PaperPal</span>
               </div>
-              <p className="text-gray-400 leading-relaxed mb-6">
+              <p className="text-gray-600 leading-relaxed mb-6 max-w-xs">
                 Empowering researchers worldwide with collaborative tools for academic excellence.
               </p>
-              <div className="flex items-center space-x-2 text-sm text-gray-400">
-                <Globe2 className="w-4 h-4" />
+              <div className="flex items-center space-x-2 text-sm text-gray-500 mb-4">
+                <Globe2 className="w-4 h-4" aria-label="Global" />
                 <span>Used in 50+ countries</span>
               </div>
-            </div>
-            
-            <div>
-              <h3 className="font-semibold mb-4 text-white">Product</h3>
-              <div className="space-y-3 text-sm text-gray-400">
-                <Link href="/features" className="block hover:text-white transition-colors duration-200">Features</Link>
-                <Link href="/pricing" className="block hover:text-white transition-colors duration-200">Pricing</Link>
-                <Link href="/integrations" className="block hover:text-white transition-colors duration-200">Integrations</Link>
-                <Link href="/api" className="block hover:text-white transition-colors duration-200">API</Link>
+              <div className="flex space-x-4 mt-2">
+                <a href="https://twitter.com/" target="_blank" rel="noopener noreferrer" aria-label="Twitter" className="hover:scale-125 hover:text-blue-500 hover:shadow-lg transition-all duration-300 focus:outline-none focus:ring-2 focus:ring-blue-400 rounded-full"><Twitter className="w-6 h-6" /></a>
+                <a href="https://linkedin.com/" target="_blank" rel="noopener noreferrer" aria-label="LinkedIn" className="hover:scale-125 hover:text-blue-700 hover:shadow-lg transition-all duration-300 focus:outline-none focus:ring-2 focus:ring-blue-400 rounded-full"><Linkedin className="w-6 h-6" /></a>
+                <a href="https://github.com/" target="_blank" rel="noopener noreferrer" aria-label="GitHub" className="hover:scale-125 hover:text-gray-800 hover:shadow-lg transition-all duration-300 focus:outline-none focus:ring-2 focus:ring-blue-400 rounded-full"><Github className="w-6 h-6" /></a>
               </div>
             </div>
-            
+            {/* Links */}
             <div>
-              <h3 className="font-semibold mb-4 text-white">Company</h3>
-              <div className="space-y-3 text-sm text-gray-400">
-                <Link href="/about" className="block hover:text-white transition-colors duration-200">About</Link>
-                <Link href="/blog" className="block hover:text-white transition-colors duration-200">Blog</Link>
-                <Link href="/careers" className="block hover:text-white transition-colors duration-200">Careers</Link>
-                <Link href="/press" className="block hover:text-white transition-colors duration-200">Press</Link>
+              <h3 className="font-semibold mb-4 text-gray-900">Product</h3>
+              <div className="space-y-3 text-sm text-gray-500">
+                <Link href="/features" className="block hover:text-blue-600 transition-colors duration-200">Features</Link>
+                <Link href="/pricing" className="block hover:text-blue-600 transition-colors duration-200">Pricing</Link>
+                <Link href="/integrations" className="block hover:text-blue-600 transition-colors duration-200">Integrations</Link>
+                <Link href="/api" className="block hover:text-blue-600 transition-colors duration-200">API</Link>
               </div>
             </div>
-            
             <div>
-              <h3 className="font-semibold mb-4 text-white">Support</h3>
-              <div className="space-y-3 text-sm text-gray-400">
-                <Link href="/help" className="block hover:text-white transition-colors duration-200">Help Center</Link>
-                <Link href="/contact" className="block hover:text-white transition-colors duration-200">Contact</Link>
-                <Link href="/privacy" className="block hover:text-white transition-colors duration-200">Privacy</Link>
-                <Link href="/terms" className="block hover:text-white transition-colors duration-200">Terms</Link>
+              <h3 className="font-semibold mb-4 text-gray-900">Company</h3>
+              <div className="space-y-3 text-sm text-gray-500">
+                <Link href="/about" className="block hover:text-blue-600 transition-colors duration-200">About</Link>
+                <Link href="/blog" className="block hover:text-blue-600 transition-colors duration-200">Blog</Link>
+                <Link href="/careers" className="block hover:text-blue-600 transition-colors duration-200">Careers</Link>
+                <Link href="/press" className="block hover:text-blue-600 transition-colors duration-200">Press</Link>
               </div>
+            </div>
+            {/* Newsletter */}
+            <div className="col-span-2 flex flex-col items-center md:items-end text-center md:text-right">
+              <h3 className="font-semibold mb-4 text-gray-900">Newsletter</h3>
+              <form className="flex flex-col sm:flex-row gap-3 w-full max-w-md mx-auto" onSubmit={e => { e.preventDefault(); alert('Thank you for subscribing!'); }}>
+                <div className="relative w-full">
+                  <span className="absolute left-3 top-1/2 -translate-y-1/2 text-blue-500"><MailIcon className="w-5 h-5" /></span>
+                  <input type="email" required aria-label="Email address" placeholder="Your email address" className="pl-10 pr-4 py-2 rounded-full bg-white/80 text-gray-900 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 w-full shadow-md" />
+                </div>
+                <button type="submit" className="px-6 py-2 rounded-full bg-blue-600 hover:bg-blue-700 text-white font-semibold shadow-lg transition-all duration-200 w-full sm:w-auto active:scale-95">Subscribe</button>
+              </form>
+              <p className="text-xs text-gray-500 mt-2">Get updates and research tips. No spam.</p>
             </div>
           </div>
-          
-          <div className="border-t border-gray-800 pt-8 text-center">
-            <p className="text-sm text-gray-400">
-              &copy; 2024 PaperPal. All rights reserved. Built with ❤️ for researchers.
-            </p>
+          {/* Founder Quote/Photo */}
+          <div className="flex flex-col md:flex-row items-center justify-between gap-8 py-8 border-t border-gray-200">
+            <div className="flex items-center gap-4">
+              <img src="https://randomuser.me/api/portraits/men/32.jpg" alt="Sakil Sarker, Founder" className="w-14 h-14 rounded-full border-2 border-blue-600 shadow-md object-cover" />
+              <div>
+                <p className="italic text-gray-700 max-w-xs">“Our mission is to make research collaboration effortless and inspiring for everyone.”</p>
+                <span className="block mt-1 font-semibold text-gray-900">Sakil Sarker, Founder</span>
+              </div>
+            </div>
+            {/* Mini Logo Bar */}
+            <div className="flex gap-6 items-center">
+              <Image src="/vercel.svg" alt="Vercel Logo" width={60} height={18} className="opacity-80 grayscale hover:grayscale-0 transition-all duration-300" />
+              <Image src="/next.svg" alt="Next.js Logo" width={60} height={18} className="opacity-80 grayscale hover:grayscale-0 transition-all duration-300" />
+              <Image src="/globe.svg" alt="Global Research Logo" width={28} height={28} className="opacity-80 grayscale hover:grayscale-0 transition-all duration-300" />
+              <Image src="/file.svg" alt="File Collaboration Logo" width={28} height={28} className="opacity-80 grayscale hover:grayscale-0 transition-all duration-300" />
+            </div>
+            {/* Back to Top Button */}
+            <button onClick={() => window.scrollTo({top: 0, behavior: 'smooth'})} aria-label="Back to top" className="hidden md:inline-flex items-center px-4 py-2 rounded-full bg-blue-600 hover:bg-blue-700 text-white font-semibold shadow-lg transition-all duration-200 ml-8 active:scale-95 focus:outline-none focus:ring-2 focus:ring-blue-400">
+              Back to top
+            </button>
+          </div>
+          <div className="pt-8 text-center text-gray-500 text-sm">
+            &copy; 2024 PaperPal. All rights reserved. Built with <span role="img" aria-label="love">❤️</span> for researchers.
           </div>
         </div>
       </footer>
     </div>
   )
 }
+

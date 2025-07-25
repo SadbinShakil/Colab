@@ -1,6 +1,7 @@
 'use client'
 
 import { useEffect, useRef, useState } from 'react'
+import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
@@ -113,6 +114,13 @@ export default function ApryseWebViewer({
   const [inviteRole, setInviteRole] = useState<'viewer' | 'editor' | 'admin'>('viewer')
   const [inviteMessage, setInviteMessage] = useState('')
   const [currentUserRole, setCurrentUserRole] = useState<'viewer' | 'editor' | 'admin'>('viewer')
+  // Add state for current document URL
+  const [currentDocumentUrl, setCurrentDocumentUrl] = useState(documentUrl);
+  // Track the last loaded backend PDF URL (no cache-busting)
+  const lastLoadedBackendPdfUrlRef = useRef(documentUrl);
+  const [pendingPdfUrl, setPendingPdfUrl] = useState<string | null>(null);
+  const [showPdfReplacePrompt, setShowPdfReplacePrompt] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   // Join document and track collaborators
   useEffect(() => {
@@ -365,7 +373,10 @@ export default function ApryseWebViewer({
   }
 
   // Update user activity
+  let activityFailureCount = 0;
+  const maxActivityFailures = 10;
   const updateActivity = async (activity: 'viewing' | 'editing' | 'idle') => {
+    if (activityFailureCount >= maxActivityFailures) return;
     try {
       await fetch('/api/socket', {
         method: 'POST',
@@ -376,9 +387,13 @@ export default function ApryseWebViewer({
           userId,
           activity
         })
-      })
+      });
+      activityFailureCount = 0;
     } catch (error) {
-      console.error('Error updating activity:', error)
+      activityFailureCount++;
+      if (typeof process !== 'undefined' && process.env && process.env.NODE_ENV === 'development') {
+        console.error('Error updating activity:', error);
+      }
     }
   }
 
@@ -607,7 +622,7 @@ export default function ApryseWebViewer({
       WebViewer(
         {
           path: '/webviewer/lib', // required for asset loading
-          initialDoc: documentUrl,
+          initialDoc: currentDocumentUrl,
           licenseKey: '', // or your license key
         },
         viewer.current as HTMLElement
@@ -674,6 +689,8 @@ export default function ApryseWebViewer({
               }
             });
           }
+          // Load saved annotations (comments/highlights)
+          loadAnnotations(annotationManager);
         });
         
         documentViewer.addEventListener('documentLoadFailed', (error: any) => {
@@ -687,6 +704,72 @@ export default function ApryseWebViewer({
     })
   }, [documentUrl, userName, userId]);
 
+  // Poll for PDF replacement by other users
+  useEffect(() => {
+    const interval = setInterval(async () => {
+      try {
+        const res = await fetch('/api/socket', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ action: 'get-pdf-url', documentId })
+        });
+        const data = await res.json();
+        if (data.pdfUrl && data.pdfUrl !== lastLoadedBackendPdfUrlRef.current) {
+          setPendingPdfUrl(data.pdfUrl);
+          setShowPdfReplacePrompt(true);
+        }
+      } catch (err) {
+        // Ignore polling errors
+      }
+    }, 3000);
+    return () => clearInterval(interval);
+  }, [documentId]);
+
+  // Modal/Toast for PDF replacement
+  useEffect(() => {
+    if (showPdfReplacePrompt && pendingPdfUrl) {
+      toast(
+        'The PDF was replaced by another user. Do you want to refresh to the new PDF?',
+        {
+          action: {
+            label: 'Refresh',
+            onClick: () => {
+              // Add cache-busting param
+              const cacheBustedUrl = pendingPdfUrl + (pendingPdfUrl.includes('?') ? '&' : '?') + 't=' + Date.now();
+              setCurrentDocumentUrl(cacheBustedUrl);
+              lastLoadedBackendPdfUrlRef.current = pendingPdfUrl;
+              if (webViewerInstance && typeof webViewerInstance.loadDocument === 'function') {
+                webViewerInstance.loadDocument(cacheBustedUrl);
+              } else if (webViewerInstance && webViewerInstance.Core && webViewerInstance.Core.documentViewer) {
+                webViewerInstance.Core.documentViewer.loadDocument(cacheBustedUrl);
+              }
+              setShowPdfReplacePrompt(false);
+              setPendingPdfUrl(null);
+            },
+          },
+          cancel: {
+            label: 'Stay',
+            onClick: () => {
+              setShowPdfReplacePrompt(false);
+              setPendingPdfUrl(null);
+            },
+          },
+          duration: 10000,
+        }
+      );
+    }
+  }, [showPdfReplacePrompt, pendingPdfUrl, webViewerInstance]);
+
+  // When uploading a new PDF, update both the viewer and the backend ref
+  useEffect(() => {
+    // If the currentDocumentUrl is a backend URL (not a blob), update the ref
+    if (currentDocumentUrl && !currentDocumentUrl.startsWith('blob:')) {
+      // Remove cache-busting param for comparison
+      const urlNoCache = currentDocumentUrl.split('?')[0];
+      lastLoadedBackendPdfUrlRef.current = urlNoCache;
+    }
+  }, [currentDocumentUrl]);
+
   const loadAnnotations = async (annotationManager: any) => {
     try {
       const response = await fetch(`/api/annotations?documentId=${documentId}`)
@@ -695,7 +778,7 @@ export default function ApryseWebViewer({
         console.log('Loaded annotations:', data.annotations)
         // Import annotations into WebViewer if they exist
         if (data.annotations && data.annotations.length > 0) {
-          // Convert and import annotations
+          await annotationManager.importAnnotations(data.annotations);
         }
       }
     } catch (error) {
@@ -769,10 +852,76 @@ export default function ApryseWebViewer({
             <div className="w-10 h-10 bg-blue-100 rounded-lg flex items-center justify-center">
               <FileText className="w-5 h-5 text-blue-600" />
             </div>
-            <div className="flex-1">
-              <h3 className="font-semibold text-gray-900 truncate">Research Paper</h3>
-              <p className="text-sm text-gray-500">Academic Document</p>
+            <div className="flex-1 flex items-center">
+              <h3 className="font-semibold text-gray-900 truncate mr-2">Research Paper</h3>
+              {/* Plus button for replacing PDF */}
+              <input
+                ref={fileInputRef}
+                type="file"
+                accept="application/pdf"
+                style={{ display: 'none' }}
+                onChange={async e => {
+                  if (e.target.files && e.target.files[0]) {
+                    const file = e.target.files[0];
+                    // Upload the file to /api/upload
+                    let publicUrl = '';
+                    try {
+                      const formData = new FormData();
+                      formData.append('file', file);
+                      const uploadRes = await fetch('/api/upload', {
+                        method: 'POST',
+                        body: formData
+                      });
+                      if (uploadRes.ok) {
+                        const uploadData = await uploadRes.json();
+                        publicUrl = uploadData.document.url;
+                      } else {
+                        throw new Error('Upload failed');
+                      }
+                    } catch (err) {
+                      console.error('Failed to upload PDF', err);
+                      return;
+                    }
+                    // Add cache-busting param
+                    const cacheBustedUrl = publicUrl + (publicUrl.includes('?') ? '&' : '?') + 't=' + Date.now();
+                    setCurrentDocumentUrl(cacheBustedUrl);
+                    lastLoadedBackendPdfUrlRef.current = publicUrl;
+                    if (webViewerInstance && typeof webViewerInstance.loadDocument === 'function') {
+                      webViewerInstance.loadDocument(cacheBustedUrl);
+                    } else if (webViewerInstance && webViewerInstance.Core && webViewerInstance.Core.documentViewer) {
+                      webViewerInstance.Core.documentViewer.loadDocument(cacheBustedUrl);
+                    }
+                    // Notify backend of PDF replacement
+                    try {
+                      await fetch('/api/socket', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                          action: 'pdf-replaced',
+                          documentId,
+                          pdfUrl: publicUrl,
+                          userId,
+                          userName
+                        })
+                      });
+                    } catch (err) {
+                      console.error('Failed to notify backend of PDF replacement', err);
+                    }
+                  }
+                }}
+              />
+              <Button
+                size="icon"
+                variant="ghost"
+                className="h-6 w-6 p-0 ml-1"
+                tabIndex={0}
+                onClick={() => fileInputRef.current && fileInputRef.current.click()}
+                title="Replace PDF"
+              >
+                <Plus className="w-4 h-4 text-blue-600" />
+              </Button>
             </div>
+            {/* End flex-1 */}
           </div>
           
           {/* Quick Actions */}
@@ -1086,8 +1235,7 @@ export default function ApryseWebViewer({
                                   : 'bg-white text-gray-900 border border-gray-200'
                               }`}>
                                 <p className="text-xs">
-                                  {msg.content || msg.message || 'No content found'}
-                                  {console.log('Message structure:', msg)}
+                                  {msg.message}
                                 </p>
                                 <p className={`text-xs mt-1 ${
                                   msg.userId === userId ? 'text-blue-100' : 'text-gray-400'
