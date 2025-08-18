@@ -206,7 +206,7 @@ export default function LoginPage() {
                     aria-label="Email address"
                   />
                   <Mail className="absolute left-3 top-1/2 -translate-y-1/2 text-blue-300 peer-focus:text-blue-500 transition-colors duration-200" />
-                  <label className="absolute left-10 top-1/2 -translate-y-1/2 text-gray-500 text-sm pointer-events-none transition-all duration-200 peer-placeholder-shown:top-1/2 peer-placeholder-shown:text-base peer-focus:top-2 peer-focus:text-xs peer-focus:text-blue-600">
+                  <label className="absolute left-10 top-1/2 -translate-y-1/2 text-gray-500 text-sm pointer-events-none transition-all duration-200 peer-placeholder-shown:top-1/2 peer-placeholder-shown:text-base peer-focus:top-2 peer-focus:text-xs peer-focus:text-blue-600 peer-[:not(:placeholder-shown)]:top-2 peer-[:not(:placeholder-shown)]:text-xs peer-[:not(:placeholder-shown)]:text-blue-600">
                     Email address
                   </label>
                 </div>
@@ -230,7 +230,7 @@ export default function LoginPage() {
                   >
                     {showPassword ? <EyeOff className="h-5 w-5" /> : <Eye className="h-5 w-5" />}
                   </button>
-                  <label className="absolute left-10 top-1/2 -translate-y-1/2 text-gray-500 text-sm pointer-events-none transition-all duration-200 peer-placeholder-shown:top-1/2 peer-placeholder-shown:text-base peer-focus:top-2 peer-focus:text-xs peer-focus:text-blue-600">
+                  <label className="absolute left-10 top-1/2 -translate-y-1/2 text-gray-500 text-sm pointer-events-none transition-all duration-200 peer-placeholder-shown:top-1/2 peer-placeholder-shown:text-base peer-focus:top-2 peer-focus:text-xs peer-focus:text-blue-600 peer-[:not(:placeholder-shown)]:top-2 peer-[:not(:placeholder-shown)]:text-xs peer-[:not(:placeholder-shown)]:text-blue-600">
                     Password
                   </label>
                 </div>

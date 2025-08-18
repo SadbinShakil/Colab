@@ -12,7 +12,7 @@ import {
   MessageCircle, Brain, Lightbulb, Settings, User,
   Bell, HelpCircle, LogOut, FolderOpen, Tags, 
   TrendingUp, Calendar, Award, Zap, ChevronRight,
-  Activity, Target, Globe, Sparkles
+  Activity, Target, Globe, Sparkles, Calculator
 } from "lucide-react"
 
 export default function DashboardPage() {
@@ -423,6 +423,14 @@ export default function DashboardPage() {
                   >
                     <Brain className="w-6 h-6 mb-2 text-gray-600 group-hover:text-yellow-600" />
                     <span className="text-sm font-medium">AI Analysis</span>
+                  </Button>
+                  <Button
+                    variant="outline"
+                    className="h-auto flex-col py-4 border-gray-200 hover:border-indigo-300 hover:bg-indigo-50 group"
+                    onClick={() => router.push('/test-math-explainer')}
+                  >
+                    <Calculator className="w-6 h-6 mb-2 text-gray-600 group-hover:text-indigo-600" />
+                    <span className="text-sm font-medium">Math Explainer</span>
                   </Button>
                 </div>
               </CardContent>

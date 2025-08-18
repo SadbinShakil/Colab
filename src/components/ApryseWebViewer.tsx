@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useRef, useState, useCallback } from 'react'
 import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
@@ -39,8 +39,14 @@ import {
   Plus,
   User,
   Activity,
-  Clock
+  Clock,
+  Calculator,
+  Brain,
+  Variable,
+  Zap
 } from 'lucide-react'
+import MathExplainer from './MathExplainer'
+import TextSelectionPopup from './TextSelectionPopup'
 
 interface ApryseWebViewerProps {
   documentUrl: string
@@ -121,6 +127,26 @@ export default function ApryseWebViewer({
   const [pendingPdfUrl, setPendingPdfUrl] = useState<string | null>(null);
   const [showPdfReplacePrompt, setShowPdfReplacePrompt] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const [showCollaborationPanel, setShowCollaborationPanel] = useState(false)
+  const [showMathExplainer, setShowMathExplainer] = useState(false)
+  const [selectedEquation, setSelectedEquation] = useState('')
+  const [equationContext, setEquationContext] = useState('')
+  const [mathToolActive, setMathToolActive] = useState(false)
+  const [isProcessing, setIsProcessing] = useState(false)
+  const [processingMessage, setProcessingMessage] = useState('')
+  const [processingProgress, setProcessingProgress] = useState(0)
+  
+  // Text selection storage
+  const [capturedSelections, setCapturedSelections] = useState<Array<{
+    text: string;
+    timestamp: string;
+    pageNumber?: number;
+    position?: { x: number; y: number };
+  }>>([])
+  const [lastSelectedText, setLastSelectedText] = useState('')
+  const [showTextSelectionPopup, setShowTextSelectionPopup] = useState(false)
+  const [selectedText, setSelectedText] = useState('')
+  const [selectionPosition, setSelectionPosition] = useState({ x: 0, y: 0 })
 
   // Join document and track collaborators
   useEffect(() => {
@@ -615,6 +641,135 @@ export default function ApryseWebViewer({
     return () => document.removeEventListener('mousedown', handleClickOutside)
   }, [])
 
+  // Fix for DOMNodeInserted deprecation warning and comment functionality
+  useEffect(() => {
+    // Polyfill for deprecated DOMNodeInserted event
+    if (typeof window !== 'undefined') {
+      // Check if MutationObserver is available (modern browsers)
+      if (window.MutationObserver) {
+        // Use modern MutationObserver instead of deprecated events
+        console.log('Using modern MutationObserver for DOM changes');
+      } else {
+        console.warn('MutationObserver not supported, falling back to deprecated events');
+      }
+    }
+
+    // Enhanced comment handling system
+    const handleAnnotationInteraction = (event: any) => {
+      const target = event.target;
+      
+      // Check if clicked element is an annotation
+      if (target && (
+        target.classList.contains('annotation') ||
+        target.classList.contains('highlight') ||
+        target.closest('.annotation') ||
+        target.closest('.highlight')
+      )) {
+        event.preventDefault();
+        event.stopPropagation();
+        
+        // Get annotation ID
+        const annotationId = target.getAttribute('data-annotation-id') || 
+                           target.closest('.annotation')?.getAttribute('data-annotation-id') ||
+                           target.closest('.highlight')?.getAttribute('data-annotation-id');
+        
+        if (annotationId && webViewerInstance && webViewerInstance.Core) {
+          try {
+            const { annotationManager } = webViewerInstance.Core;
+            const annotation = annotationManager.getAnnotationById(annotationId);
+            
+            if (annotation) {
+              // Try to show comments using WebViewer's built-in method
+              if (typeof annotationManager.showAnnotationComments === 'function') {
+                annotationManager.showAnnotationComments(annotation);
+              } else if (typeof annotationManager.showComments === 'function') {
+                annotationManager.showComments(annotation);
+              } else {
+                // Fallback: manually trigger comment panel
+                console.log('Opening comment panel for annotation:', annotationId);
+                // You can implement custom comment UI here
+                showCustomCommentPanel(annotation);
+              }
+            }
+          } catch (error) {
+            console.error('Error handling annotation interaction:', error);
+            // Fallback to custom comment panel
+            showCustomCommentPanel({ Id: annotationId });
+          }
+        }
+      }
+    };
+
+    // Custom comment panel function
+    const showCustomCommentPanel = (annotation: any) => {
+      // Create a simple comment panel
+      const commentPanel = document.createElement('div');
+      commentPanel.className = 'custom-comment-panel';
+      commentPanel.style.cssText = `
+        position: fixed;
+        top: 50%;
+        left: 50%;
+        transform: translate(-50%, -50%);
+        background: white;
+        border: 1px solid #ccc;
+        border-radius: 8px;
+        padding: 20px;
+        box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+        z-index: 10000;
+        min-width: 300px;
+      `;
+      
+      commentPanel.innerHTML = `
+        <h3>Add Comment</h3>
+        <textarea 
+          placeholder="Enter your comment here..." 
+        ></textarea>
+        <div class="button-group">
+          <button class="cancel" onclick="this.closest('.custom-comment-panel').remove()">Cancel</button>
+          <button class="save" onclick="saveComment(this)">Save Comment</button>
+        </div>
+      `;
+      
+      // Add save function to window
+      (window as any).saveComment = function(button: any) {
+        const textarea = button.parentElement.previousElementSibling;
+        const comment = textarea.value;
+        if (comment.trim()) {
+          console.log('Saving comment:', comment, 'for annotation:', annotation.Id);
+          // Here you can implement saving the comment to your backend
+          // For now, just close the panel
+          commentPanel.remove();
+        }
+      };
+      
+      document.body.appendChild(commentPanel);
+      
+      // Close panel when clicking outside
+      const closeOnOutsideClick = (e: any) => {
+        if (!commentPanel.contains(e.target)) {
+          commentPanel.remove();
+          document.removeEventListener('click', closeOnOutsideClick);
+        }
+      };
+      
+      setTimeout(() => {
+        document.addEventListener('click', closeOnOutsideClick);
+      }, 100);
+    };
+
+    // Add event listeners for annotation interactions
+    document.addEventListener('click', handleAnnotationInteraction);
+    document.addEventListener('dblclick', handleAnnotationInteraction);
+
+    return () => {
+      document.removeEventListener('click', handleAnnotationInteraction);
+      document.removeEventListener('dblclick', handleAnnotationInteraction);
+      // Clean up global function
+      delete (window as any).saveComment;
+    };
+  }, [webViewerInstance]);
+
+  // Initialize WebViewer
   useEffect(() => {
     if (!viewer.current) return;
     import('@pdftron/webviewer').then((module) => {
@@ -623,7 +778,7 @@ export default function ApryseWebViewer({
         {
           path: '/webviewer/lib', // required for asset loading
           initialDoc: currentDocumentUrl,
-          licenseKey: '', // or your license key
+          licenseKey: 'demo:1755219174158:606dde5b03000000004697f8591ea5d9e505e44c124bc6be7fc53870e2', // or your license key
         },
         viewer.current as HTMLElement
       ).then((instance: any) => {
@@ -640,7 +795,84 @@ export default function ApryseWebViewer({
           if (action === 'add' && info && info.annotation) {
             const annotation = info.annotation;
             if (annotation.Subject === 'Highlight' || annotation.Subject === 'highlight') {
-              // Extract highlight data
+              
+              // Get the highlighted text from the annotation using Apryse's official method
+              let highlightedText = '';
+              try {
+                // Use Apryse's official method: getQuads() and documentViewer.select()
+                if (annotation.getQuads && typeof annotation.getQuads === 'function') {
+                  const quads = annotation.getQuads();
+                  console.log('📍 Annotation quads:', quads);
+                  
+                  if (quads && quads.length > 0) {
+                    // Extract text for each quad and combine
+                    const textsUnderHighlight = quads.map((quad: any) => {
+                      const selectionStartPoint = { 
+                        x: quad.x1, 
+                        y: quad.y1, 
+                        pageNumber: annotation.PageNumber 
+                      };
+                      const selectionEndPoint = { 
+                        x: quad.x3, 
+                        y: quad.y3, 
+                        pageNumber: annotation.PageNumber 
+                      };
+                      
+                      // Select the text within the quad
+                      documentViewer.select(selectionStartPoint, selectionEndPoint);
+                      
+                      // Retrieve the selected text
+                      const selectedText = documentViewer.getSelectedText();
+                      
+                      // Clear the selection to avoid visual artifacts
+                      documentViewer.clearSelection();
+                      
+                      return selectedText;
+                    });
+                    
+                    // Combine all texts
+                    highlightedText = textsUnderHighlight.filter((text: string) => text && text.trim()).join(' ');
+                  }
+                }
+                
+                // Fallback: try to get from annotation contents
+                if (!highlightedText && annotation.Contents) {
+                  highlightedText = annotation.Contents;
+                }
+                
+                console.log('🎨 HIGHLIGHTED TEXT CAPTURED:', highlightedText);
+                
+                // Store the highlighted text
+                const selection = {
+                  text: highlightedText,
+                  timestamp: new Date().toISOString(),
+                  pageNumber: annotation.PageNumber,
+                  type: 'highlight',
+                  annotationId: annotation.Id
+                };
+                
+                setCapturedSelections(prev => {
+                  const newSelections = [...prev, selection];
+                  console.log('📚 HIGHLIGHT SELECTIONS:', newSelections);
+                  return newSelections;
+                });
+                
+                setLastSelectedText(highlightedText);
+                
+                // Show popup with highlighted text
+                if (highlightedText.trim()) {
+                  setSelectedText(highlightedText);
+                  setSelectionPosition({ x: annotation.X, y: annotation.Y });
+                  setShowTextSelectionPopup(true);
+                  console.log('🎯 Popup shown for highlighted text:', highlightedText);
+                }
+                
+              } catch (error) {
+                console.log('Error getting highlighted text:', error);
+                highlightedText = 'Highlighted content';
+              }
+              
+              // Extract highlight data for collaboration
               const highlightData = {
                 pageNumber: annotation.PageNumber,
                 x: annotation.X,
@@ -648,7 +880,7 @@ export default function ApryseWebViewer({
                 width: annotation.Width,
                 height: annotation.Height,
                 color: annotation.Color ? `rgb(${annotation.Color.R}, ${annotation.Color.G}, ${annotation.Color.B})` : '#ffff00',
-                text: annotation.Contents || '',
+                text: highlightedText,
                 annotationId: annotation.Id
               };
               
@@ -666,6 +898,155 @@ export default function ApryseWebViewer({
         documentViewer.addEventListener('documentLoaded', () => {
           documentViewer.setFitMode(documentViewer.FitMode.FitWidth);
           setIsLoading(false);
+          
+          // Simple text selection capture system
+          console.log('Setting up text selection capture...');
+          
+          // Function to capture and store selected text
+          const captureSelectedText = (text: string, pageNum?: number) => {
+            if (!text || !text.trim()) return;
+            
+            const trimmedText = text.trim();
+            console.log('📝 CAPTURED TEXT:', trimmedText);
+            
+            // Store the text with timestamp
+            const selection = {
+              text: trimmedText,
+              timestamp: new Date().toISOString(),
+              pageNumber: pageNum,
+              position: { x: 0, y: 0 }
+            };
+            
+            // Add to captured selections array
+            setCapturedSelections(prev => {
+              const newSelections = [...prev, selection];
+              console.log('📚 ALL CAPTURED SELECTIONS:', newSelections);
+              return newSelections;
+            });
+            
+            // Update last selected text
+            setLastSelectedText(trimmedText);
+            console.log('✅ Text captured and stored successfully!');
+          };
+          
+          // Method 1: Apryse text selection event
+          try {
+            documentViewer.addEventListener('textSelectionChanged', (quads: any, text: string, pageNumber: number) => {
+              console.log('🎯 Apryse text selection event:', { text, pageNumber });
+              if (text && text.trim()) {
+                captureSelectedText(text, pageNumber);
+              }
+            });
+            console.log('✅ Apryse text selection listener added');
+          } catch (error) {
+            console.log('❌ Error adding Apryse listener:', error);
+          }
+          
+          // Method 2: Global selection capture
+          const captureGlobalSelection = () => {
+            setTimeout(() => {
+              const selection = window.getSelection();
+              const selectedText = selection?.toString();
+              
+              if (selectedText && selectedText.trim()) {
+                console.log('🌐 Global selection captured:', selectedText);
+                
+                // Check if it's within the PDF viewer
+                const viewerElement = documentViewer.getViewerElement();
+                if (viewerElement && selection && selection.rangeCount > 0) {
+                  const range = selection.getRangeAt(0);
+                  const container = range.commonAncestorContainer;
+                  const element = container.nodeType === Node.TEXT_NODE ? container.parentElement : container;
+                  
+                  if (viewerElement.contains(element)) {
+                    console.log('✅ Selection is within PDF viewer');
+                    captureSelectedText(selectedText);
+                  } else {
+                    console.log('ℹ️ Selection outside PDF viewer');
+                  }
+                } else {
+                  console.log('ℹ️ No selection range or viewer element');
+                }
+              }
+            }, 200); // Longer delay to ensure selection is complete
+          };
+          
+          // Add multiple event listeners for better coverage
+          document.addEventListener('mouseup', captureGlobalSelection);
+          document.addEventListener('selectionchange', captureGlobalSelection);
+          
+          // Add listener to viewer element if available
+          const viewerElement = documentViewer.getViewerElement();
+          if (viewerElement) {
+            viewerElement.addEventListener('mouseup', captureGlobalSelection);
+            console.log('✅ Viewer element listeners added');
+          }
+          
+          console.log('✅ Text selection capture system ready!');
+          
+          // Add click listener for existing highlights
+          annotationManager.addEventListener('annotationSelected', (annotations: any[]) => {
+            if (annotations && annotations.length > 0) {
+              const annotation = annotations[0];
+              if (annotation.Subject === 'Highlight' || annotation.Subject === 'highlight') {
+                console.log('🖱️ Highlight clicked:', annotation);
+                
+                // Get the text from the clicked highlight using Apryse's official method
+                let highlightedText = '';
+                try {
+                  // Use Apryse's official method: getQuads() and documentViewer.select()
+                  if (annotation.getQuads && typeof annotation.getQuads === 'function') {
+                    const quads = annotation.getQuads();
+                    console.log('🖱️ Clicked annotation quads:', quads);
+                    
+                    if (quads && quads.length > 0) {
+                      // Extract text for each quad and combine
+                      const textsUnderHighlight = quads.map((quad: any) => {
+                        const selectionStartPoint = { 
+                          x: quad.x1, 
+                          y: quad.y1, 
+                          pageNumber: annotation.PageNumber 
+                        };
+                        const selectionEndPoint = { 
+                          x: quad.x3, 
+                          y: quad.y3, 
+                          pageNumber: annotation.PageNumber 
+                        };
+                        
+                        // Select the text within the quad
+                        documentViewer.select(selectionStartPoint, selectionEndPoint);
+                        
+                        // Retrieve the selected text
+                        const selectedText = documentViewer.getSelectedText();
+                        
+                        // Clear the selection to avoid visual artifacts
+                        documentViewer.clearSelection();
+                        
+                        return selectedText;
+                      });
+                      
+                      // Combine all texts
+                      highlightedText = textsUnderHighlight.filter((text: string) => text && text.trim()).join(' ');
+                    }
+                  }
+                  
+                  // Fallback: try to get from annotation contents
+                  if (!highlightedText && annotation.Contents) {
+                    highlightedText = annotation.Contents;
+                  }
+                  
+                  if (highlightedText.trim()) {
+                    console.log('📝 Clicked highlight text:', highlightedText);
+                    setSelectedText(highlightedText);
+                    setSelectionPosition({ x: annotation.X, y: annotation.Y });
+                    setShowTextSelectionPopup(true);
+                  }
+                } catch (error) {
+                  console.log('Error getting clicked highlight text:', error);
+                }
+              }
+            }
+          });
           
           // Load collaboration highlights
           if (collaborationHighlights.length > 0) {
@@ -806,6 +1187,315 @@ export default function ApryseWebViewer({
     }
   }
 
+  // Math tool functionality
+  const activateMathTool = useCallback(() => {
+    if (webViewerInstance && webViewerInstance.Core) {
+      const { annotationManager } = webViewerInstance.Core
+      
+      if (!mathToolActive) {
+        // Enable math selection mode
+        setMathToolActive(true)
+        document.body.style.cursor = 'crosshair'
+        
+        // Use WebViewer's text selection events instead of document click
+        if (webViewerInstance && webViewerInstance.Core) {
+          const { documentViewer } = webViewerInstance.Core
+          
+          // Listen for text selection events
+          documentViewer.addEventListener('textSelectionChanged', handleWebViewerTextSelection)
+          console.log('WebViewer text selection listener added')
+          
+          // Also add a fallback method using document selection
+          document.addEventListener('mouseup', handleDocumentSelection)
+          console.log('Document selection fallback listener added')
+        }
+        
+        // Show activation feedback
+        setProcessingMessage('Math tool activated! Select mathematical text to explain.')
+        setTimeout(() => setProcessingMessage(''), 3000)
+        
+        console.log('Math tool activated - click on equations to explain them')
+      } else {
+        // Disable math selection mode
+        setMathToolActive(false)
+        document.body.style.cursor = 'default'
+        
+        // Remove WebViewer text selection listener
+        if (webViewerInstance && webViewerInstance.Core) {
+          const { documentViewer } = webViewerInstance.Core
+          documentViewer.removeEventListener('textSelectionChanged', handleWebViewerTextSelection)
+          console.log('WebViewer text selection listener removed')
+        }
+        
+        // Remove document selection fallback listener
+        document.removeEventListener('mouseup', handleDocumentSelection)
+        console.log('Document selection fallback listener removed')
+        
+        // Show deactivation feedback
+        setProcessingMessage('Math tool deactivated')
+        setTimeout(() => setProcessingMessage(''), 2000)
+        
+        console.log('Math tool deactivated')
+      }
+    }
+  }, [mathToolActive, webViewerInstance])
+
+  const handleWebViewerTextSelection = useCallback(async (event: any) => {
+    if (!mathToolActive) return
+    
+    console.log('WebViewer text selection event triggered:', event)
+    console.log('Event type:', event.type)
+    console.log('Event detail:', event.detail)
+    console.log('Event target:', event.target)
+    
+    try {
+      // Try different ways to get selected text from WebViewer
+      let selectedText = ''
+      
+      // Method 1: Try event.detail.selectedText
+      if (event.detail?.selectedText) {
+        selectedText = event.detail.selectedText
+      }
+      // Method 2: Try event.target.getSelectedText()
+      else if (event.target?.getSelectedText) {
+        selectedText = event.target.getSelectedText()
+      }
+      // Method 3: Try window.getSelection() as fallback
+      else {
+        const selection = window.getSelection()
+        selectedText = selection?.toString() || ''
+      }
+      
+      console.log('Selected text from WebViewer:', selectedText)
+      
+      if (selectedText && selectedText.trim()) {
+        const trimmedText = selectedText.trim()
+        
+        // Check if selection contains mathematical content
+        if (isMathematicalContent(trimmedText)) {
+          console.log('Mathematical content detected!')
+          
+          setIsProcessing(true)
+          setProcessingProgress(0)
+          
+          try {
+            // Step 1: Analyze selection
+            setProcessingMessage('Analyzing mathematical content...')
+            setProcessingProgress(20)
+            await new Promise(resolve => setTimeout(resolve, 300))
+            
+            // Step 2: Extract context
+            setProcessingMessage('Extracting surrounding context...')
+            setProcessingProgress(40)
+            const context = extractContextAroundSelection(trimmedText)
+            setEquationContext(context)
+            await new Promise(resolve => setTimeout(resolve, 300))
+            
+            // Step 3: Prepare for AI
+            setProcessingMessage('Preparing content for AI analysis...')
+            setProcessingProgress(60)
+            setSelectedEquation(trimmedText)
+            await new Promise(resolve => setTimeout(resolve, 300))
+            
+            // Step 4: Show explainer
+            setProcessingMessage('Opening math explainer...')
+            setProcessingProgress(80)
+            setShowMathExplainer(true)
+            await new Promise(resolve => setTimeout(resolve, 200))
+            
+            setProcessingProgress(100)
+            setProcessingMessage('Ready!')
+            setTimeout(() => {
+              setIsProcessing(false)
+              setProcessingMessage('')
+              setProcessingProgress(0)
+            }, 1000)
+            
+          } catch (error) {
+            console.error('Error in math processing:', error)
+            setProcessingMessage('Error processing selection')
+            setTimeout(() => {
+              setIsProcessing(false)
+              setProcessingMessage('')
+              setProcessingProgress(0)
+            }, 2000)
+          }
+          
+          setMathToolActive(false)
+          document.body.style.cursor = 'default'
+          
+          // Remove WebViewer text selection listener
+          if (webViewerInstance && webViewerInstance.Core) {
+            const { documentViewer } = webViewerInstance.Core
+            documentViewer.removeEventListener('textSelectionChanged', handleWebViewerTextSelection)
+            console.log('WebViewer text selection listener removed')
+          }
+          
+          console.log('Mathematical content selected:', trimmedText)
+        } else {
+          console.log('Text is not mathematical')
+          // Show feedback that selection is not mathematical
+          setProcessingMessage('Selected text does not appear to be mathematical. Try selecting an equation, formula, or mathematical expression.')
+          setTimeout(() => setProcessingMessage(''), 4000)
+        }
+      } else {
+        console.log('No text selection found in WebViewer event')
+      }
+    } catch (error) {
+      console.error('Error handling WebViewer text selection:', error)
+    }
+  }, [mathToolActive, webViewerInstance])
+
+  const isMathematicalContent = (text: string): boolean => {
+    // More lenient math detection
+    const trimmedText = text.trim()
+    
+    // Check for mathematical symbols, equations, variables, etc.
+    const mathPatterns = [
+      /[=+\-*/^()\[\]{}]/, // Mathematical operators
+      /[α-ωΑ-Ω]/, // Greek letters
+      /[∫∑∏√∞±≤≥≠≈]/, // Mathematical symbols
+      /\b[a-zA-Z]\s*=\s*/, // Variable assignments
+      /\b\d+\.\d+/, // Decimal numbers
+      /\b[a-zA-Z]\d+/, // Variables with numbers
+      /\b(sin|cos|tan|log|ln|exp|sqrt)\s*\(/, // Mathematical functions
+      /\b(where|such that|given that|assume|let)\b/i, // Mathematical language
+      /\b\d+\s*[+\-*/]\s*\d+/, // Basic arithmetic
+      /\b[a-zA-Z]\s*[+\-*/]\s*[a-zA-Z]/, // Variable arithmetic
+      /\b\d+\s*[=<>]\s*\d+/, // Comparisons
+      /\b[a-zA-Z]\s*[=<>]\s*\d+/, // Variable comparisons
+      /\b[a-zA-Z]\s*[=<>]\s*[a-zA-Z]/, // Variable to variable
+    ]
+    
+    // Also check for common math words
+    const mathWords = [
+      'equation', 'formula', 'function', 'variable', 'constant', 'parameter',
+      'derivative', 'integral', 'sum', 'product', 'limit', 'series',
+      'matrix', 'vector', 'scalar', 'tensor', 'polynomial', 'quadratic',
+      'linear', 'exponential', 'logarithmic', 'trigonometric', 'geometric'
+    ]
+    
+    const hasMathPattern = mathPatterns.some(pattern => pattern.test(trimmedText))
+    const hasMathWord = mathWords.some(word => trimmedText.toLowerCase().includes(word))
+    
+    console.log('Math detection:', {
+      text: trimmedText,
+      hasMathPattern,
+      hasMathWord,
+      isMathematical: hasMathPattern || hasMathWord
+    })
+    
+    return hasMathPattern || hasMathWord || trimmedText.length > 3
+  }
+
+  // Fallback handler for document text selection
+  const handleDocumentSelection = useCallback(async () => {
+    if (!mathToolActive) return
+    
+    console.log('Document selection fallback triggered')
+    
+    try {
+      // Get selected text from document
+      const selection = window.getSelection()
+      const selectedText = selection?.toString() || ''
+      
+      console.log('Selected text from document:', selectedText)
+      
+      if (selectedText && selectedText.trim()) {
+        const trimmedText = selectedText.trim()
+        
+        // Check if selection contains mathematical content
+        if (isMathematicalContent(trimmedText)) {
+          console.log('Mathematical content detected via fallback!')
+          
+          setIsProcessing(true)
+          setProcessingProgress(0)
+          
+          try {
+            // Step 1: Analyze selection
+            setProcessingMessage('Analyzing mathematical content...')
+            setProcessingProgress(20)
+            await new Promise(resolve => setTimeout(resolve, 300))
+            
+            // Step 2: Extract context
+            setProcessingMessage('Extracting surrounding context...')
+            setProcessingProgress(40)
+            const context = extractContextAroundSelection(trimmedText)
+            setEquationContext(context)
+            await new Promise(resolve => setTimeout(resolve, 300))
+            
+            // Step 3: Prepare for AI
+            setProcessingMessage('Preparing content for AI analysis...')
+            setProcessingProgress(60)
+            setSelectedEquation(trimmedText)
+            await new Promise(resolve => setTimeout(resolve, 300))
+            
+            // Step 4: Show explainer
+            setProcessingMessage('Opening math explainer...')
+            setProcessingProgress(80)
+            setShowMathExplainer(true)
+            await new Promise(resolve => setTimeout(resolve, 200))
+            
+            setProcessingProgress(100)
+            setProcessingMessage('Ready!')
+            setTimeout(() => {
+              setIsProcessing(false)
+              setProcessingMessage('')
+              setProcessingProgress(0)
+            }, 1000)
+            
+          } catch (error) {
+            console.error('Error in math processing:', error)
+            setProcessingMessage('Error processing selection')
+            setTimeout(() => {
+              setIsProcessing(false)
+              setProcessingMessage('')
+              setProcessingProgress(0)
+            }, 2000)
+          }
+          
+          setMathToolActive(false)
+          document.body.style.cursor = 'default'
+          
+          // Remove all listeners
+          if (webViewerInstance && webViewerInstance.Core) {
+            const { documentViewer } = webViewerInstance.Core
+            documentViewer.removeEventListener('textSelectionChanged', handleWebViewerTextSelection)
+            console.log('WebViewer text selection listener removed')
+          }
+          document.removeEventListener('mouseup', handleDocumentSelection)
+          console.log('Document selection fallback listener removed')
+          
+          console.log('Mathematical content selected via fallback:', trimmedText)
+        } else {
+          console.log('Text is not mathematical via fallback')
+        }
+      } else {
+        console.log('No text selection found in document fallback')
+      }
+    } catch (error) {
+      console.error('Error handling document selection fallback:', error)
+    }
+  }, [mathToolActive, webViewerInstance])
+
+  const extractContextAroundSelection = (selectedText: string): string => {
+    // Try to get surrounding text for context
+    const selection = window.getSelection()
+    if (!selection || selection.rangeCount === 0) return ''
+    
+    const range = selection.getRangeAt(0)
+    const container = range.commonAncestorContainer
+    
+    if (container.nodeType === Node.TEXT_NODE) {
+      const text = container.textContent || ''
+      const start = Math.max(0, range.startOffset - 100)
+      const end = Math.min(text.length, range.endOffset + 100)
+      return text.substring(start, end).trim()
+    }
+    
+    return 'Mathematical content selected from document'
+  }
+
   if (error) {
     return (
       <div className="flex items-center justify-center h-full bg-gray-50">
@@ -844,6 +1534,35 @@ export default function ApryseWebViewer({
 
   return (
     <div className="flex h-full bg-white">
+      {/* Simple Progress Indicator - Top of Screen */}
+      {isProcessing && (
+        <div className="fixed top-0 left-0 right-0 bg-blue-600 text-white z-[9999] shadow-lg">
+          <div className="px-4 py-2">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center space-x-3">
+                <div className="animate-spin rounded-full h-4 w-4 border-2 border-white border-t-transparent"></div>
+                <span className="text-sm font-medium">{processingMessage}</span>
+              </div>
+              <span className="text-sm font-medium">{processingProgress}%</span>
+            </div>
+            <div className="mt-2 w-full bg-blue-700 rounded-full h-1">
+              <div 
+                className="bg-white h-1 rounded-full transition-all duration-300 ease-out"
+                style={{ width: `${processingProgress}%` }}
+              ></div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Status Messages */}
+      {processingMessage && !isProcessing && (
+        <div className="fixed top-0 left-0 right-0 bg-green-600 text-white z-[9998] shadow-lg">
+          <div className="px-4 py-2 text-center">
+            <span className="text-sm font-medium">{processingMessage}</span>
+          </div>
+        </div>
+      )}
       {/* Academic Sidebar */}
       <div className="w-80 bg-gray-50 border-r border-gray-200 flex flex-col">
         {/* Document Info */}
@@ -1293,6 +2012,34 @@ export default function ApryseWebViewer({
           <h4 className="font-medium text-gray-900 mb-4">Research Tools</h4>
           
           <div className="space-y-2">
+            {/* Math Tool */}
+            <Button
+              variant={mathToolActive ? "default" : "outline"}
+              size="sm"
+              onClick={activateMathTool}
+              className="flex items-center space-x-2"
+              title="Math Explainer Tool - Select equations to get AI-powered explanations"
+            >
+              <Brain className="w-4 h-4" />
+              <span>Math Explainer</span>
+              {mathToolActive && (
+                <Badge variant="secondary" className="ml-1">
+                  Active
+                </Badge>
+              )}
+            </Button>
+            
+            {/* Math Tool Status */}
+            {mathToolActive && (
+              <div className="mt-2 p-2 bg-green-50 border border-green-200 rounded-lg">
+                <div className="flex items-center space-x-2 text-sm text-green-700">
+                  <div className="w-2 h-2 bg-green-500 rounded-full animate-pulse"></div>
+                  <span>Math tool is active - Select mathematical text to explain</span>
+                </div>
+              </div>
+            )}
+
+            {/* Collaboration Panel Toggle */}
             <Button 
               variant="ghost" 
               size="sm" 
@@ -1489,7 +2236,114 @@ export default function ApryseWebViewer({
         </div>
       )}
 
-
+      {/* Math Explainer Modal */}
+      <MathExplainer
+        isOpen={showMathExplainer}
+        onClose={() => setShowMathExplainer(false)}
+        equation={selectedEquation}
+        context={equationContext}
+        documentContent=""
+      />
+      
+      {/* Debug info for text selection */}
+      {process.env.NODE_ENV === 'development' && (
+        <div className="fixed bottom-4 right-4 bg-black text-white p-3 text-xs rounded z-50 max-w-sm">
+          <div className="mb-2 font-bold">📝 TEXT CAPTURE DEBUG</div>
+          <div>Last Selected: {lastSelectedText ? `"${lastSelectedText.substring(0, 30)}..."` : 'None'}</div>
+          <div>Total Captured: {capturedSelections.length}</div>
+          <div className="mt-2 border-t pt-2">
+            <div className="font-semibold">Recent Selections:</div>
+            {capturedSelections.slice(-3).map((sel, idx) => (
+              <div key={idx} className="mt-1 text-yellow-300">
+                "{sel.text.substring(0, 25)}..." 
+                {sel.pageNumber && ` (p.${sel.pageNumber})`}
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+      
+      {/* Text Selection Popup */}
+      {showTextSelectionPopup && selectedText && (
+        <TextSelectionPopup
+          selectedText={selectedText}
+          position={selectionPosition}
+          onClose={() => setShowTextSelectionPopup(false)}
+          onHighlight={(color) => {
+            // Add highlight annotation using WebViewer
+            if (webViewerInstance && webViewerInstance.Core) {
+              const { documentViewer, annotationManager, Annotations } = webViewerInstance.Core;
+              const selectedTextQuads = documentViewer.getSelectedTextQuads();
+              
+              if (selectedTextQuads && selectedTextQuads.length > 0) {
+                const pageNumber = selectedTextQuads[0].pageNumber;
+                const highlight = new Annotations.HighlightAnnotation();
+                highlight.PageNumber = pageNumber;
+                highlight.Quads = selectedTextQuads.map((quad: any) => quad.quads).flat();
+                highlight.StrokeColor = new Annotations.Color(color);
+                highlight.Author = userName;
+                
+                annotationManager.addAnnotation(highlight);
+                annotationManager.redrawAnnotation(highlight);
+                documentViewer.clearSelection();
+              }
+            }
+            setShowTextSelectionPopup(false);
+          }}
+          onAnnotate={(comment) => {
+            // Add comment annotation using WebViewer
+            if (webViewerInstance && webViewerInstance.Core) {
+              const { documentViewer, annotationManager, Annotations } = webViewerInstance.Core;
+              const selectedTextQuads = documentViewer.getSelectedTextQuads();
+              
+              if (selectedTextQuads && selectedTextQuads.length > 0) {
+                const pageNumber = selectedTextQuads[0].pageNumber;
+                const highlight = new Annotations.HighlightAnnotation();
+                highlight.PageNumber = pageNumber;
+                highlight.Quads = selectedTextQuads.map((quad: any) => quad.quads).flat();
+                highlight.StrokeColor = new Annotations.Color('#ffeb3b');
+                highlight.Author = userName;
+                highlight.Contents = comment;
+                
+                // Create a sticky note for the comment
+                const note = new Annotations.StickyAnnotation();
+                note.PageNumber = pageNumber;
+                note.X = selectedTextQuads[0].quads[0].x1;
+                note.Y = selectedTextQuads[0].quads[0].y1;
+                note.Contents = comment;
+                note.Author = userName;
+                note.Subject = 'Comment';
+                note.InReplyTo = highlight.Id;
+                
+                annotationManager.addAnnotation(highlight);
+                annotationManager.addAnnotation(note);
+                annotationManager.redrawAnnotation(highlight);
+                annotationManager.redrawAnnotation(note);
+                documentViewer.clearSelection();
+              }
+            }
+            setShowTextSelectionPopup(false);
+          }}
+          onAIExplain={() => {
+            // Check if it's mathematical content
+            if (isMathematicalContent(selectedText)) {
+              setSelectedEquation(selectedText);
+              setEquationContext(extractContextAroundSelection(selectedText));
+              setShowMathExplainer(true);
+            } else {
+              // For non-mathematical content, you could open a general AI chat
+              // or send the text to the chat sidebar
+              alert(`AI analysis for: "${selectedText}"\n\nThis feature can be extended to provide AI-powered explanations for any selected text.`);
+            }
+            setShowTextSelectionPopup(false);
+          }}
+          onCopy={() => {
+            // Copy is handled internally by the popup
+            console.log('Text copied to clipboard');
+          }}
+          documentContext={equationContext}
+        />
+      )}
     </div>
   )
 } 

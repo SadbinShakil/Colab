@@ -12,8 +12,8 @@ export async function verifyPassword(password: string, hashedPassword: string): 
   return bcrypt.compare(password, hashedPassword)
 }
 
-export function signJWT(payload: object, expiresIn: string = '7d'): string {
-  return jwt.sign(payload, JWT_SECRET, { expiresIn })
+export function signJWT(payload: object, expiresIn: string | number = '7d'): string {
+  return jwt.sign(payload, JWT_SECRET, { expiresIn: expiresIn as any })
 }
 
 export function verifyJWT(token: string): any {
