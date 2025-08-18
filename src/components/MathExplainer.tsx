@@ -162,7 +162,7 @@ export default function MathExplainer({
 
   return (
     <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-      <Card className="w-full max-w-4xl max-h-[90vh] overflow-hidden shadow-2xl">
+      <Card className="w-full max-w-4xl h-[90vh] flex flex-col overflow-hidden shadow-2xl">
         <CardHeader className="bg-gradient-to-r from-blue-600 to-purple-600 text-white shadow-lg">
           <div className="flex items-center justify-between">
             <div className="flex items-center space-x-3">
@@ -192,7 +192,7 @@ export default function MathExplainer({
           )}
         </CardHeader>
 
-        <CardContent className="p-0">
+        <CardContent className="p-0 flex-1 flex flex-col overflow-hidden">
           {/* Custom Question Input */}
           {showCustomQuestion && (
             <div className="p-4 border-b bg-gray-50">
@@ -278,9 +278,9 @@ export default function MathExplainer({
 
           {/* Explanation Content */}
           {explanation && !isLoading && !error && (
-            <div className="flex h-96 bg-white">
+            <div className="flex flex-1 bg-white overflow-hidden">
               {/* Tab Navigation */}
-              <div className="w-48 border-r border-gray-200 bg-gray-50 overflow-y-auto">
+              <div className="w-48 border-r border-gray-200 bg-gray-50 overflow-y-auto flex-shrink-0">
                 {Object.entries(explanation).map(([key, content]) => {
                   if (!content.trim()) return null
                   return (
@@ -303,7 +303,8 @@ export default function MathExplainer({
               </div>
 
               {/* Tab Content */}
-              <div className="flex-1 p-6 overflow-y-auto bg-white">
+              <div className="flex-1 flex flex-col bg-white overflow-hidden">
+                <div className="p-6 overflow-y-auto flex-1">
                 <div className="max-w-none">
                   <div className="mb-6">
                     <h3 className="text-xl font-bold text-gray-900 mb-3 flex items-center space-x-2">
@@ -346,6 +347,7 @@ export default function MathExplainer({
                       {explanation[activeTab]}
                     </div>
                   </div>
+                </div>
                 </div>
               </div>
             </div>

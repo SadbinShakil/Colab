@@ -12,8 +12,10 @@ import {
   Check,
   BookOpen,
   Search,
-  Share
+  Share,
+  Calculator
 } from 'lucide-react'
+import { getContentType } from '../utils/contentDetector'
 
 interface TextSelectionPopupProps {
   selectedText: string
@@ -22,6 +24,7 @@ interface TextSelectionPopupProps {
   onHighlight?: (color: string) => void
   onAnnotate?: (comment: string) => void
   onAIExplain?: () => void
+  onGeneralExplain?: () => void
   onCopy?: () => void
   documentContext?: string
 }
@@ -33,6 +36,7 @@ export default function TextSelectionPopup({
   onHighlight,
   onAnnotate,
   onAIExplain,
+  onGeneralExplain,
   onCopy,
   documentContext
 }: TextSelectionPopupProps) {
@@ -199,16 +203,36 @@ export default function TextSelectionPopup({
                 <span className="text-xs">Comment</span>
               </Button>
 
-              {/* AI Explain */}
+              {/* Math AI Explainer */}
               <Button
                 variant="ghost"
                 size="sm"
-                onClick={handleAIExplain}
-                className="flex flex-col items-center gap-1 h-auto py-2"
+                onClick={() => {
+                  if (onAIExplain) onAIExplain()
+                }}
+                className="flex flex-col items-center gap-1 h-auto py-2 hover:bg-blue-50"
+                title="Get mathematical explanation powered by GPT-4"
               >
-                <Brain className="h-4 w-4" />
-                <span className="text-xs">AI Explain</span>
+                <Calculator className="h-4 w-4 text-blue-600" />
+                <span className="text-xs font-medium text-blue-700">Math AI</span>
               </Button>
+
+                             {/* Advanced AI Explainer */}
+               <Button
+                 variant="ghost"
+                 size="sm"
+                 onClick={() => {
+                   if (onGeneralExplain) onGeneralExplain()
+                 }}
+                 className="flex flex-col items-center gap-1 h-auto py-2 hover:bg-gradient-to-r hover:from-purple-50 hover:to-blue-50"
+                 title="Get advanced AI explanation with multiple formats and depth levels"
+               >
+                 <div className="relative">
+                   <BookOpen className="h-4 w-4 text-purple-600" />
+                   <div className="absolute -top-1 -right-1 w-2 h-2 bg-gradient-to-r from-purple-500 to-blue-500 rounded-full animate-pulse"></div>
+                 </div>
+                 <span className="text-xs font-medium bg-gradient-to-r from-purple-700 to-blue-700 bg-clip-text text-transparent">Smart AI</span>
+               </Button>
 
               {/* Web Search */}
               <Button

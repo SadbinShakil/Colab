@@ -46,7 +46,10 @@ import {
   Zap
 } from 'lucide-react'
 import MathExplainer from './MathExplainer'
+import GeneralExplainer from './GeneralExplainer'
+import AdvancedExplainer from './AdvancedExplainer'
 import TextSelectionPopup from './TextSelectionPopup'
+import { isMathematicalContent } from '../utils/contentDetector'
 
 interface ApryseWebViewerProps {
   documentUrl: string
@@ -147,6 +150,12 @@ export default function ApryseWebViewer({
   const [showTextSelectionPopup, setShowTextSelectionPopup] = useState(false)
   const [selectedText, setSelectedText] = useState('')
   const [selectionPosition, setSelectionPosition] = useState({ x: 0, y: 0 })
+  
+  // General Explainer state
+  const [showGeneralExplainer, setShowGeneralExplainer] = useState(false)
+  const [generalExplainerText, setGeneralExplainerText] = useState('')
+  const [showAdvancedExplainer, setShowAdvancedExplainer] = useState(false)
+  const [advancedExplainerText, setAdvancedExplainerText] = useState('')
 
   // Join document and track collaborators
   useEffect(() => {
@@ -2245,6 +2254,33 @@ export default function ApryseWebViewer({
         documentContent=""
       />
       
+      {/* General Explainer Modal */}
+      <GeneralExplainer
+        isOpen={showGeneralExplainer}
+        onClose={() => setShowGeneralExplainer(false)}
+        selectedText={generalExplainerText}
+        documentContext={equationContext}
+        documentContent=""
+        documentTitle=""
+        documentAuthors=""
+        documentUrl={documentUrl}
+        userId={userId}
+        userName={userName}
+      />
+
+      {/* Advanced Explainer Modal */}
+      <AdvancedExplainer
+        isOpen={showAdvancedExplainer}
+        onClose={() => setShowAdvancedExplainer(false)}
+        selectedText={advancedExplainerText}
+        documentContent=""
+        documentTitle=""
+        documentAuthors=""
+        documentUrl={documentUrl}
+        userId={userId}
+        userName={userName}
+      />
+      
       {/* Debug info for text selection */}
       {process.env.NODE_ENV === 'development' && (
         <div className="fixed bottom-4 right-4 bg-black text-white p-3 text-xs rounded z-50 max-w-sm">
@@ -2325,16 +2361,18 @@ export default function ApryseWebViewer({
             setShowTextSelectionPopup(false);
           }}
           onAIExplain={() => {
-            // Check if it's mathematical content
-            if (isMathematicalContent(selectedText)) {
-              setSelectedEquation(selectedText);
-              setEquationContext(extractContextAroundSelection(selectedText));
-              setShowMathExplainer(true);
-            } else {
-              // For non-mathematical content, you could open a general AI chat
-              // or send the text to the chat sidebar
-              alert(`AI analysis for: "${selectedText}"\n\nThis feature can be extended to provide AI-powered explanations for any selected text.`);
-            }
+            // Always route to Math Explainer for this button
+            console.log('🧮 Math AI button clicked for:', selectedText);
+            setSelectedEquation(selectedText);
+            setEquationContext(extractContextAroundSelection(selectedText));
+            setShowMathExplainer(true);
+            setShowTextSelectionPopup(false);
+          }}
+          onGeneralExplain={() => {
+            // Always route to Advanced Explainer for this button
+            console.log('🚀 Smart AI button clicked for:', selectedText);
+            setAdvancedExplainerText(selectedText);
+            setShowAdvancedExplainer(true);
             setShowTextSelectionPopup(false);
           }}
           onCopy={() => {
