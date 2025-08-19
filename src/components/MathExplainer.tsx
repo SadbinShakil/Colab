@@ -185,14 +185,14 @@ export default function MathExplainer({
           {equation && (
             <div className="mt-4 p-4 bg-white/10 rounded-lg border border-white/20">
               <div className="text-sm opacity-90 mb-3 font-medium">📝 Selected Text to Explain:</div>
-              <div className="font-mono text-lg bg-white/20 p-3 rounded border border-white/10 text-white font-bold">
+              <div className="font-mono text-sm bg-white/20 p-3 rounded border border-white/10 text-white font-bold max-h-32 overflow-y-auto">
                 {equation}
               </div>
             </div>
           )}
         </CardHeader>
 
-        <CardContent className="p-0 flex-1 flex flex-col overflow-hidden">
+        <CardContent className="p-0 flex-1 flex flex-col overflow-y-auto">
           {/* Custom Question Input */}
           {showCustomQuestion && (
             <div className="p-4 border-b bg-gray-50">

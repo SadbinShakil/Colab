@@ -13,9 +13,14 @@ import {
   BookOpen,
   Search,
   Share,
-  Calculator
+  Calculator,
+  Table2,
+  Image as ImageIcon,
+  GraduationCap
 } from 'lucide-react'
 import { getContentType } from '../utils/contentDetector'
+import { isTableContent } from '../utils/tableDetector'
+import { isImageContent } from '../utils/imageDetector'
 
 interface TextSelectionPopupProps {
   selectedText: string
@@ -25,6 +30,9 @@ interface TextSelectionPopupProps {
   onAnnotate?: (comment: string) => void
   onAIExplain?: () => void
   onGeneralExplain?: () => void
+  onTableExplain?: () => void
+  onImageExplain?: () => void
+  onPrerequisiteHelp?: () => void
   onCopy?: () => void
   documentContext?: string
 }
@@ -37,6 +45,9 @@ export default function TextSelectionPopup({
   onAnnotate,
   onAIExplain,
   onGeneralExplain,
+  onTableExplain,
+  onImageExplain,
+  onPrerequisiteHelp,
   onCopy,
   documentContext
 }: TextSelectionPopupProps) {
@@ -233,6 +244,61 @@ export default function TextSelectionPopup({
                  </div>
                  <span className="text-xs font-medium bg-gradient-to-r from-purple-700 to-blue-700 bg-clip-text text-transparent">Smart AI</span>
                </Button>
+
+               {/* Table AI Explainer */}
+               {isTableContent(selectedText) && (
+                 <Button
+                   variant="ghost"
+                   size="sm"
+                   onClick={() => {
+                     if (onTableExplain) onTableExplain()
+                   }}
+                   className="flex flex-col items-center gap-1 h-auto py-2 hover:bg-gradient-to-r hover:from-orange-50 hover:to-red-50"
+                   title="Get intelligent table data analysis and insights"
+                 >
+                   <div className="relative">
+                     <Table2 className="h-4 w-4 text-orange-600" />
+                     <div className="absolute -top-1 -right-1 w-2 h-2 bg-gradient-to-r from-orange-500 to-red-500 rounded-full animate-pulse"></div>
+                   </div>
+                   <span className="text-xs font-medium bg-gradient-to-r from-orange-700 to-red-700 bg-clip-text text-transparent">Table AI</span>
+                 </Button>
+               )}
+
+                             {/* Image AI Explainer */}
+              {isImageContent(selectedText) && (
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => {
+                    if (onImageExplain) onImageExplain()
+                  }}
+                  className="flex flex-col items-center gap-1 h-auto py-2 hover:bg-gradient-to-r hover:from-blue-50 hover:to-purple-50"
+                  title="Get AI-powered image and visual content analysis"
+                >
+                  <div className="relative">
+                    <ImageIcon className="h-4 w-4 text-blue-600" />
+                    <div className="absolute -top-1 -right-1 w-2 h-2 bg-gradient-to-r from-blue-500 to-purple-500 rounded-full animate-pulse"></div>
+                  </div>
+                  <span className="text-xs font-medium bg-gradient-to-r from-blue-700 to-purple-700 bg-clip-text text-transparent">Image AI</span>
+                </Button>
+              )}
+
+              {/* Prerequisite Helper */}
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => {
+                  if (onPrerequisiteHelp) onPrerequisiteHelp()
+                }}
+                className="flex flex-col items-center gap-1 h-auto py-2 hover:bg-gradient-to-r hover:from-green-50 hover:to-teal-50"
+                title="Get prerequisite knowledge and background needed to understand this content"
+              >
+                <div className="relative">
+                  <GraduationCap className="h-4 w-4 text-green-600" />
+                  <div className="absolute -top-1 -right-1 w-2 h-2 bg-gradient-to-r from-green-500 to-teal-500 rounded-full animate-pulse"></div>
+                </div>
+                <span className="text-xs font-medium bg-gradient-to-r from-green-700 to-teal-700 bg-clip-text text-transparent">Prerequisites</span>
+              </Button>
 
               {/* Web Search */}
               <Button

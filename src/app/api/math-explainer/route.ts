@@ -2,11 +2,44 @@ import OpenAI from 'openai'
 import { NextRequest, NextResponse } from 'next/server'
 
 const openai = new OpenAI({ 
-  apiKey: process.env.OPENAI_API_KEY 
+  apiKey: process.env.OPENAI_API_KEY || 'dummy-key-for-development'
 })
 
 export async function POST(request: NextRequest) {
   try {
+    // Check if we have a valid API key
+    if (!process.env.OPENAI_API_KEY || process.env.OPENAI_API_KEY === 'sk-your-openai-api-key-here') {
+      // Return mock response for testing when no real API key
+      const mockResponse = `## Mathematical Analysis (Demo Mode)
+
+### 🔢 **Step-by-Step Breakdown**
+This appears to be a mathematical concept or equation that would benefit from detailed analysis.
+
+### 📊 **Key Components**
+- **Variables**: Each symbol represents specific mathematical quantities
+- **Operations**: The mathematical operations connect different components
+- **Context**: This relates to the broader research methodology
+
+### 💡 **Intuitive Understanding**
+Think of this as a mathematical tool that helps researchers quantify and analyze their data.
+
+### 🎯 **Practical Application**
+This mathematical approach is commonly used in academic research to:
+- Model complex relationships
+- Quantify research findings
+- Validate theoretical frameworks
+
+### 🔬 **Research Context**
+Understanding this mathematics is crucial for comprehending the paper's methodology and conclusions.
+
+*Note: This is a demo response. Add your OpenAI API key to .env for detailed mathematical analysis.*`
+
+      return NextResponse.json({ 
+        success: true, 
+        explanation: mockResponse 
+      })
+    }
+
     const { equation, context, documentContent, question } = await request.json()
 
     if (!equation && !question) {

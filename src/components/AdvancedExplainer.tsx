@@ -230,7 +230,7 @@ Make the explanation comprehensive yet accessible for the specified level.`
 
   return (
     <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-      <Card className="w-full max-w-6xl h-[95vh] flex flex-col overflow-hidden shadow-2xl">
+      <Card className="w-full max-w-6xl h-[95vh] flex flex-col shadow-2xl">
         <CardHeader className="bg-gradient-to-r from-purple-600 via-blue-600 to-indigo-600 text-white shadow-lg">
           <div className="flex items-center justify-between">
             <div className="flex items-center space-x-3">
@@ -316,14 +316,14 @@ Make the explanation comprehensive yet accessible for the specified level.`
                 <Compass className="w-4 h-4" />
                 <span>Selected Text to Analyze:</span>
               </div>
-              <div className="font-mono text-lg bg-white/20 p-3 rounded border border-white/10 text-white font-bold">
+              <div className="font-mono text-sm bg-white/20 p-3 rounded border border-white/10 text-white font-bold max-h-32 overflow-y-auto">
                 {selectedText}
               </div>
             </div>
           )}
         </CardHeader>
 
-        <CardContent className="p-0 flex-1 flex flex-col overflow-hidden">
+        <CardContent className="p-0 flex-1 flex flex-col overflow-y-auto">
           {/* Custom Question Input */}
           {showCustomQuestion && (
             <div className="p-4 border-b bg-gradient-to-r from-purple-50 to-blue-50">
