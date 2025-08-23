@@ -101,7 +101,7 @@ Authors: ${documentAuthors || 'Unknown'}
 Provide a detailed answer based on the visual content.`
     }
 
-    return `Please analyze the following image caption, figure description, or visual content reference in detail. Even though I cannot see the actual image, please provide insights based on the caption/description.
+    return `Please analyze the following figure caption or description from an academic document. Provide insights based on the description and context.
 
 Visual Content Description/Caption: ${text}
 Document: ${documentTitle || 'Research Document'}
@@ -109,26 +109,26 @@ Authors: ${documentAuthors || 'Academic Authors'}
 
 Please provide a comprehensive analysis in JSON format with these sections:
 {
-  "description": "Detailed description of what's shown in the image",
-  "objects": ["object1", "object2", "object3"],
-  "text": ["any text visible in the image"],
-  "insights": ["key insight 1", "key insight 2", "key insight 3"],
-  "context": "How this relates to the document context and research",
-  "technical": "Technical analysis of charts, graphs, diagrams, or scientific content",
-  "recommendations": ["recommendation1", "recommendation2"]
+  "description": "Detailed interpretation of what the figure likely shows based on the caption",
+  "objects": ["key elements", "components", "variables mentioned"],
+  "text": ["labels", "annotations", "text elements mentioned in caption"],
+  "insights": ["key finding 1", "research insight 2", "methodological insight 3"],
+  "context": "How this figure relates to the research objectives and broader study",
+  "technical": "Technical analysis of the methodology, data presentation, or scientific approach",
+  "recommendations": ["research implication 1", "future direction 2"]
 }
 
 Focus on:
-- What the image/figure likely shows based on the caption
-- Technical concepts and terminology mentioned
-- Research significance and academic context
-- Types of data or information being presented
-- Likely visual elements (charts, diagrams, plots, etc.)
-- Key findings or results being illustrated
-- Scientific or technical implications
-- How this relates to the broader research
+- Scientific methodology and experimental design implied
+- Research findings and their significance
+- Data types and analytical approaches suggested
+- Technical terminology and its meaning in context
+- How this contributes to the research conclusions
+- Statistical or quantitative aspects mentioned
+- Theoretical framework connections
+- Implications for the field of study
 
-Note: Provide analysis based on the caption/description even though the actual image cannot be seen. Focus on interpreting the meaning and significance of what is described.`
+Note: Analysis based on figure caption and research context. Emphasizing scientific interpretation and research relevance.`
   }
 
   // Analyze image content

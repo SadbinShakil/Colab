@@ -87,6 +87,69 @@ export default function PrerequisiteHelper({
     }
   }, [isOpen, selectedText])
 
+  const analyzeDocumentField = (title: string, content: string) => {
+    const titleLower = title.toLowerCase()
+    const contentLower = content.toLowerCase()
+    
+    // Field detection based on keywords
+    if (titleLower.includes('neural') || titleLower.includes('deep learning') || titleLower.includes('machine learning') || 
+        contentLower.includes('neural network') || contentLower.includes('deep learning')) {
+      return 'machine_learning'
+    }
+    if (titleLower.includes('quantum') || contentLower.includes('quantum')) {
+      return 'quantum_computing'
+    }
+    if (titleLower.includes('nlp') || titleLower.includes('natural language') || contentLower.includes('language model')) {
+      return 'natural_language_processing'
+    }
+    if (titleLower.includes('computer vision') || titleLower.includes('image') || contentLower.includes('computer vision')) {
+      return 'computer_vision'
+    }
+    if (titleLower.includes('blockchain') || contentLower.includes('blockchain')) {
+      return 'blockchain'
+    }
+    if (titleLower.includes('bioinformatics') || titleLower.includes('genomics') || contentLower.includes('dna')) {
+      return 'bioinformatics'
+    }
+    return 'general_computer_science'
+  }
+
+  const getFieldSpecificPrerequisites = (field: string) => {
+    const prerequisites = {
+      machine_learning: {
+        math: ['Linear Algebra', 'Calculus', 'Statistics', 'Probability Theory'],
+        programming: ['Python', 'NumPy', 'Pandas', 'Scikit-learn'],
+        concepts: ['Supervised Learning', 'Unsupervised Learning', 'Neural Networks', 'Optimization'],
+        papers: ['Gradient Descent', 'Backpropagation', 'Support Vector Machines']
+      },
+      quantum_computing: {
+        math: ['Linear Algebra', 'Complex Numbers', 'Probability Theory'],
+        physics: ['Quantum Mechanics', 'Quantum States', 'Quantum Gates'],
+        concepts: ['Qubits', 'Superposition', 'Entanglement', 'Quantum Algorithms'],
+        papers: ['Quantum Teleportation', 'Shor\'s Algorithm', 'Grover\'s Algorithm']
+      },
+      natural_language_processing: {
+        math: ['Linear Algebra', 'Statistics', 'Information Theory'],
+        programming: ['Python', 'NLTK', 'spaCy', 'Transformers'],
+        concepts: ['Tokenization', 'Word Embeddings', 'Attention Mechanisms', 'Language Models'],
+        papers: ['Word2Vec', 'BERT', 'Transformer Architecture', 'GPT']
+      },
+      computer_vision: {
+        math: ['Linear Algebra', 'Calculus', 'Signal Processing'],
+        programming: ['Python', 'OpenCV', 'PyTorch', 'TensorFlow'],
+        concepts: ['Convolutional Neural Networks', 'Image Processing', 'Feature Detection'],
+        papers: ['LeNet', 'AlexNet', 'ResNet', 'YOLO']
+      },
+      general_computer_science: {
+        math: ['Discrete Mathematics', 'Linear Algebra', 'Statistics'],
+        programming: ['Python', 'Algorithms', 'Data Structures'],
+        concepts: ['Computational Complexity', 'Algorithm Design', 'Data Analysis'],
+        papers: ['Foundational Computer Science Papers', 'Algorithm Analysis']
+      }
+    }
+    return prerequisites[field] || prerequisites.general_computer_science
+  }
+
   const buildPrerequisitePrompt = (text: string, customQ?: string) => {
     const isWholeDocumentAnalysis = text.includes('Analyze this entire research paper')
     

@@ -1,60 +1,48 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { readdir, stat } from 'fs/promises'
-import { join } from 'path'
 
-export async function GET(request: NextRequest) {
+export async function POST(request: NextRequest) {
   try {
-    const url = new URL(request.url)
-    const id = url.searchParams.get('id')
+    console.log('[Test PDF] API route called')
     
-    const uploadsDir = join(process.cwd(), 'public', 'uploads')
+    const formData = await request.formData()
+    const file = formData.get('file') as File
     
-    // List all files in uploads directory
-    const files = await readdir(uploadsDir)
-    
-    if (id) {
-      // Look for files that start with the given ID
-      const matchingFiles = files.filter(file => file.startsWith(id + '-'))
-      
-      if (matchingFiles.length > 0) {
-        const file = matchingFiles[0]
-        const filePath = join(uploadsDir, file)
-        const fileStats = await stat(filePath)
-        
-        return NextResponse.json({
-          success: true,
-          file: {
-            name: file,
-            size: fileStats.size,
-            url: `/uploads/${file}`,
-            exists: true
-          },
-          allMatchingFiles: matchingFiles
-        })
-      } else {
-        return NextResponse.json({
-          success: false,
-          error: `No files found starting with ID: ${id}`,
-          availableFiles: files.slice(0, 10) // Show first 10 files
-        })
-      }
+    if (!file) {
+      return NextResponse.json(
+        { error: 'No file provided', success: false },
+        { status: 400 }
+      )
     }
     
-    // Return list of all files
+    console.log(`[Test PDF] File received: ${file.name}, Type: ${file.type}, Size: ${file.size}`)
+    
     return NextResponse.json({
       success: true,
-      totalFiles: files.length,
-      files: files.slice(0, 20).map(file => ({
-        name: file,
-        url: `/uploads/${file}`
-      }))
+      message: 'API route working correctly',
+      file: {
+        name: file.name,
+        type: file.type,
+        size: file.size
+      },
+      timestamp: new Date().toISOString()
     })
     
   } catch (error) {
-    console.error('Error in test-pdf endpoint:', error)
+    console.error('[Test PDF] Error:', error)
     return NextResponse.json(
-      { error: 'Internal server error', details: error },
+      { 
+        error: 'API route error', 
+        details: error instanceof Error ? error.message : String(error),
+        success: false
+      },
       { status: 500 }
     )
   }
-} 
+}
+
+export async function GET() {
+  return NextResponse.json({
+    message: 'Test PDF API route is working',
+    timestamp: new Date().toISOString()
+  })
+}
