@@ -24,7 +24,9 @@ import {
   Twitter,
   Linkedin,
   Github,
-  MailIcon
+  MailIcon,
+  Upload,
+  Calculator
 } from 'lucide-react'
 import Image from 'next/image'
 
@@ -316,6 +318,52 @@ export default function HomePage() {
                 </div>
               </div>
             </div>
+          </div>
+        </div>
+      </section>
+
+      {/* Test Pages Section */}
+      <section className="py-16 bg-gray-50">
+        <div className="max-w-7xl mx-auto px-6">
+          <div className="text-center mb-12">
+            <h2 className="text-3xl font-bold text-gray-900 mb-4">
+              Test Our Features
+            </h2>
+            <p className="text-lg text-gray-600 max-w-2xl mx-auto">
+              Try out our AI-powered features with sample documents and test uploads
+            </p>
+          </div>
+          
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-6 max-w-4xl mx-auto">
+            <Link href="/test-upload" className="group">
+              <div className="bg-white p-6 rounded-xl shadow-lg hover:shadow-xl transition-all duration-300 hover:-translate-y-1 border border-gray-200">
+                <div className="w-12 h-12 bg-blue-600 rounded-xl flex items-center justify-center shadow-lg group-hover:bg-blue-700 transition-colors duration-300 mb-4">
+                  <Upload className="w-6 h-6 text-white" />
+                </div>
+                <h3 className="font-semibold text-gray-900 mb-2">Test Upload</h3>
+                <p className="text-sm text-gray-600">Test PDF upload and basic metadata extraction</p>
+              </div>
+            </Link>
+            
+            <Link href="/test-enhanced-metadata" className="group">
+              <div className="bg-white p-6 rounded-xl shadow-lg hover:shadow-xl transition-all duration-300 hover:-translate-y-1 border border-gray-200">
+                <div className="w-12 h-12 bg-purple-600 rounded-xl flex items-center justify-center shadow-lg group-hover:bg-purple-700 transition-colors duration-300 mb-4">
+                  <Brain className="w-6 h-6 text-white" />
+                </div>
+                <h3 className="font-semibold text-gray-900 mb-2">Enhanced Metadata</h3>
+                <p className="text-sm text-gray-600">AI-powered metadata extraction with Crossref & Semantic Scholar</p>
+              </div>
+            </Link>
+            
+            <Link href="/test-math-explainer" className="group">
+              <div className="bg-white p-6 rounded-xl shadow-lg hover:shadow-xl transition-all duration-300 hover:-translate-y-1 border border-gray-200">
+                <div className="w-12 h-12 bg-green-600 rounded-xl flex items-center justify-center shadow-lg group-hover:bg-green-700 transition-colors duration-300 mb-4">
+                  <Calculator className="w-6 h-6 text-white" />
+                </div>
+                <h3 className="font-semibold text-gray-900 mb-2">Math Explainer</h3>
+                <p className="text-sm text-gray-600">AI-powered mathematical concept explanation</p>
+              </div>
+            </Link>
           </div>
         </div>
       </section>

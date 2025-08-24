@@ -16,6 +16,7 @@ import {
 import ApryseWebViewer from '@/components/ApryseWebViewer'
 import { useCollaboration } from '@/hooks/useCollaboration'
 import AISummaryPanel from '@/components/AISummaryPanel'
+import EnhancedMetadataDisplay from '@/components/EnhancedMetadataDisplay'
 
 interface Annotation {
   id: string
@@ -71,7 +72,7 @@ export default function DocumentViewer({ params }: { params: Promise<{ id: strin
   const [showChat, setShowChat] = useState(true)
   const [chatMessage, setChatMessage] = useState('')
   const [isAILoading, setIsAILoading] = useState(false)
-  const [activeTab, setActiveTab] = useState<'chat' | 'ai'>('chat')
+  const [activeTab, setActiveTab] = useState<'chat' | 'ai' | 'metadata'>('chat')
   const [aiQuestion, setAiQuestion] = useState('')
   const [aiMessages, setAiMessages] = useState<AIMessage[]>([])
 
@@ -604,15 +605,24 @@ export default function DocumentViewer({ params }: { params: Promise<{ id: strin
                   <MessageCircle className="h-3 w-3 mr-1" />
                   Chat
                 </Button>
-                <Button 
-                  variant={activeTab === 'ai' ? 'default' : 'ghost'} 
-                  size="sm" 
-                  className="flex-1 h-8"
-                  onClick={() => setActiveTab('ai')}
-                >
-                  <Sparkles className="h-3 w-3 mr-1" />
-                  AI Help
-                </Button>
+                                 <Button 
+                   variant={activeTab === 'ai' ? 'default' : 'ghost'} 
+                   size="sm" 
+                   className="flex-1 h-8"
+                   onClick={() => setActiveTab('ai')}
+                 >
+                   <Sparkles className="h-3 w-3 mr-1" />
+                   AI Help
+                 </Button>
+                 <Button 
+                   variant={activeTab === 'metadata' ? 'default' : 'ghost'} 
+                   size="sm" 
+                   className="flex-1 h-8"
+                   onClick={() => setActiveTab('metadata')}
+                 >
+                   <Brain className="h-3 w-3 mr-1" />
+                   Metadata
+                 </Button>
               </div>
             </div>
 
@@ -620,16 +630,16 @@ export default function DocumentViewer({ params }: { params: Promise<{ id: strin
             {activeTab === 'chat' ? (
               /* Chat Tab */
               <>
-            {/* Chat Messages */}
-            <div className="flex-1 overflow-y-auto p-4 space-y-4">
+                {/* Chat Messages */}
+                <div className="flex-1 overflow-y-auto p-4 space-y-4">
                   {collaboration.chatMessages.map((msg: any) => (
-                <div key={msg.id} className="space-y-2">
-                  <div className="flex items-start space-x-2">
+                    <div key={msg.id} className="space-y-2">
+                      <div className="flex items-start space-x-2">
                         <div className="w-8 h-8 rounded-full bg-gradient-to-br from-blue-500 to-teal-500 flex items-center justify-center text-sm text-white">
                           👤
-                    </div>
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-center space-x-2 mb-1">
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center space-x-2 mb-1">
                             <span className="font-medium text-sm">
                               {msg.userName}
                               {msg.userId === currentUser?.id && ' (You)'}
@@ -637,54 +647,54 @@ export default function DocumentViewer({ params }: { params: Promise<{ id: strin
                             <span className="text-xs text-muted-foreground">
                               {new Date(msg.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
                             </span>
-                      </div>
-                      <div className="bg-muted/50 rounded-lg p-3 text-sm">
+                          </div>
+                          <div className="bg-muted/50 rounded-lg p-3 text-sm">
                             {msg.content}
-                      </div>
-                      <div className="flex items-center space-x-2 mt-2">
-                        <Button variant="ghost" size="sm" className="h-6 px-2 text-xs">
-                          <ThumbsUp className="h-3 w-3 mr-1" />
-                          Like
-                        </Button>
-                        <Button variant="ghost" size="sm" className="h-6 px-2 text-xs">
-                          <Reply className="h-3 w-3 mr-1" />
-                          Reply
-                        </Button>
+                          </div>
+                          <div className="flex items-center space-x-2 mt-2">
+                            <Button variant="ghost" size="sm" className="h-6 px-2 text-xs">
+                              <ThumbsUp className="h-3 w-3 mr-1" />
+                              Like
+                            </Button>
+                            <Button variant="ghost" size="sm" className="h-6 px-2 text-xs">
+                              <Reply className="h-3 w-3 mr-1" />
+                              Reply
+                            </Button>
+                          </div>
+                        </div>
                       </div>
                     </div>
+                  ))}
+                </div>
+
+                {/* Chat Input */}
+                <div className="border-t border-gray-200 p-4">
+                  <div className="flex space-x-2">
+                    <Input
+                      placeholder="Type a message..."
+                      value={chatMessage}
+                      onChange={(e) => setChatMessage(e.target.value)}
+                      onKeyPress={handleKeyPress}
+                      className="flex-1"
+                    />
+                    <Button size="sm" onClick={handleSendMessage} disabled={!chatMessage.trim()}>
+                      <Send className="h-4 w-4" />
+                    </Button>
+                  </div>
+                  <div className="flex items-center justify-between mt-2">
+                    <div className="flex space-x-1">
+                      <Button variant="ghost" size="sm" className="h-6 w-6 p-0">
+                        <Paperclip className="h-3 w-3" />
+                      </Button>
+                      <Button variant="ghost" size="sm" className="h-6 w-6 p-0">
+                        <Smile className="h-3 w-3" />
+                      </Button>
+                    </div>
+                    <span className="text-xs text-muted-foreground">Press Enter to send</span>
                   </div>
                 </div>
-              ))}
-            </div>
-
-            {/* Chat Input */}
-            <div className="border-t border-gray-200 p-4">
-              <div className="flex space-x-2">
-                <Input
-                      placeholder="Type a message..."
-                  value={chatMessage}
-                  onChange={(e) => setChatMessage(e.target.value)}
-                      onKeyPress={handleKeyPress}
-                  className="flex-1"
-                />
-                    <Button size="sm" onClick={handleSendMessage} disabled={!chatMessage.trim()}>
-                  <Send className="h-4 w-4" />
-                </Button>
-              </div>
-              <div className="flex items-center justify-between mt-2">
-                <div className="flex space-x-1">
-                  <Button variant="ghost" size="sm" className="h-6 w-6 p-0">
-                    <Paperclip className="h-3 w-3" />
-                  </Button>
-                  <Button variant="ghost" size="sm" className="h-6 w-6 p-0">
-                    <Smile className="h-3 w-3" />
-                  </Button>
-                </div>
-                <span className="text-xs text-muted-foreground">Press Enter to send</span>
-              </div>
-            </div>
               </>
-            ) : (
+            ) : activeTab === 'ai' ? (
               /* AI Help Tab */
               <>
                 {/* AI Help Info */}
@@ -796,6 +806,14 @@ export default function DocumentViewer({ params }: { params: Promise<{ id: strin
                   </div>
                 </div>
               </>
+            ) : (
+              /* Metadata Tab */
+              <div className="flex-1 overflow-y-auto p-4">
+                <EnhancedMetadataDisplay 
+                  documentId={documentId} 
+                  filename={document?.filename || ''} 
+                />
+              </div>
             )}
           </div>
         )}

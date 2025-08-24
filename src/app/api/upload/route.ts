@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { writeFile, mkdir } from 'fs/promises'
+import { writeFile, mkdir, readFile } from 'fs/promises'
 import { join } from 'path'
 import { existsSync } from 'fs'
 
@@ -66,6 +66,66 @@ export async function POST(request: NextRequest) {
 
     // Store document metadata for retrieval
     storeDocument(metadata.id, metadata)
+
+    // Enhanced metadata extraction using the new paper-ingest API
+    try {
+      console.log('🔄 Starting enhanced metadata extraction...')
+
+      // Create a FormData with the uploaded file for the paper-ingest API
+      const formData = new FormData()
+      const fileBuffer = await readFile(filepath)
+      const fileBlob = new Blob([fileBuffer], { type: 'application/pdf' })
+      formData.append('file', fileBlob, metadata.originalName)
+
+      const metadataResponse = await fetch(`${request.nextUrl.origin}/api/paper-ingest`, {
+        method: 'POST',
+        body: formData
+      })
+
+      if (metadataResponse.ok) {
+        const metadataResult = await metadataResponse.json()
+        console.log('✅ Enhanced metadata extraction successful:', {
+          documentId: metadata.id,
+          title: metadataResult.metadata?.title,
+          doi: metadataResult.metadata?.doi,
+          venue: metadataResult.metadata?.venue,
+          year: metadataResult.metadata?.year,
+          authors: metadataResult.metadata?.authors
+        })
+
+        // Enhance the document metadata with extracted information
+        if (metadataResult.metadata) {
+          metadata.title = metadataResult.metadata.title || metadata.title
+          metadata.authors = metadataResult.metadata.authors?.join(', ') || metadata.authors
+          metadata.journal = metadataResult.metadata.venue || metadata.journal
+          metadata.year = metadataResult.metadata.year || metadata.year
+          metadata.abstract = metadataResult.metadata.abstract || metadata.abstract
+          
+          // Add enhanced metadata info
+          metadata.enhancedMetadata = {
+            status: 'completed',
+            doi: metadataResult.metadata.doi,
+            citationCount: metadataResult.metadata.citationCount,
+            referenceCount: metadataResult.metadata.referenceCount,
+            fieldsOfStudy: metadataResult.metadata.fieldsOfStudy,
+            openAccessPdf: metadataResult.metadata.openAccessPdf,
+            gptSummary: metadataResult.gptSummary
+          }
+        }
+      } else {
+        console.warn('⚠️ Enhanced metadata extraction failed:', metadataResponse.status)
+        metadata.enhancedMetadata = {
+          status: 'failed',
+          error: 'Enhanced metadata extraction failed'
+        }
+      }
+    } catch (metadataError) {
+      console.error('❌ Enhanced metadata extraction error:', metadataError)
+      metadata.enhancedMetadata = {
+        status: 'error',
+        error: metadataError instanceof Error ? metadataError.message : 'Unknown error'
+      }
+    }
 
     // In a real app, you'd save this to a database
     // For now, we'll just return the metadata
