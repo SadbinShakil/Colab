@@ -156,7 +156,7 @@ export default function TextSelectionPopup({
   return (
     <div 
       ref={popupRef}
-      className="fixed z-50 animate-in fade-in slide-in-from-bottom-2"
+      className="fixed z-[9999] animate-in fade-in slide-in-from-bottom-2"
       style={{ position: 'fixed' }}
     >
       <Card className="shadow-2xl border-gray-200 bg-white p-0 min-w-[300px] max-w-[400px]">
@@ -179,6 +179,7 @@ export default function TextSelectionPopup({
 
         {/* Main actions */}
         <div className="p-2">
+          {console.log('🎯 Rendering main actions, showAnnotation:', showAnnotation, 'showHighlightColors:', showHighlightColors)}
           {!showAnnotation && !showHighlightColors ? (
             <div className="grid grid-cols-3 gap-1">
               {/* Copy */}
@@ -207,7 +208,10 @@ export default function TextSelectionPopup({
               <Button
                 variant="ghost"
                 size="sm"
-                onClick={() => setShowAnnotation(true)}
+                onClick={() => {
+                  console.log('🎯 Comment button clicked, setting showAnnotation to true');
+                  setShowAnnotation(true);
+                }}
                 className="flex flex-col items-center gap-1 h-auto py-2"
               >
                 <MessageSquare className="h-4 w-4" />
@@ -348,6 +352,7 @@ export default function TextSelectionPopup({
             </div>
           ) : (
             <div className="space-y-2 p-2">
+              {console.log('🎯 Rendering comment input section, showAnnotation:', true)}
               <textarea
                 value={annotationText}
                 onChange={(e) => setAnnotationText(e.target.value)}

@@ -272,31 +272,32 @@ export default function ScreenCapture({
       {/* Instructions Panel */}
       <div className="absolute top-4 left-1/2 transform -translate-x-1/2 z-60">
         <Card className="bg-white/95 backdrop-blur-sm border shadow-lg">
-          <CardHeader className="pb-3">
+          <CardHeader className="pb-2">
             <div className="flex items-center justify-between">
               <div className="flex items-center space-x-2">
-                <Scissors className="w-5 h-5 text-blue-600" />
-                <CardTitle className="text-lg">Screen Capture Tool</CardTitle>
-                <Badge variant="secondary" className="bg-blue-100 text-blue-800">
-                  📸 Snipping Mode
+                <Scissors className="w-4 h-4 text-blue-600" />
+                <CardTitle className="text-base">Screen Capture</CardTitle>
+                <Badge variant="secondary" className="bg-blue-100 text-blue-800 text-xs">
+                  Snipping Mode
                 </Badge>
               </div>
               <Button
                 variant="ghost"
                 size="sm"
                 onClick={onClose}
-                className="h-8 w-8 p-0"
+                className="h-6 w-6 p-0"
               >
-                <X className="w-4 h-4" />
+                <X className="w-3 h-3" />
               </Button>
             </div>
           </CardHeader>
           <CardContent className="pt-0">
-            <div className="flex items-center space-x-3">
+            <div className="flex items-center space-x-2">
               {!isSelecting && !selection && (
                 <Button
                   onClick={startSelection}
                   className="flex items-center space-x-2 bg-blue-600 hover:bg-blue-700"
+                  size="sm"
                 >
                   <Square className="w-4 h-4" />
                   <span>Start Selection</span>
@@ -304,10 +305,9 @@ export default function ScreenCapture({
               )}
               
               {isSelecting && (
-                <div className="flex items-center space-x-2 text-red-600 bg-red-50 px-3 py-2 rounded-lg border-2 border-red-200">
-                  <Square className="w-4 h-4 animate-pulse" />
-                  <span className="text-sm font-bold">🎯 Click and drag to select area...</span>
-                  <div className="w-2 h-2 bg-red-500 rounded-full animate-ping"></div>
+                <div className="flex items-center space-x-2 text-red-600 bg-red-50 px-2 py-1 rounded border border-red-200">
+                  <Square className="w-3 h-3 animate-pulse" />
+                  <span className="text-xs font-medium">Click and drag to select area</span>
                 </div>
               )}
               
@@ -317,6 +317,7 @@ export default function ScreenCapture({
                     onClick={captureArea}
                     disabled={isCapturing}
                     className="flex items-center space-x-2 bg-green-600 hover:bg-green-700"
+                    size="sm"
                   >
                     {isCapturing ? (
                       <>
@@ -335,6 +336,7 @@ export default function ScreenCapture({
                     onClick={resetSelection}
                     variant="outline"
                     className="flex items-center space-x-2"
+                    size="sm"
                   >
                     <RotateCcw className="w-4 h-4" />
                     <span>Reset</span>
@@ -344,7 +346,7 @@ export default function ScreenCapture({
             </div>
             
             {selection && (
-              <div className="mt-2 text-xs text-gray-600 bg-gray-50 p-2 rounded">
+              <div className="mt-1 text-xs text-gray-600 bg-gray-50 p-1 rounded">
                 Selected: {Math.abs(selection.endX - selection.startX)}×{Math.abs(selection.endY - selection.startY)}px
               </div>
             )}

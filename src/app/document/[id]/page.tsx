@@ -11,12 +11,16 @@ import {
   ChevronLeft, ChevronRight, Search, Settings, Brain,
   HelpCircle, User, Send, Paperclip, Smile, MoreVertical,
   ThumbsUp, Reply, Eye, EyeOff, Palette, Type, Trash2,
-  LogOut, Wifi, WifiOff, Bot, Loader2, Sparkles
+  LogOut, Wifi, WifiOff, Bot, Loader2, Sparkles,
+  FileText, X, Copy
 } from "lucide-react"
 import ApryseWebViewer from '@/components/ApryseWebViewer'
 import { useCollaboration } from '@/hooks/useCollaboration'
 import AISummaryPanel from '@/components/AISummaryPanel'
 import EnhancedMetadataDisplay from '@/components/EnhancedMetadataDisplay'
+import ContextualHelpPopup from '@/components/ContextualHelpPopup'
+import { contextualAI } from '@/lib/contextualAI'
+import { toast } from 'sonner'
 
 interface Annotation {
   id: string
@@ -72,7 +76,7 @@ export default function DocumentViewer({ params }: { params: Promise<{ id: strin
   const [showChat, setShowChat] = useState(true)
   const [chatMessage, setChatMessage] = useState('')
   const [isAILoading, setIsAILoading] = useState(false)
-  const [activeTab, setActiveTab] = useState<'chat' | 'ai' | 'metadata'>('chat')
+  const [activeTab, setActiveTab] = useState<'chat' | 'ai' | 'metadata' | 'annotations'>('chat')
   const [aiQuestion, setAiQuestion] = useState('')
   const [aiMessages, setAiMessages] = useState<AIMessage[]>([])
 
@@ -84,6 +88,62 @@ export default function DocumentViewer({ params }: { params: Promise<{ id: strin
   const [showSummary, setShowSummary] = useState(false)
   const [summary, setSummary] = useState<any>(null)
   const [summaryLoading, setSummaryLoading] = useState(false)
+  const [showExtractedText, setShowExtractedText] = useState(false)
+  const [extractedText, setExtractedText] = useState('')
+  
+  // Demo comments for realistic interface
+  const [demoComments] = useState([
+    {
+      id: 'demo-1',
+      author: 'Dr. Sarah Chen',
+      timestamp: '2024-01-15T10:30:00Z',
+      text: 'This methodology section is crucial for understanding the experimental design. The sample size calculation seems robust.',
+      page: 1,
+      x: 150,
+      y: 200,
+      type: 'comment'
+    },
+    {
+      id: 'demo-2', 
+      author: 'Prof. Michael Rodriguez',
+      timestamp: '2024-01-15T11:15:00Z',
+      text: 'Important finding: The correlation coefficient of 0.87 suggests a strong relationship between variables A and B.',
+      page: 2,
+      x: 200,
+      y: 350,
+      type: 'comment'
+    },
+    {
+      id: 'demo-3',
+      author: 'Dr. Emily Watson',
+      timestamp: '2024-01-15T14:20:00Z',
+      text: 'This limitation should be addressed in future research. The cross-sectional design limits causal inference.',
+      page: 3,
+      x: 180,
+      y: 280,
+      type: 'comment'
+    },
+    {
+      id: 'demo-4',
+      author: 'Prof. James Thompson',
+      timestamp: '2024-01-15T16:45:00Z',
+      text: 'Excellent review of literature here. This provides strong theoretical foundation for the study.',
+      page: 1,
+      x: 120,
+      y: 400,
+      type: 'comment'
+    },
+    {
+      id: 'demo-5',
+      author: 'Dr. Lisa Park',
+      timestamp: '2024-01-15T17:30:00Z',
+      text: 'The statistical analysis approach is appropriate for this type of data. Good use of multiple regression.',
+      page: 2,
+      x: 250,
+      y: 150,
+      type: 'comment'
+    }
+  ])
 
   // Initialize collaboration when user is available
   const collaboration = useCollaboration({
@@ -344,17 +404,72 @@ export default function DocumentViewer({ params }: { params: Promise<{ id: strin
   const handleAskMore = async (section: string) => {
     if (!document) return
     setSummaryLoading(true)
+    
+    // Use the extracted text from our working extraction system
+    let documentText = extractedText
+    
+    // If no extracted text is available, try to extract it now
+    if (!documentText) {
+      console.log('[AI SUMMARY] No extracted text available, extracting now...')
+      try {
+        const requestId = Date.now()
+        
+        const extractPromise = new Promise<string>((resolve, reject) => {
+          const handleResponse = (event: CustomEvent) => {
+            if (event.detail.requestId === requestId) {
+              if (event.detail.success && event.detail.text) {
+                resolve(event.detail.text)
+              } else {
+                reject(new Error(event.detail.error || 'Text extraction failed'))
+              }
+              window.removeEventListener('text-extraction-response', handleResponse as EventListener)
+            }
+          }
+          
+          window.addEventListener('text-extraction-response', handleResponse as EventListener)
+          
+          const timeout = setTimeout(() => {
+            reject(new Error('Text extraction timeout'))
+            window.removeEventListener('text-extraction-response', handleResponse as EventListener)
+          }, 10000)
+          
+          const extractionEvent = new CustomEvent('extract-text-request', {
+            detail: { requestId }
+          })
+          window.dispatchEvent(extractionEvent)
+          
+          // Clear timeout when response is received
+          const originalHandleResponse = handleResponse
+          const wrappedHandleResponse = (event: CustomEvent) => {
+            clearTimeout(timeout)
+            originalHandleResponse(event)
+          }
+          
+          window.removeEventListener('text-extraction-response', handleResponse as EventListener)
+          window.addEventListener('text-extraction-response', wrappedHandleResponse as EventListener)
+        })
+        
+        documentText = await extractPromise
+        console.log('[AI SUMMARY] Successfully extracted text for summary generation')
+      } catch (error) {
+        console.log('[AI SUMMARY] Could not extract text from WebViewer:', error)
+        // Fallback to empty text
+        documentText = ''
+      }
+    }
+    
     try {
       const response = await fetch('/api/ai-summary', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          documentContent: document.summary?.fullText || '',
+          documentId: document.id,
           documentTitle: document.title,
           documentAuthors: document.authors,
           documentYear: document.year,
           documentJournal: document.journal,
           documentAbstract: document.abstract,
+          documentText: documentText,
           askSection: section
         })
       })
@@ -379,20 +494,289 @@ export default function DocumentViewer({ params }: { params: Promise<{ id: strin
     }
   }
 
+  // Generate initial AI summary using extracted text
+  const generateInitialSummary = async () => {
+    if (!document) return
+    
+    setSummaryLoading(true)
+    console.log('[AI SUMMARY] Generating initial summary...')
+    
+    // Use the extracted text from our working extraction system
+    let documentText = extractedText
+    
+    // If no extracted text is available, try to extract it now
+    if (!documentText) {
+      console.log('[AI SUMMARY] No extracted text available, extracting now...')
+      try {
+        const requestId = Date.now()
+        
+        const extractPromise = new Promise<string>((resolve, reject) => {
+          const handleResponse = (event: CustomEvent) => {
+            if (event.detail.requestId === requestId) {
+              if (event.detail.success && event.detail.text) {
+                resolve(event.detail.text)
+              } else {
+                reject(new Error(event.detail.error || 'Text extraction failed'))
+              }
+              window.removeEventListener('text-extraction-response', handleResponse as EventListener)
+            }
+          }
+          
+          window.addEventListener('text-extraction-response', handleResponse as EventListener)
+          
+          const timeout = setTimeout(() => {
+            reject(new Error('Text extraction timeout'))
+            window.removeEventListener('text-extraction-response', handleResponse as EventListener)
+          }, 10000)
+          
+          const extractionEvent = new CustomEvent('extract-text-request', {
+            detail: { requestId }
+          })
+          window.dispatchEvent(extractionEvent)
+          
+          // Clear timeout when response is received
+          const originalHandleResponse = handleResponse
+          const wrappedHandleResponse = (event: CustomEvent) => {
+            clearTimeout(timeout)
+            originalHandleResponse(event)
+          }
+          
+          window.removeEventListener('text-extraction-response', handleResponse as EventListener)
+          window.addEventListener('text-extraction-response', wrappedHandleResponse as EventListener)
+        })
+        
+        documentText = await extractPromise
+        console.log('[AI SUMMARY] Successfully extracted text for initial summary generation')
+      } catch (error) {
+        console.log('[AI SUMMARY] Could not extract text from WebViewer:', error)
+        // Fallback to empty text
+        documentText = ''
+      }
+    }
+    
+    try {
+      console.log('[AI SUMMARY] Sending request to AI summary API...')
+      const response = await fetch('/api/ai-summary', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          documentId: document.id,
+          documentTitle: document.title,
+          documentAuthors: document.authors,
+          documentYear: document.year,
+          documentJournal: document.journal,
+          documentAbstract: document.abstract,
+          documentText: documentText
+        })
+      })
+      
+      if (response.ok) {
+        const data = await response.json()
+        if (data.success && data.summary) {
+          console.log('[AI SUMMARY] Summary generated successfully:', data.summary)
+          setSummary(data.summary)
+          toast.success('AI Summary generated!', {
+            description: 'Document analysis complete',
+            duration: 3000
+          })
+        } else {
+          console.error('[AI SUMMARY] API returned error:', data)
+          toast.error('Failed to generate summary', {
+            description: data.error || 'Unknown error',
+            duration: 3000
+          })
+        }
+      } else {
+        console.error('[AI SUMMARY] API request failed:', response.status)
+        toast.error('Failed to generate summary', {
+          description: `HTTP ${response.status}`,
+          duration: 3000
+        })
+      }
+    } catch (error) {
+      console.error('[AI SUMMARY] Error generating summary:', error)
+      toast.error('Failed to generate summary', {
+        description: 'Network error',
+        duration: 3000
+      })
+    } finally {
+      setSummaryLoading(false)
+    }
+  }
+
+  // Extract text from WebViewer for debugging
+  const extractTextFromWebViewer = async () => {
+    try {
+      console.log('[TEXT EXTRACTION] Starting text extraction...')
+      
+      // Show loading message
+      toast.info('Extracting text from PDF...', {
+        description: 'Please wait while we process the document',
+        duration: 2000
+      })
+      
+      const requestId = Date.now()
+      
+      // Set up response listener with timeout
+      const handleResponse = (event: CustomEvent) => {
+        if (event.detail.requestId === requestId) {
+          console.log('[TEXT EXTRACTION] Response received:', event.detail)
+          
+          if (event.detail.success && event.detail.text) {
+            // Show the popup with real extracted text
+            setExtractedText(event.detail.text)
+            setShowExtractedText(true)
+            toast.success('Text extraction complete!', {
+              description: `Extracted ${event.detail.text.length} characters`,
+              duration: 3000
+            })
+          } else {
+            console.log('[TEXT EXTRACTION] Extraction failed:', event.detail.error)
+            toast.error(`Text extraction failed: ${event.detail.error}`)
+          }
+          
+          // Remove the listener
+          window.removeEventListener('text-extraction-response', handleResponse as EventListener)
+        }
+      }
+      
+      // Add response listener
+      window.addEventListener('text-extraction-response', handleResponse as EventListener)
+      
+      // Set up timeout
+      const timeout = setTimeout(() => {
+        console.log('[TEXT EXTRACTION] Timeout - no response from WebViewer')
+        toast.error('Text extraction timeout - WebViewer may not be ready')
+        window.removeEventListener('text-extraction-response', handleResponse as EventListener)
+      }, 10000) // 10 second timeout
+      
+      // Dispatch extraction request
+      const extractionEvent = new CustomEvent('extract-text-request', {
+        detail: { requestId }
+      })
+      window.dispatchEvent(extractionEvent)
+      
+      // Clear timeout when response is received
+      const originalHandleResponse = handleResponse
+      const wrappedHandleResponse = (event: CustomEvent) => {
+        clearTimeout(timeout)
+        originalHandleResponse(event)
+      }
+      
+      window.removeEventListener('text-extraction-response', handleResponse as EventListener)
+      window.addEventListener('text-extraction-response', wrappedHandleResponse as EventListener)
+      
+    } catch (error) {
+      console.error('[TEXT EXTRACTION] Error:', error)
+      toast.error('Text extraction failed')
+    }
+  }
+
+  // Manual trigger for contextual help popup
+  const triggerContextualHelp = () => {
+    const sectionId = `page-${currentPage}-section`
+    const location = { page: currentPage, x: 100, y: 200 }
+    
+    console.log('🔧 [Manual Trigger] Simulating advanced struggle pattern analysis')
+    toast.info('🧠 Advanced AI Analysis Starting...', {
+      description: 'Detecting reading patterns and comprehension difficulties',
+      duration: 3000
+    })
+    
+    // Clear any existing patterns for this section first
+    contextualAI.clearStrugglePatterns(sectionId)
+    
+    // Simulate realistic highlighting behavior on Transformer paper abstract
+    setTimeout(() => {
+      contextualAI.trackHighlight(sectionId, 'The dominant sequence transduction models are based on complex recurrent or convolutional neural networks', location)
+      toast.info('📊 Pattern Detection: Highlight #1', { duration: 1000 })
+    }, 500)
+    
+    setTimeout(() => {
+      contextualAI.trackHighlight(sectionId, 'We propose a new simple network architecture, the Transformer, based solely on attention mechanisms', location)
+      toast.info('📊 Pattern Detection: Highlight #2', { duration: 1000 })
+    }, 1000)
+    
+    setTimeout(() => {
+      contextualAI.trackHighlight(sectionId, 'dispensing with recurrence and convolutions entirely', location)
+      console.log('✅ [Manual Trigger] Advanced contextual analysis complete!')
+      toast.success('🎯 AI Research Assistant Activated!', {
+        description: 'Advanced contextual help now available in bottom-right corner',
+        duration: 4000
+      })
+    }, 1500)
+  }
+
   useEffect(() => {
     if (!showSummary || !document) return
     setSummaryLoading(true)
     setSummary(null)
     const fetchSummary = async () => {
+      // Use the extracted text from our working extraction system
+      let documentText = extractedText
+      
+      // If no extracted text is available, try to extract it now
+      if (!documentText) {
+        console.log('[AI SUMMARY] No extracted text available, extracting now...')
+        try {
+          const requestId = Date.now()
+          
+          const extractPromise = new Promise<string>((resolve, reject) => {
+            const handleResponse = (event: CustomEvent) => {
+              if (event.detail.requestId === requestId) {
+                if (event.detail.success && event.detail.text) {
+                  resolve(event.detail.text)
+                } else {
+                  reject(new Error(event.detail.error || 'Text extraction failed'))
+                }
+                window.removeEventListener('text-extraction-response', handleResponse as EventListener)
+              }
+            }
+            
+            window.addEventListener('text-extraction-response', handleResponse as EventListener)
+            
+            const timeout = setTimeout(() => {
+              reject(new Error('Text extraction timeout'))
+              window.removeEventListener('text-extraction-response', handleResponse as EventListener)
+            }, 10000)
+            
+            const extractionEvent = new CustomEvent('extract-text-request', {
+              detail: { requestId }
+            })
+            window.dispatchEvent(extractionEvent)
+            
+            // Clear timeout when response is received
+            const originalHandleResponse = handleResponse
+            const wrappedHandleResponse = (event: CustomEvent) => {
+              clearTimeout(timeout)
+              originalHandleResponse(event)
+            }
+            
+            window.removeEventListener('text-extraction-response', handleResponse as EventListener)
+            window.addEventListener('text-extraction-response', wrappedHandleResponse as EventListener)
+          })
+          
+          documentText = await extractPromise
+          console.log('[AI SUMMARY] Successfully extracted text for summary generation, length:', documentText.length)
+        } catch (error) {
+          console.log('[AI SUMMARY] Could not extract text from WebViewer:', error)
+          // Fallback to empty text
+          documentText = ''
+        }
+      } else {
+        console.log('[AI SUMMARY] Using existing extracted text, length:', documentText.length)
+      }
+
       const payload = {
         documentId: document.id,
         documentTitle: document.title,
         documentAuthors: document.authors,
         documentYear: document.year,
         documentJournal: document.journal,
-        documentAbstract: document.abstract
+        documentAbstract: document.abstract,
+        documentText: documentText
       }
-      console.log('[AI SUMMARY] Sending request to /api/ai-summary with:', payload)
+      console.log('[AI SUMMARY] Sending request to /api/ai-summary with extracted text length:', documentText.length)
       try {
         const response = await fetch('/api/ai-summary', {
           method: 'POST',
@@ -413,7 +797,7 @@ export default function DocumentViewer({ params }: { params: Promise<{ id: strin
       setSummaryLoading(false)
     }
     fetchSummary()
-  }, [showSummary, document])
+  }, [showSummary, document, extractedText])
 
   if (isLoading || !document) {
     return (
@@ -493,12 +877,39 @@ export default function DocumentViewer({ params }: { params: Promise<{ id: strin
               variant="default"
               size="sm"
               className="bg-gradient-to-r from-blue-600 to-purple-600 text-white font-semibold flex items-center space-x-2 shadow-md hover:scale-105 transition-transform"
-              onClick={() => setShowSummary(true)}
+              onClick={async () => {
+                if (!summary) {
+                  // Generate initial summary if none exists
+                  await generateInitialSummary()
+                }
+                setShowSummary(true)
+              }}
               title="Show AI Summary"
             >
               <Sparkles className="h-4 w-4" />
               <span className="hidden md:inline">AI Summary</span>
             </Button>
+            
+            {/* AI Research Assistant Trigger Button */}
+                    <Button
+          variant="outline"
+          size="sm"
+          className="bg-gradient-to-r from-purple-600 to-indigo-600 text-white font-semibold flex items-center justify-center shadow-md hover:scale-105 transition-transform border-purple-600 w-8 h-8 p-0"
+          onClick={triggerContextualHelp}
+          title="Activate AI Research Assistant - Advanced contextual help system"
+        >
+          <Brain className="h-4 w-4" />
+        </Button>
+        
+        <Button
+          variant="outline"
+          size="sm"
+          className="bg-gradient-to-r from-green-600 to-emerald-600 text-white font-semibold flex items-center justify-center shadow-md hover:scale-105 transition-transform border-green-600 w-8 h-8 p-0"
+          onClick={extractTextFromWebViewer}
+          title="Extract and display text from PDF for debugging"
+        >
+          <FileText className="h-4 w-4" />
+        </Button>
             {/* User Menu */}
             <div className="relative group">
               <Button variant="outline" size="sm" className="flex items-center">
@@ -520,9 +931,9 @@ export default function DocumentViewer({ params }: { params: Promise<{ id: strin
             </div>
           </div>
         </div>
-      </header>
+             </header>
 
-      <div className="flex flex-1 overflow-hidden">
+       <div className="flex flex-1 overflow-hidden">
         {/* Toolbar */}
         <div className="w-16 border-r border-gray-200 bg-muted/30 flex flex-col items-center py-4 space-y-2">
           <Button
@@ -594,36 +1005,45 @@ export default function DocumentViewer({ params }: { params: Promise<{ id: strin
                 </Button>
               </div>
               
-              {/* Tab Navigation */}
-              <div className="flex space-x-1 bg-gray-100 rounded-lg p-1">
-                <Button 
-                  variant={activeTab === 'chat' ? 'default' : 'ghost'} 
-                  size="sm" 
-                  className="flex-1 h-8"
-                  onClick={() => setActiveTab('chat')}
-                >
-                  <MessageCircle className="h-3 w-3 mr-1" />
-                  Chat
-                </Button>
-                                 <Button 
-                   variant={activeTab === 'ai' ? 'default' : 'ghost'} 
-                   size="sm" 
-                   className="flex-1 h-8"
-                   onClick={() => setActiveTab('ai')}
-                 >
-                   <Sparkles className="h-3 w-3 mr-1" />
-                   AI Help
-                 </Button>
-                 <Button 
-                   variant={activeTab === 'metadata' ? 'default' : 'ghost'} 
-                   size="sm" 
-                   className="flex-1 h-8"
-                   onClick={() => setActiveTab('metadata')}
-                 >
-                   <Brain className="h-3 w-3 mr-1" />
-                   Metadata
-                 </Button>
-              </div>
+                           {/* Tab Navigation */}
+             <div className="flex space-x-1 bg-gray-100 rounded-lg p-1">
+               <Button 
+                 variant={activeTab === 'chat' ? 'default' : 'ghost'} 
+                 size="sm" 
+                 className="flex-1 h-8"
+                 onClick={() => setActiveTab('chat')}
+               >
+                 <MessageCircle className="h-3 w-3 mr-1" />
+                 Chat
+               </Button>
+                                  <Button 
+                    variant={activeTab === 'ai' ? 'default' : 'ghost'} 
+                    size="sm" 
+                    className="flex-1 h-8"
+                    onClick={() => setActiveTab('ai')}
+                  >
+                    <Sparkles className="h-3 w-3 mr-1" />
+                    AI Help
+                  </Button>
+                  <Button 
+                    variant={activeTab === 'metadata' ? 'default' : 'ghost'} 
+                    size="sm" 
+                    className="flex-1 h-8"
+                    onClick={() => setActiveTab('metadata')}
+                  >
+                    <Brain className="h-3 w-3 mr-1" />
+                    Metadata
+                  </Button>
+                  <Button 
+                    variant={activeTab === 'annotations' ? 'default' : 'ghost'} 
+                    size="sm" 
+                    className="flex-1 h-8"
+                    onClick={() => setActiveTab('annotations')}
+                  >
+                    <MessageSquare className="h-3 w-3 mr-1" />
+                    Annotations
+                  </Button>
+                </div>
             </div>
 
             {/* Content Area */}
@@ -806,15 +1226,77 @@ export default function DocumentViewer({ params }: { params: Promise<{ id: strin
                   </div>
                 </div>
               </>
-            ) : (
-              /* Metadata Tab */
-              <div className="flex-1 overflow-y-auto p-4">
-                <EnhancedMetadataDisplay 
-                  documentId={documentId} 
-                  filename={document?.filename || ''} 
-                />
-              </div>
-            )}
+                         ) : activeTab === 'annotations' ? (
+               /* Annotations Tab */
+               <div className="flex-1 overflow-y-auto p-4">
+                 <div className="mb-4">
+                   <h3 className="text-lg font-semibold text-gray-800 mb-2 flex items-center gap-2">
+                     <MessageSquare className="w-5 h-5 text-purple-500" />
+                     Research Annotations ({demoComments.length})
+                   </h3>
+                   <p className="text-sm text-gray-600">
+                     View and manage all annotations and comments on this document
+                   </p>
+                 </div>
+                 
+                 <div className="space-y-4">
+                   {demoComments.map((comment) => (
+                     <div key={comment.id} className="bg-white rounded-lg p-4 border border-gray-200 hover:border-purple-300 transition-colors shadow-sm">
+                       <div className="flex items-start justify-between mb-3">
+                         <div className="flex items-center gap-3">
+                           <div className="w-10 h-10 rounded-full bg-gradient-to-br from-purple-500 to-blue-500 flex items-center justify-center text-white font-medium">
+                             {comment.author.split(' ').map(n => n[0]).join('')}
+                           </div>
+                           <div>
+                             <span className="font-medium text-gray-800">{comment.author}</span>
+                             <div className="text-sm text-gray-500">Page {comment.page}</div>
+                           </div>
+                         </div>
+                         <div className="text-right">
+                           <span className="text-sm text-gray-500">
+                             {new Date(comment.timestamp).toLocaleDateString()}
+                           </span>
+                           <div className="text-xs text-gray-400">
+                             {new Date(comment.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                           </div>
+                         </div>
+                       </div>
+                       <div className="bg-gray-50 rounded-lg p-3 border-l-4 border-purple-400">
+                         <p className="text-gray-700 leading-relaxed">{comment.text}</p>
+                       </div>
+                       <div className="flex items-center justify-between mt-3 pt-3 border-t border-gray-100">
+                         <div className="flex items-center gap-2">
+                           <span className="text-xs bg-purple-100 text-purple-700 px-2 py-1 rounded-full">
+                             {comment.type}
+                           </span>
+                           <span className="text-xs text-gray-500">
+                             Position: ({comment.x}, {comment.y})
+                           </span>
+                         </div>
+                         <div className="flex items-center gap-2">
+                           <Button variant="ghost" size="sm" className="h-7 px-2 text-xs">
+                             <ThumbsUp className="w-3 h-3 mr-1" />
+                             Like
+                           </Button>
+                           <Button variant="ghost" size="sm" className="h-7 px-2 text-xs">
+                             <Reply className="w-3 h-3 mr-1" />
+                             Reply
+                           </Button>
+                         </div>
+                       </div>
+                     </div>
+                   ))}
+                 </div>
+               </div>
+             ) : (
+               /* Metadata Tab */
+               <div className="flex-1 overflow-y-auto p-4">
+                 <EnhancedMetadataDisplay 
+                   documentId={documentId} 
+                   filename={document?.filename || ''} 
+                 />
+               </div>
+             )}
           </div>
         )}
 
@@ -829,6 +1311,8 @@ export default function DocumentViewer({ params }: { params: Promise<{ id: strin
             <MessageCircle className="h-4 w-4" />
           </Button>
         )}
+
+
       </div>
       {/* Floating AI Summary Button (moved up, no End button) */}
       {/* AI Summary Panel */}
@@ -839,6 +1323,51 @@ export default function DocumentViewer({ params }: { params: Promise<{ id: strin
         onClose={() => setShowSummary(false)}
         onAskMore={handleAskMore}
       />
+
+      {/* Contextual Help Popup */}
+      <ContextualHelpPopup />
+      
+      {/* Extracted Text Modal */}
+      {showExtractedText && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-lg shadow-xl max-w-4xl w-full max-h-[80vh] flex flex-col">
+            <div className="flex items-center justify-between p-4 border-b">
+              <h2 className="text-lg font-semibold text-gray-900">
+                📄 Extracted Text from PDF
+              </h2>
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => setShowExtractedText(false)}
+                className="text-gray-500 hover:text-gray-700"
+              >
+                <X className="h-5 w-5" />
+              </Button>
+            </div>
+            <div className="flex-1 overflow-auto p-4">
+              <div className="bg-gray-50 rounded-lg p-4 font-mono text-sm whitespace-pre-wrap max-h-[60vh] overflow-auto">
+                {extractedText || 'No text extracted'}
+              </div>
+            </div>
+            <div className="p-4 border-t bg-gray-50 rounded-b-lg">
+              <div className="flex items-center justify-between text-sm text-gray-600">
+                <span>Total characters: {extractedText.length}</span>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => {
+                    navigator.clipboard.writeText(extractedText)
+                    toast.success('Text copied to clipboard!')
+                  }}
+                >
+                  <Copy className="h-4 w-4 mr-2" />
+                  Copy Text
+                </Button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }

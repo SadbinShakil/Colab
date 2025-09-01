@@ -7,37 +7,56 @@ const openai = new OpenAI({
 
 export async function POST(request: NextRequest) {
   try {
-    const { question, imageData, caption, documentTitle, documentAuthors, documentUrl, userId, userName } = await request.json()
+         const { question, imageData, caption, documentTitle, documentAuthors, documentUrl, userId, userName, documentContent, isDetailedMode } = await request.json()
 
-    console.log('🔍 Vision API Debug:', {
-      hasImageData: !!imageData,
-      imageDataType: typeof imageData,
-      imageDataStart: imageData ? imageData.substring(0, 50) + '...' : 'null',
-      caption: caption,
-      question: question
-    })
+         console.log('🔍 Vision API Debug:', {
+       hasImageData: !!imageData,
+       imageDataType: typeof imageData,
+       imageDataStart: imageData ? imageData.substring(0, 50) + '...' : 'null',
+       caption: caption,
+       question: question,
+       hasDocumentContent: !!documentContent,
+       documentContentLength: documentContent ? documentContent.length : 0,
+       isDetailedMode: isDetailedMode
+     })
 
     if (!question && !caption) {
       return NextResponse.json({ error: 'Missing question or caption' }, { status: 400 })
     }
 
-    // Prepare the system prompt for vision analysis
-    const systemPrompt = `You are a senior research scientist and academic expert specializing in analyzing figures, charts, and diagrams from scholarly publications. Your role is to provide deep academic analysis that helps researchers understand the scientific significance and research implications of visual content.
+         // Prepare the system prompt for vision analysis
+     const systemPrompt = isDetailedMode 
+       ? `You are a senior research scientist providing comprehensive figure analysis. Provide detailed, thorough explanations.
 
 Document Context:
 - Title: ${documentTitle || 'Research Document'}
 - Authors: ${documentAuthors || 'Academic Authors'}
 - URL: ${documentUrl || 'N/A'}
 
-CRITICAL: This is from a RESEARCH PAPER. Provide analysis that is:
-- **Research-focused**: Interpret findings, methodologies, and scientific contributions
-- **Academic depth**: Use scholarly language and concepts appropriate for researchers
-- **Methodological insights**: Explain research methods, experimental design, or theoretical frameworks shown
-- **Scientific interpretation**: Discuss what results mean for the field and future research
-- **Critical analysis**: Evaluate strengths, limitations, or notable aspects of the research
-- **Contextual significance**: Place findings within broader academic context
+${documentContent ? `Document Content Available: Use the paper text to provide comprehensive context and detailed analysis.` : ''}
 
-DO NOT just describe what you see visually. Instead, analyze the RESEARCH CONTENT, SCIENTIFIC MEANING, and ACADEMIC IMPLICATIONS.`
+Provide explanation that is:
+- Comprehensive: Detailed analysis covering all aspects
+- Technical: Include methodological and statistical details
+- Contextual: Connect with broader research implications
+- Accurate: Correct interpretation using visual and textual information
+
+Provide detailed analysis of what the image shows and what it explains in the paper. Do not use markdown formatting like ** or *.`
+       : `You are a research scientist explaining figures clearly. Provide brief, simple explanations.
+
+Document Context:
+- Title: ${documentTitle || 'Research Document'}
+- Authors: ${documentAuthors || 'Academic Authors'}
+- URL: ${documentUrl || 'N/A'}
+
+${documentContent ? `Document Content Available: Use the paper text to provide accurate context.` : ''}
+
+Provide explanation that is:
+- Brief: Keep responses short and focused
+- Clear: Simple, understandable language
+- Accurate: Correct interpretation using visual and textual information
+
+Explain what the image shows and what it explains in the paper. Do not use markdown formatting like ** or *.`
 
     let userPrompt = ''
     const messages: any[] = [
@@ -46,18 +65,40 @@ DO NOT just describe what you see visually. Instead, analyze the RESEARCH CONTEN
 
     if (imageData && imageData.startsWith('data:image')) {
       // We have actual image data - use GPT-4 Vision
-      userPrompt = `Analyze this research figure/diagram from an academic perspective. Focus on the SCIENTIFIC CONTENT and RESEARCH IMPLICATIONS, not just visual description.
+             userPrompt = isDetailedMode
+         ? `Provide comprehensive analysis of what this image shows and what it explains in the paper.
 
 Figure Caption: ${caption || 'No caption provided'}
 
-${question ? `Research Question: ${question}` : 'Provide comprehensive research analysis covering: methodology shown, key findings/results, scientific significance, research implications, and how this contributes to the field.'}
+${documentContent ? `Document Context: ${documentContent.substring(0, 4000)}` : ''}
 
-Required Analysis Sections:
-1. **Research Methodology/Approach**: What research methods or experimental design is shown?
-2. **Key Findings**: What are the main results or conclusions presented?
-3. **Scientific Significance**: Why is this important for the research field?
-4. **Research Implications**: What does this mean for future studies or applications?
-5. **Critical Assessment**: Any limitations, strengths, or notable aspects?
+${question ? `Question: ${question}` : 'Provide detailed analysis of what this image is about and what it explains in the paper.'}
+
+Provide comprehensive analysis covering:
+1. What the image shows: Detailed description of visual elements
+2. What it explains: Comprehensive explanation of what this demonstrates in the paper
+3. Key findings: Detailed analysis of main revelations
+4. Methodology: Technical details and experimental approach
+5. Implications: Broader research implications and significance
+6. Context: How this fits into the overall research
+
+Provide thorough, detailed analysis. Do not use markdown formatting like ** or *.
+
+Researcher: ${userName || 'Anonymous'}`
+         : `Briefly explain what this image shows and what it explains in the paper.
+
+Figure Caption: ${caption || 'No caption provided'}
+
+${documentContent ? `Document Context: ${documentContent.substring(0, 2000)}` : ''}
+
+${question ? `Question: ${question}` : 'Explain what this image is about and what it explains in the paper.'}
+
+Provide a brief explanation covering:
+1. What the image shows: Describe what you see
+2. What it explains: What does this demonstrate in the paper
+3. Key points: Main things this reveals
+
+Keep it very brief and clear. Do not use markdown formatting like ** or *.
 
 Researcher: ${userName || 'Anonymous'}`
 
@@ -70,26 +111,40 @@ Researcher: ${userName || 'Anonymous'}`
       })
     } else {
       // Fallback to text-based analysis of caption
-      userPrompt = `Analyze this research figure based on its caption/description from an academic perspective. Focus on SCIENTIFIC CONTENT and RESEARCH IMPLICATIONS.
+             userPrompt = isDetailedMode
+         ? `Provide comprehensive analysis of what this image shows and what it explains in the paper.
 
 Figure Caption/Description: ${caption || question}
 
-${question && question !== caption ? `Research Question: ${question}` : ''}
+${documentContent ? `Document Context: ${documentContent.substring(0, 4000)}` : ''}
 
-Provide research-focused analysis covering:
-1. **Research Methodology**: What research approach or experimental design is indicated?
-2. **Scientific Findings**: What key results or conclusions are suggested?
-3. **Academic Significance**: Why is this important for the research field?
-4. **Research Context**: How does this fit within existing literature/knowledge?
-5. **Future Implications**: What are the potential applications or future research directions?
-6. **Critical Evaluation**: What are the strengths, limitations, or notable aspects?
+${question && question !== caption ? `Question: ${question}` : ''}
 
-Base your analysis on:
-- Research methodology implied by the caption
-- Scientific concepts and terminology used
-- Potential experimental results or theoretical implications
-- Academic context and field significance
-- Research contribution and novelty
+Provide comprehensive analysis covering:
+1. What the image shows: Detailed description of visual elements
+2. What it explains: Comprehensive explanation of what this demonstrates in the paper
+3. Key findings: Detailed analysis of main revelations
+4. Methodology: Technical details and experimental approach
+5. Implications: Broader research implications and significance
+6. Context: How this fits into the overall research
+
+Provide thorough, detailed analysis. Do not use markdown formatting like ** or *.
+
+Researcher: ${userName || 'Anonymous'}`
+         : `Briefly explain what this image shows and what it explains in the paper.
+
+Figure Caption/Description: ${caption || question}
+
+${documentContent ? `Document Context: ${documentContent.substring(0, 2000)}` : ''}
+
+${question && question !== caption ? `Question: ${question}` : ''}
+
+Provide a brief explanation covering:
+1. What the image shows: Describe what you see
+2. What it explains: What does this demonstrate in the paper
+3. Key points: Main things this reveals
+
+Keep it very brief and clear. Do not use markdown formatting like ** or *.
 
 Researcher: ${userName || 'Anonymous'}`
 
@@ -104,12 +159,12 @@ Researcher: ${userName || 'Anonymous'}`
 
     console.log(`🤖 Using ${model} for vision analysis`)
 
-    const completion = await openai.chat.completions.create({
-      model: model,
-      messages: messages,
-      max_tokens: 2000,
-      temperature: 0.7,
-    })
+         const completion = await openai.chat.completions.create({
+       model: model,
+       messages: messages,
+       max_tokens: isDetailedMode ? 2000 : 500,
+       temperature: isDetailedMode ? 0.7 : 0.3,
+     })
 
     const answer = completion.choices[0]?.message?.content || 'No analysis generated'
 

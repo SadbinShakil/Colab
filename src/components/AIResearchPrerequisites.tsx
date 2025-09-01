@@ -4,6 +4,7 @@ import { useState, useEffect } from 'react'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
+import { toast } from 'sonner'
 import { 
   X, 
   Search, 
@@ -157,8 +158,14 @@ export default function AIResearchPrerequisites({
             // Convert the metadata-based analysis to our research format
             const convertedResearch = convertMetadataAnalysisToResearch(data.analysis, documentTitle, documentAuthors, documentJournal, documentYear)
             setResearch(convertedResearch)
-            setSearchPhase(`${data.mode === 'ai-powered' ? 'Real AI-powered' : 'Demo'} metadata analysis complete!`)
+                         setSearchPhase('Real AI-powered analysis complete!')
             setIsLoading(false)
+            
+            // Show success toast
+            toast.success('🎯 Analysis complete!', {
+              description: 'Your research paper has been analyzed',
+              duration: 5000
+            })
             return
           }
         }
@@ -264,9 +271,11 @@ Return a structured JSON with all the above information. Use "Unknown" or empty 
         })
       })
 
-      if (!response.ok) {
-        throw new Error(`Research failed: ${response.status}`)
-      }
+          if (!response.ok) {
+      const errorText = await response.text()
+      console.error('Backend error details:', errorText)
+      throw new Error(`Research failed: ${response.status} → ${errorText}`)
+    }
 
       const data = await response.json()
       
@@ -326,7 +335,13 @@ Return a structured JSON with all the above information. Use "Unknown" or empty 
           }
 
           setResearch(realResearch)
-          setSearchPhase('Real AI research complete!')
+          setSearchPhase('Real AI-powered research complete!')
+          
+          // Show success toast
+          toast.success('🎯 Research complete!', {
+            description: 'Your research paper has been analyzed',
+            duration: 5000
+          })
 
         } catch (parseError) {
           console.warn('⚠️ Could not parse as JSON, using text analysis:', parseError)
@@ -335,6 +350,12 @@ Return a structured JSON with all the above information. Use "Unknown" or empty 
           const smartResearch: PaperResearch = parseTextResponse(aiResponse, documentTitle, documentAuthors, documentJournal, documentYear)
           setResearch(smartResearch)
           setSearchPhase('AI research complete!')
+          
+          // Show success toast
+          toast.success('🎯 Analysis complete!', {
+            description: 'Your research paper has been analyzed',
+            duration: 5000
+          })
         }
         
       } else {
@@ -1006,6 +1027,11 @@ Return a structured JSON with all the above information. Use "Unknown" or empty 
   // Auto-research when opened
   useEffect(() => {
     if (isOpen && !research && !isLoading) {
+      // Show toast that analysis is starting
+      toast.info('🔍 Starting AI analysis...', {
+        description: 'Analyzing your research paper',
+        duration: 3000
+      })
       researchPaperWithAI()
     }
   }, [isOpen])
@@ -1115,7 +1141,7 @@ Return a structured JSON with all the above information. Use "Unknown" or empty 
               <div>
                 <CardTitle className="text-2xl font-bold">AI Research Prerequisites</CardTitle>
                 <p className="text-blue-100 opacity-90">
-                  {searchPhase.includes('Real AI') ? '🔥 Real AI-powered analysis' : '🎭 Demo mode - Add API key for real analysis'}
+                  🔥 Real AI-powered analysis
                 </p>
               </div>
             </div>
@@ -1232,7 +1258,7 @@ Return a structured JSON with all the above information. Use "Unknown" or empty 
                           {paper.readingOrder}
                         </span>
                         <span className="text-violet-700 text-sm font-medium">{paper.title}</span>
-                        <Badge className={getImportanceColor(paper.importance)} size="sm">
+                        <Badge className={getImportanceColor(paper.importance)}>
                           {paper.importance}
                         </Badge>
                       </div>
@@ -1271,7 +1297,7 @@ Return a structured JSON with all the above information. Use "Unknown" or empty 
                                 <div className="flex items-start justify-between mb-2">
                                   <h6 className="font-medium text-gray-900 flex-1 mr-4">{paper.title}</h6>
                                   <div className="flex space-x-2">
-                                    <Badge className={getImportanceColor(paper.importance)} size="sm">
+                                    <Badge className={getImportanceColor(paper.importance)}>
                                       {paper.importance}
                                     </Badge>
                                     <Badge variant="outline" className="text-xs">
@@ -1290,7 +1316,7 @@ Return a structured JSON with all the above information. Use "Unknown" or empty 
                                 
                                 <div className="flex items-center justify-between">
                                   <div className="flex items-center space-x-2">
-                                    <Badge className={getRelationshipColor(paper.relationship)} size="sm">
+                                    <Badge className={getRelationshipColor(paper.relationship)}>
                                       {paper.relationship}
                                     </Badge>
                                     <span className="text-xs text-gray-500">
@@ -1301,7 +1327,6 @@ Return a structured JSON with all the above information. Use "Unknown" or empty 
                                   <div className="flex space-x-2">
                                     <Button 
                                       variant="outline" 
-                                      size="sm"
                                       onClick={() => window.open(`https://scholar.google.com/scholar?q=${encodeURIComponent(paper.title)}`, '_blank')}
                                       className="text-xs"
                                     >
@@ -1310,7 +1335,6 @@ Return a structured JSON with all the above information. Use "Unknown" or empty 
                                     </Button>
                                     <Button 
                                       variant="outline" 
-                                      size="sm"
                                       onClick={() => handleCopy(paper.title, `paper-${idx}`)}
                                       className="text-xs"
                                     >

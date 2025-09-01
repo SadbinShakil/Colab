@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState, useCallback } from 'react'
 import { toast } from 'sonner'
+import { contextualAI } from '@/lib/contextualAI'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
@@ -67,6 +68,9 @@ interface ApryseWebViewerProps {
   userId?: string
   onHighlightAdd?: (highlightData: any) => void
   collaborationHighlights?: any[]
+  onAnnotationAdd?: (annotation: any) => void
+  onPageChange?: (newPage: number) => void
+  onScroll?: (page: number, scrollY: number) => void
 }
 
 interface Collaborator {
@@ -110,7 +114,10 @@ export default function ApryseWebViewer({
   userName = 'Anonymous', 
   userId = 'guest',
   onHighlightAdd,
-  collaborationHighlights = []
+  collaborationHighlights = [],
+  onAnnotationAdd,
+  onPageChange,
+  onScroll
 }: ApryseWebViewerProps) {
   const viewer = useRef<HTMLDivElement>(null)
   const [isLoading, setIsLoading] = useState(true)
@@ -159,6 +166,7 @@ export default function ApryseWebViewer({
   const [showTextSelectionPopup, setShowTextSelectionPopup] = useState(false)
   const [selectedText, setSelectedText] = useState('')
   const [selectionPosition, setSelectionPosition] = useState({ x: 0, y: 0 })
+  const [mousePosition, setMousePosition] = useState({ x: 0, y: 0 })
   
   // General Explainer state
   const [showGeneralExplainer, setShowGeneralExplainer] = useState(false)
@@ -781,6 +789,25 @@ export default function ApryseWebViewer({
         const comment = textarea.value;
         if (comment.trim()) {
           console.log('Saving comment:', comment, 'for annotation:', annotation.Id);
+          
+          // Track for contextual AI
+          if (onAnnotationAdd) {
+            const aiAnnotation = {
+              id: annotation.Id,
+              type: 'comment',
+              x: annotation.X || 0,
+              y: annotation.Y || 0,
+              width: annotation.Width || 0,
+              height: annotation.Height || 0,
+              color: '#0000ff',
+              text: comment,
+              author: userName || 'Unknown',
+              timestamp: new Date().toISOString(),
+              pageNumber: annotation.PageNumber || 1
+            };
+            onAnnotationAdd(aiAnnotation);
+          }
+          
           // Here you can implement saving the comment to your backend
           // For now, just close the panel
           commentPanel.remove();
@@ -863,7 +890,7 @@ export default function ApryseWebViewer({
               // Try to get page information using correct Apryse API
               const doc = documentViewer.getDocument()
               if (doc) {
-                doc.getPageInfo(pageNumber).then((pageInfo) => {
+                doc.getPageInfo(pageNumber).then((pageInfo: any) => {
                   if (pageInfo && pageInfo.width && pageInfo.height) {
                     // Adjust canvas size based on actual page dimensions
                     canvas.width = Math.max(pageInfo.width, 800)
@@ -936,6 +963,12 @@ export default function ApryseWebViewer({
             
             // Fallback function for when Apryse APIs don't work
             function createBasicFallback() {
+              if (!ctx) {
+                console.error('Canvas context is null')
+                resolve(canvas)
+                return
+              }
+              
               ctx.fillStyle = '#ffffff'
               ctx.fillRect(0, 0, canvas.width, canvas.height)
               
@@ -1093,14 +1126,15 @@ export default function ApryseWebViewer({
   }
 
   // Initialize WebViewer
-  useEffect(() => {
-    if (!viewer.current) return;
-    import('@pdftron/webviewer').then((module) => {
-      const WebViewer = module.default
-      WebViewer(
-        {
-          path: '/webviewer/lib', // required for asset loading
-          initialDoc: currentDocumentUrl,
+        useEffect(() => {
+        if (!viewer.current) return;
+    
+            import('@pdftron/webviewer').then((module) => {
+          const WebViewer = module.default
+          WebViewer(
+            {
+              path: '/webviewer/lib', // required for asset loading
+              initialDoc: currentDocumentUrl,
           licenseKey: 'demo:1755219174158:606dde5b03000000004697f8591ea5d9e505e44c124bc6be7fc53870e2', // or your license key
         },
         viewer.current as HTMLElement
@@ -1117,6 +1151,16 @@ export default function ApryseWebViewer({
         annotationManager.addEventListener('annotationChanged', (annotations: any[], action: string, info: any) => {
           if (action === 'add' && info && info.annotation) {
             const annotation = info.annotation;
+            
+            // Track all annotation types for contextual AI
+            const sectionId = `page-${annotation.PageNumber}-section`;
+            const location = { 
+              page: annotation.PageNumber, 
+              x: annotation.X || 0, 
+              y: annotation.Y || 0 
+            };
+            
+            // Handle different annotation types
             if (annotation.Subject === 'Highlight' || annotation.Subject === 'highlight') {
               
               // Get the highlighted text from the annotation using Apryse's official method
@@ -1188,6 +1232,17 @@ export default function ApryseWebViewer({
                   setSelectionPosition({ x: annotation.X, y: annotation.Y });
                   setShowTextSelectionPopup(true);
                   console.log('🎯 Popup shown for highlighted text:', highlightedText);
+                  
+                  // Track highlighting behavior for contextual AI
+                  const sectionId = `page-${annotation.PageNumber}-section`; // Simple section ID based on page
+                  const location = { 
+                    page: annotation.PageNumber, 
+                    x: annotation.X || 0, 
+                    y: annotation.Y || 0 
+                  };
+                  
+                  console.log('🤖 [ContextualAI] Tracking highlight:', { sectionId, text: highlightedText, location });
+                  contextualAI.trackHighlight(sectionId, highlightedText, location);
                 }
                 
               } catch (error) {
@@ -1212,8 +1267,40 @@ export default function ApryseWebViewer({
                 onHighlightAdd(highlightData);
               }
               
+              // Also notify parent component for contextual AI tracking
+              if (onAnnotationAdd) {
+                const aiAnnotation = {
+                  id: annotation.Id,
+                  type: 'highlight',
+                  x: annotation.X,
+                  y: annotation.Y,
+                  width: annotation.Width,
+                  height: annotation.Height,
+                  color: annotation.Color ? `rgb(${annotation.Color.R}, ${annotation.Color.G}, ${annotation.Color.B})` : '#ffff00',
+                  text: highlightedText,
+                  author: userName || 'Unknown',
+                  timestamp: new Date().toISOString(),
+                  pageNumber: annotation.PageNumber
+                };
+                onAnnotationAdd(aiAnnotation);
+                console.log('🎯 [ApryseWebViewer] Highlight annotation sent to parent:', aiAnnotation);
+              }
+              
+              // Manual highlight tracking for demo
+              console.log('🎨 [ApryseWebViewer] Highlight created successfully:', {
+                id: annotation.Id,
+                text: highlightedText,
+                page: annotation.PageNumber,
+                position: { x: annotation.X, y: annotation.Y }
+              });
+              
               // Update activity to editing
               updateActivity('editing');
+            } else {
+              // Handle other annotation types (notes, comments, etc.)
+              const annotationText = annotation.Contents || annotation.Subject || 'Annotation added';
+              console.log('💭 [ContextualAI] Tracking annotation:', { sectionId, text: annotationText, location });
+              contextualAI.trackAnnotation(sectionId, annotationText, location);
             }
           }
         });
@@ -1256,17 +1343,89 @@ export default function ApryseWebViewer({
             console.log('✅ Text captured and stored successfully!');
           };
           
+          // Track mouse position for popup positioning
+          const handleMouseMove = (event: MouseEvent) => {
+            setMousePosition({ x: event.clientX, y: event.clientY });
+          };
+          document.addEventListener('mousemove', handleMouseMove);
+
           // Method 1: Apryse text selection event
           try {
             documentViewer.addEventListener('textSelectionChanged', (quads: any, text: string, pageNumber: number) => {
               console.log('🎯 Apryse text selection event:', { text, pageNumber });
               if (text && text.trim()) {
                 captureSelectedText(text, pageNumber);
+                
+                // Show text selection popup for all text selections
+                const trimmedText = text.trim();
+                if (trimmedText.length > 0) {
+                  // Use current mouse position for popup
+                  setSelectedText(trimmedText);
+                  setSelectionPosition({ x: mousePosition.x, y: mousePosition.y });
+                  setShowTextSelectionPopup(true);
+                  console.log('🎯 Text selection popup shown for:', trimmedText);
+                }
               }
             });
             console.log('✅ Apryse text selection listener added');
           } catch (error) {
             console.log('❌ Error adding Apryse listener:', error);
+          }
+          
+          // Add page change tracking for contextual AI
+          try {
+            let pageStartTime = Date.now();
+            let currentPageNumber = 1;
+            
+            documentViewer.addEventListener('pageNumberUpdated', (currentPage: number, previousPage: number) => {
+              console.log('📄 Page changed from', previousPage, 'to', currentPage);
+              
+              // Track time spent on previous page
+              if (previousPage && previousPage !== currentPage) {
+                const timeSpent = Date.now() - pageStartTime;
+                const sectionId = `page-${previousPage}-section`;
+                const location = { page: previousPage, x: 0, y: 0 };
+                
+                console.log('⏰ [ContextualAI] Tracking time spent on page', previousPage, ':', timeSpent, 'ms');
+                contextualAI.trackTimeSpent(sectionId, timeSpent, location);
+                
+                // Track revisit if returning to a previously visited page
+                if (previousPage < currentPage) {
+                  console.log('🔄 [ContextualAI] Tracking revisit to page', currentPage);
+                  const revisitSectionId = `page-${currentPage}-section`;
+                  contextualAI.trackRevisit(revisitSectionId, { page: currentPage, x: 0, y: 0 });
+                }
+              }
+              
+              // Reset timer for new page
+              pageStartTime = Date.now();
+              currentPageNumber = currentPage;
+              
+              if (onPageChange) {
+                onPageChange(currentPage);
+              }
+            });
+            console.log('✅ Page change listener added for contextual AI');
+          } catch (error) {
+            console.log('❌ Error adding page change listener:', error);
+          }
+          
+          // Add scroll tracking for contextual AI
+          try {
+            const viewerElement = documentViewer.getViewerElement();
+            if (viewerElement) {
+              viewerElement.addEventListener('scroll', () => {
+                const currentPage = documentViewer.getCurrentPage();
+                const scrollTop = viewerElement.scrollTop;
+                console.log('📜 Scroll event on page', currentPage, 'at position', scrollTop);
+                if (onScroll) {
+                  onScroll(currentPage, scrollTop);
+                }
+              });
+              console.log('✅ Scroll listener added for contextual AI');
+            }
+          } catch (error) {
+            console.log('❌ Error adding scroll listener:', error);
           }
           
           // Method 2: Global selection capture
@@ -1401,6 +1560,100 @@ export default function ApryseWebViewer({
           }
           // Load saved annotations (comments/highlights)
           loadAnnotations(annotationManager);
+          
+          // Define the text extraction handler function AFTER WebViewer is initialized
+          const handleTextExtractionRequest = async (event: CustomEvent) => {
+            console.log('[WEBVIEWER] Text extraction request received:', event.detail)
+            console.log('[WEBVIEWER] webViewerInstance exists:', !!instance)
+            console.log('[WEBVIEWER] webViewerInstance.Core exists:', !!(instance && instance.Core))
+            
+            if (instance && instance.Core) {
+              console.log('[WEBVIEWER] ✅ WebViewer is initialized, attempting text extraction...')
+              try {
+                const { documentViewer } = instance.Core
+                console.log('[WEBVIEWER] documentViewer:', documentViewer)
+                
+                const doc = documentViewer.getDocument()
+                console.log('[WEBVIEWER] Document object:', doc)
+                
+                if (doc) {
+                  const pageCount = documentViewer.getPageCount()
+                  console.log(`[WEBVIEWER] Total pages in document: ${pageCount}`)
+                  
+                  let fullText = ''
+                  const pagesToExtract = Math.min(pageCount, 10)
+                  console.log(`[WEBVIEWER] Extracting text from ${pagesToExtract} pages...`)
+                  
+                  for (let i = 1; i <= pagesToExtract; i++) {
+                    try {
+                      console.log(`[WEBVIEWER] Extracting page ${i}...`)
+                      const pageText = await new Promise<string>((resolve) => {
+                        doc.loadPageText(i, (text: string) => {
+                          console.log(`[WEBVIEWER] Page ${i} callback received, text length:`, text?.length || 0)
+                          resolve(text || '')
+                        })
+                      })
+                      fullText += `\n--- PAGE ${i} ---\n${pageText}\n`
+                      console.log(`[WEBVIEWER] Page ${i} text length:`, pageText.length)
+                    } catch (error) {
+                      console.log(`[WEBVIEWER] Could not extract text from page ${i}:`, error)
+                      fullText += `\n--- PAGE ${i} ---\n[ERROR: Could not extract text]\n`
+                    }
+                  }
+                  
+                  console.log('[WEBVIEWER] Total extracted text length:', fullText.length)
+                  
+                  // Dispatch event with extracted text
+                  const responseEvent = new CustomEvent('text-extraction-response', {
+                    detail: { 
+                      requestId: event.detail.requestId,
+                      text: fullText,
+                      success: true 
+                    }
+                  })
+                  window.dispatchEvent(responseEvent)
+                  console.log('[WEBVIEWER] ✅ Text extraction response dispatched')
+                } else {
+                  console.error('[WEBVIEWER] ❌ No document found')
+                  const responseEvent = new CustomEvent('text-extraction-response', {
+                    detail: { 
+                      requestId: event.detail.requestId,
+                      text: '',
+                      success: false,
+                      error: 'No document found'
+                    }
+                  })
+                  window.dispatchEvent(responseEvent)
+                }
+              } catch (error) {
+                console.error('[WEBVIEWER] ❌ Text extraction error:', error)
+                const responseEvent = new CustomEvent('text-extraction-response', {
+                  detail: { 
+                    requestId: event.detail.requestId,
+                    text: '',
+                    success: false,
+                    error: String(error)
+                  }
+                })
+                window.dispatchEvent(responseEvent)
+              }
+            } else {
+              console.error('[WEBVIEWER] ❌ WebViewer not initialized')
+              const responseEvent = new CustomEvent('text-extraction-response', {
+                detail: { 
+                  requestId: event.detail.requestId,
+                  text: '',
+                  success: false,
+                  error: 'WebViewer not initialized'
+                }
+              })
+              window.dispatchEvent(responseEvent)
+            }
+          }
+          
+          // Add event listener for text extraction requests AFTER WebViewer is fully initialized
+          window.addEventListener('extract-text-request', handleTextExtractionRequest as unknown as EventListener)
+          console.log('[WEBVIEWER] ✅ Event listener added after initialization')
         });
         
         documentViewer.addEventListener('documentLoadFailed', (error: any) => {

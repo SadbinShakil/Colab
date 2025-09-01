@@ -1,8 +1,16 @@
 import { NextRequest, NextResponse } from 'next/server'
 import OpenAI from 'openai'
 import { join } from 'path'
-import { readFile } from 'fs/promises'
+import { readFile, readdir } from 'fs/promises'
 import pdfParse from 'pdf-parse'
+
+// Debug: Log the API key status
+console.log('🔑 Environment Check:', {
+  hasKey: !!process.env.OPENAI_API_KEY,
+  keyLength: process.env.OPENAI_API_KEY?.length,
+  keyStartsWith: process.env.OPENAI_API_KEY?.substring(0, 20),
+  isDemoKey: process.env.OPENAI_API_KEY === 'sk-your-openai-api-key-here'
+})
 
 const openai = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY,
@@ -59,53 +67,37 @@ interface PrerequisiteAnalysis {
   expertRecommendations: string[]
 }
 
-// Function to extract real metadata from uploaded PDF
-async function extractRealPaperMetadata(documentId: string): Promise<Partial<PaperMetadata> | null> {
+// Function to get metadata from stored document (no PDF reading needed)
+async function getStoredDocumentMetadata(documentId: string): Promise<Partial<PaperMetadata> | null> {
   try {
-    // Find the PDF file for this document
-    const uploadsDir = join(process.cwd(), 'public', 'uploads')
-    const fs = require('fs')
+    // Import the shared document storage
+    const { getDocument } = await import('@/lib/documentStorage')
     
-    let pdfFilename = null
-    try {
-      const files = fs.readdirSync(uploadsDir)
-      pdfFilename = files.find((file: string) => file.startsWith(documentId + '-'))
-    } catch (err) {
-      console.error('[METADATA] Could not read uploads directory:', err)
+    // Get the stored document metadata
+    const document = await getDocument(documentId)
+    if (!document) {
+      console.error('[METADATA] Document not found in storage:', documentId)
       return null
     }
     
-    if (!pdfFilename) {
-      console.error('[METADATA] PDF file not found for documentId:', documentId)
-      return null
-    }
-    
-    const pdfPath = join(uploadsDir, pdfFilename)
-    
-    // Extract text from PDF
-    const buffer = await readFile(pdfPath)
-    const data = await pdfParse(buffer)
-    const text = data.text || ''
-    
-    if (!text) {
-      console.error('[METADATA] No text extracted from PDF')
-      return null
-    }
-    
-    // Extract metadata from text using similar logic to extract-metadata API
-    const extractedMetadata = extractMetadataFromText(text, data.metadata, data.info)
+    console.log('🔍 Found stored document metadata:', {
+      title: document.title,
+      authors: document.authors,
+      year: document.year,
+      abstract: document.abstract?.length || 0
+    })
     
     return {
-      title: extractedMetadata.title,
-      authors: extractedMetadata.authors,
-      abstract: extractedMetadata.abstract,
-      journal: extractedMetadata.journal,
-      year: extractedMetadata.year,
-      tags: extractedMetadata.tags
+      title: document.title,
+      authors: document.authors,
+      abstract: document.abstract,
+      journal: document.journal,
+      year: document.year,
+      tags: document.tags
     }
     
   } catch (error) {
-    console.error('[METADATA] Error extracting real metadata:', error)
+    console.error('[METADATA] Error getting stored metadata:', error)
     return null
   }
 }
@@ -189,23 +181,38 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Document ID is required' }, { status: 400 })
     }
 
-    // First, try to get the real paper metadata from the uploaded document
+    // Get the stored document metadata (already extracted during upload)
     let realMetadata = metadata
     try {
-      const enhancedMetadata = await extractRealPaperMetadata(documentId)
-      if (enhancedMetadata) {
+      const storedMetadata = await getStoredDocumentMetadata(documentId)
+      if (storedMetadata) {
         realMetadata = {
           ...metadata,
-          ...enhancedMetadata // Override with real extracted data
+          ...storedMetadata // Override with stored extracted data
         }
-        console.log('🔍 Using real extracted metadata:', realMetadata)
+        console.log('🔍 Using stored extracted metadata:', realMetadata)
+        
+        // Check if metadata extraction was completed
+        if (storedMetadata.enhancedMetadata?.status === 'completed') {
+          console.log('✅ Metadata extraction completed during upload - ready for analysis!')
+        } else if (storedMetadata.enhancedMetadata?.status === 'error') {
+          console.log('⚠️ Metadata extraction failed during upload:', storedMetadata.enhancedMetadata.error)
+        }
       }
     } catch (extractError) {
-      console.log('⚠️ Could not extract real metadata, using provided metadata:', extractError)
+      console.log('⚠️ Could not get stored metadata, using provided metadata:', extractError)
     }
 
     // Check if we have a valid API key
+    console.log('🔑 API Key Check:', {
+      hasKey: !!process.env.OPENAI_API_KEY,
+      keyLength: process.env.OPENAI_API_KEY?.length,
+      keyStartsWith: process.env.OPENAI_API_KEY?.substring(0, 10),
+      isDemoKey: process.env.OPENAI_API_KEY === 'sk-your-openai-api-key-here'
+    })
+    
     if (!process.env.OPENAI_API_KEY || process.env.OPENAI_API_KEY === 'sk-your-openai-api-key-here') {
+      console.log('⚠️ Using demo mode - no valid API key found')
       // Return intelligent mock response based on metadata analysis
       const mockAnalysis = generateIntelligentMockAnalysis(realMetadata)
       
@@ -215,6 +222,8 @@ export async function POST(request: NextRequest) {
         mode: 'demo'
       })
     }
+    
+    console.log('✅ Using real AI mode - API key found')
 
     // Generate comprehensive prerequisite analysis using AI
     const analysis = await generateAIPrerequisiteAnalysis(realMetadata)
@@ -227,7 +236,10 @@ export async function POST(request: NextRequest) {
 
   } catch (error) {
     console.error('Metadata prerequisites error:', error)
-    return NextResponse.json({ error: 'Failed to generate prerequisites analysis' }, { status: 500 })
+    return NextResponse.json({ 
+      error: `Failed to generate prerequisites analysis: ${error.message || error}`,
+      details: error.toString()
+    }, { status: 500 })
   }
 }
 

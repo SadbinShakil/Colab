@@ -11,6 +11,13 @@ export async function POST(request: NextRequest) {
     }
 
     // Check if we have a valid API key
+    console.log('🔑 AI Help API Key Check:', {
+      hasKey: !!process.env.OPENAI_API_KEY,
+      keyLength: process.env.OPENAI_API_KEY?.length,
+      keyStartsWith: process.env.OPENAI_API_KEY?.substring(0, 20),
+      isDemoKey: process.env.OPENAI_API_KEY === 'sk-your-openai-api-key-here'
+    })
+    
     if (!process.env.OPENAI_API_KEY || process.env.OPENAI_API_KEY === 'sk-your-openai-api-key-here') {
       // Return mock response for testing when no real API key
       const mockResponse = {
@@ -67,6 +74,10 @@ Understanding this requires knowledge of:
     return NextResponse.json({ success: true, response: { answer } })
   } catch (error) {
     console.error('AI help error:', error)
-    return NextResponse.json({ error: 'Failed to get AI response' }, { status: 500 })
+    return NextResponse.json({ 
+      error: `Failed to get AI response: ${error.message || error}`,
+      details: error.toString(),
+      type: error.constructor.name
+    }, { status: 500 })
   }
 } 

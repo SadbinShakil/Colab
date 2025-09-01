@@ -73,7 +73,19 @@ export default function ImageExplainer({
   const [copied, setCopied] = useState<string | null>(null)
   const [showCustomQuestion, setShowCustomQuestion] = useState(false)
   const [customQuestion, setCustomQuestion] = useState('')
+  const [isDetailedMode, setIsDetailedMode] = useState(false)
+  const [expandedSections, setExpandedSections] = useState<Set<string>>(new Set(['description']))
   const textareaRef = useRef<HTMLTextAreaElement>(null)
+
+  const toggleSection = (sectionKey: string) => {
+    const newExpanded = new Set(expandedSections)
+    if (newExpanded.has(sectionKey)) {
+      newExpanded.delete(sectionKey)
+    } else {
+      newExpanded.add(sectionKey)
+    }
+    setExpandedSections(newExpanded)
+  }
 
   // Auto-analyze when component opens
   useEffect(() => {
@@ -101,34 +113,30 @@ Authors: ${documentAuthors || 'Unknown'}
 Provide a detailed answer based on the visual content.`
     }
 
-    return `Please analyze the following figure caption or description from an academic document. Provide insights based on the description and context.
+    return `Conduct advanced analysis of this figure caption with publication-quality precision.
 
-Visual Content Description/Caption: ${text}
+Visual Content: ${text}
 Document: ${documentTitle || 'Research Document'}
 Authors: ${documentAuthors || 'Academic Authors'}
 
-Please provide a comprehensive analysis in JSON format with these sections:
+Provide sophisticated analysis in JSON format:
 {
-  "description": "Detailed interpretation of what the figure likely shows based on the caption",
-  "objects": ["key elements", "components", "variables mentioned"],
-  "text": ["labels", "annotations", "text elements mentioned in caption"],
-  "insights": ["key finding 1", "research insight 2", "methodological insight 3"],
-  "context": "How this figure relates to the research objectives and broader study",
-  "technical": "Technical analysis of the methodology, data presentation, or scientific approach",
-  "recommendations": ["research implication 1", "future direction 2"]
+  "description": "Advanced interpretation with technical precision",
+  "objects": ["experimental variables", "key components", "statistical measures"],
+  "text": ["labels", "annotations", "methodological details"],
+  "insights": ["primary findings", "statistical outcomes", "theoretical implications"],
+  "context": "Theoretical framework and literature integration",
+  "technical": "Advanced methodological and statistical analysis",
+  "recommendations": ["research implications", "future directions", "methodological refinements"]
 }
 
 Focus on:
-- Scientific methodology and experimental design implied
-- Research findings and their significance
-- Data types and analytical approaches suggested
-- Technical terminology and its meaning in context
-- How this contributes to the research conclusions
-- Statistical or quantitative aspects mentioned
-- Theoretical framework connections
-- Implications for the field of study
+- Experimental design and statistical methodology
+- Theoretical significance and literature integration
+- Methodological rigor and analytical precision
+- Advanced research implications
 
-Note: Analysis based on figure caption and research context. Emphasizing scientific interpretation and research relevance.`
+Use precise scientific terminology and maintain academic rigor.`
   }
 
   // Analyze image content
@@ -148,7 +156,9 @@ Note: Analysis based on figure caption and research context. Emphasizing scienti
         documentAuthors: documentAuthors,
         documentUrl: documentUrl,
         userId: userId,
-        userName: userName
+        userName: userName,
+        documentContent: documentContent,
+        isDetailedMode: isDetailedMode
       }
 
       if (hasActualImage && imageData) {
@@ -238,13 +248,13 @@ Note: Analysis based on figure caption and research context. Emphasizing scienti
 
   const getTabLabel = (tab: keyof ImageAnalysis) => {
     switch (tab) {
-      case 'description': return 'Visual Description'
-      case 'objects': return 'Objects & Elements'
-      case 'text': return 'Text & Labels'
-      case 'insights': return 'Key Insights'
-      case 'context': return 'Research Context'
-      case 'technical': return 'Technical Analysis'
-      case 'recommendations': return 'Recommendations'
+      case 'description': return 'Analysis'
+      case 'objects': return 'Variables'
+      case 'text': return 'Annotations'
+      case 'insights': return 'Findings'
+      case 'context': return 'Framework'
+      case 'technical': return 'Methodology'
+      case 'recommendations': return 'Implications'
       default: return tab
     }
   }
@@ -257,10 +267,10 @@ Note: Analysis based on figure caption and research context. Emphasizing scienti
         <CardHeader className="bg-gradient-to-r from-blue-600 to-purple-600 text-white shadow-lg">
           <div className="flex items-center justify-between">
             <div className="flex items-center space-x-3">
-              <ImageIcon className="w-7 h-7" />
-              <CardTitle className="text-2xl font-bold">AI Image Understanding</CardTitle>
+              <ImageIcon className="w-6 h-6" />
+              <CardTitle className="text-xl font-bold">Advanced Research Analysis</CardTitle>
               <Badge variant="secondary" className="bg-white/20 text-white border-white/30">
-                {hasActualImage && imageData ? '👁️ Vision AI' : '📝 Caption Analysis'}
+                {hasActualImage && imageData ? 'Vision AI' : 'Caption Analysis'}
               </Badge>
             </div>
             <Button
@@ -274,9 +284,9 @@ Note: Analysis based on figure caption and research context. Emphasizing scienti
           </div>
           
           {selectedText && (
-            <div className="mt-4 p-4 bg-white/10 rounded-lg border border-white/20">
-              <div className="text-sm opacity-90 mb-3 font-medium">🖼️ Selected Image/Visual Content:</div>
-              <div className="font-mono text-sm bg-white/20 p-3 rounded border border-white/10 text-white font-bold max-h-32 overflow-y-auto">
+            <div className="mt-3 p-3 bg-white/10 rounded-lg border border-white/20">
+              <div className="text-sm opacity-90 mb-2 font-medium">Selected Content:</div>
+              <div className="font-mono text-sm bg-white/20 p-2 rounded border border-white/10 text-white font-bold max-h-24 overflow-y-auto">
                 {selectedText}
               </div>
             </div>
@@ -324,15 +334,32 @@ Note: Analysis based on figure caption and research context. Emphasizing scienti
           )}
 
           {/* Action Buttons */}
-          <div className="p-4 border-b bg-gray-50">
+          <div className="p-3 border-b bg-gray-50">
             <div className="flex space-x-2">
+              <Button
+                variant={isDetailedMode ? "default" : "outline"}
+                onClick={() => {
+                  setIsDetailedMode(!isDetailedMode)
+                  if (analysis) {
+                    // Re-analyze with new mode
+                    setTimeout(() => analyzeImage(), 100)
+                  }
+                }}
+                className="flex items-center space-x-2"
+                size="sm"
+              >
+                <Zap className="w-4 h-4" />
+                <span>{isDetailedMode ? 'Detailed' : 'Concise'}</span>
+              </Button>
+              
               <Button
                 variant="outline"
                 onClick={() => setShowCustomQuestion(!showCustomQuestion)}
                 className="flex items-center space-x-2"
+                size="sm"
               >
                 <MessageSquare className="w-4 h-4" />
-                <span>Ask Custom Question</span>
+                <span>Custom Question</span>
               </Button>
               
               {analysis && (
@@ -341,15 +368,17 @@ Note: Analysis based on figure caption and research context. Emphasizing scienti
                     variant="outline"
                     onClick={() => copyToClipboard(JSON.stringify(analysis, null, 2), 'full')}
                     className="flex items-center space-x-2"
+                    size="sm"
                   >
                     {copied === 'full' ? <Check className="w-4 h-4" /> : <Copy className="w-4 h-4" />}
-                    <span>Copy Analysis</span>
+                    <span>Copy</span>
                   </Button>
                   
                   <Button
                     variant="outline"
                     onClick={() => analyzeImage()}
                     className="flex items-center space-x-2"
+                    size="sm"
                   >
                     <RefreshCw className="w-4 h-4" />
                     <span>Re-analyze</span>
@@ -361,126 +390,186 @@ Note: Analysis based on figure caption and research context. Emphasizing scienti
 
           {/* Loading State */}
           {isLoading && (
-            <div className="p-12 text-center bg-white">
-              <div className="animate-spin rounded-full h-16 w-16 border-4 border-blue-200 border-t-blue-600 mx-auto mb-6"></div>
-                      <h3 className="text-xl font-semibold text-gray-900 mb-2">
-          {hasActualImage && imageData ? '👁️ AI is analyzing the extracted page image...' : '🤖 AI is analyzing the visual content...'}
-        </h3>
-              <p className="text-gray-700 text-lg mb-2">
+            <div className="p-8 text-center bg-white">
+              <div className="animate-spin rounded-full h-12 w-12 border-4 border-blue-200 border-t-blue-600 mx-auto mb-4"></div>
+              <h3 className="text-lg font-semibold text-gray-900 mb-2">
+                {hasActualImage && imageData ? 'Analyzing image...' : 'Analyzing content...'}
+              </h3>
+              <p className="text-gray-700 text-sm mb-2">
                 {hasActualImage && imageData 
-                  ? 'Using Vision AI to analyze the actual figure/diagram' 
-                  : 'Interpreting image caption and visual description'
+                  ? 'Processing with Vision AI' 
+                  : 'Extracting insights from description'
                 }
               </p>
-              <p className="text-sm text-gray-600">This may take 20-30 seconds for complex analysis</p>
-              <div className="mt-4 text-xs text-gray-500 bg-gray-50 p-2 rounded inline-block">
-                {hasActualImage && imageData 
-                  ? '🔬 GPT-4 Vision is processing the actual image content'
-                  : '📝 AI is extracting insights from figure descriptions and captions'
-                }
-              </div>
+              <p className="text-xs text-gray-600">Processing time: 20-30 seconds</p>
             </div>
           )}
 
           {/* Error State */}
           {error && (
-            <div className="p-12 text-center bg-white">
-              <AlertTriangle className="w-20 h-20 text-red-500 mx-auto mb-6" />
-              <h3 className="text-xl font-bold text-red-700 mb-3">❌ Analysis Failed</h3>
-              <p className="text-red-600 mb-6 text-lg bg-red-50 p-3 rounded border border-red-200">{error}</p>
+            <div className="p-8 text-center bg-white">
+              <AlertTriangle className="w-12 h-12 text-red-500 mx-auto mb-4" />
+              <h3 className="text-lg font-bold text-red-700 mb-3">Analysis Failed</h3>
+              <p className="text-red-600 mb-4 text-sm bg-red-50 p-2 rounded border border-red-200">{error}</p>
               <Button 
                 onClick={() => analyzeImage()} 
                 variant="outline"
-                className="bg-red-50 border-red-300 text-red-700 hover:bg-red-100 px-6 py-2"
+                className="bg-red-50 border-red-300 text-red-700 hover:bg-red-100"
               >
-                🔄 Try Again
+                Try Again
               </Button>
             </div>
           )}
 
           {/* Analysis Content */}
           {analysis && !isLoading && !error && (
-            <div className="flex flex-1 bg-white overflow-hidden">
-              {/* Tab Navigation */}
-              <div className="w-48 border-r border-gray-200 bg-gray-50 overflow-y-auto flex-shrink-0">
-                {Object.entries(analysis).map(([key, content]) => {
-                  if (!content || (Array.isArray(content) && content.length === 0)) return null
-                  return (
-                    <button
-                      key={key}
-                      onClick={() => setActiveTab(key as keyof ImageAnalysis)}
-                      className={`w-full p-3 text-left border-b border-gray-200 hover:bg-blue-50 transition-colors ${
-                        activeTab === key 
-                          ? 'bg-blue-100 border-blue-300 text-blue-800 font-medium' 
-                          : 'text-gray-800 hover:text-blue-700'
-                      }`}
-                    >
-                      <div className="flex items-center space-x-2">
-                        {getTabIcon(key as keyof ImageAnalysis)}
-                        <span className="text-sm font-medium">{getTabLabel(key as keyof ImageAnalysis)}</span>
-                      </div>
-                    </button>
-                  )
-                })}
-              </div>
-
-              {/* Tab Content */}
-              <div className="flex-1 flex flex-col bg-white overflow-hidden">
-                <div className="p-6 overflow-y-auto flex-1">
-                  <div className="max-w-none">
-                    <div className="mb-6">
-                      <h3 className="text-xl font-bold text-gray-900 mb-3 flex items-center space-x-2">
-                        {getTabIcon(activeTab)}
-                        <span>{getTabLabel(activeTab)}</span>
-                      </h3>
-                      <div className="flex justify-between items-center mb-4">
-                        <Badge variant="outline" className="text-xs bg-blue-50 text-blue-700 border-blue-200">
-                          {activeTab === 'description' ? 'Visual overview' :
-                           activeTab === 'objects' ? 'Element identification' :
-                           activeTab === 'text' ? 'Text extraction' :
-                           activeTab === 'insights' ? 'Key findings' :
-                           activeTab === 'context' ? 'Research relevance' :
-                           activeTab === 'technical' ? 'Technical details' :
-                           'Action items'}
-                        </Badge>
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          onClick={() => copyToClipboard(
-                            Array.isArray(analysis[activeTab]) 
-                              ? (analysis[activeTab] as string[]).join('\n')
-                              : analysis[activeTab] as string, 
-                            activeTab
-                          )}
-                          className="text-gray-600 hover:text-blue-600"
-                        >
-                          {copied === activeTab ? <Check className="w-4 h-4" /> : <Copy className="w-4 h-4" />}
-                        </Button>
-                      </div>
-                    </div>
-                    
-                    <div className="prose prose-gray max-w-none">
-                      {Array.isArray(analysis[activeTab]) ? (
-                        <ul className="space-y-3">
-                          {(analysis[activeTab] as string[]).map((item, index) => (
-                            <li key={index} className="bg-gray-50 p-3 rounded-lg border border-gray-200 text-gray-800">
-                              <div className="flex items-start space-x-2">
-                                <span className="flex-shrink-0 w-6 h-6 bg-blue-100 text-blue-600 rounded-full flex items-center justify-center text-sm font-medium">
-                                  {index + 1}
-                                </span>
-                                <span className="text-gray-700 leading-relaxed">{item}</span>
-                              </div>
-                            </li>
-                          ))}
-                        </ul>
-                      ) : (
-                        <div className="bg-gray-50 p-6 rounded-lg border border-gray-200">
-                          <p className="text-gray-800 leading-relaxed whitespace-pre-wrap">
-                            {analysis[activeTab] as string}
-                          </p>
+            <div className="flex-1 bg-white overflow-hidden">
+              <div className="p-3 h-full">
+                <div className="grid grid-cols-2 gap-3 h-full">
+                  {/* Left Column */}
+                  <div className="space-y-2">
+                    {Object.entries(analysis).slice(0, Math.ceil(Object.keys(analysis).length / 2)).map(([key, content]) => {
+                      if (!content || (Array.isArray(content) && content.length === 0)) return null
+                      
+                      const sectionLabel = getTabLabel(key as keyof ImageAnalysis)
+                      const sectionIcon = getTabIcon(key as keyof ImageAnalysis)
+                      
+                      return (
+                        <div key={key} className="border border-gray-200 rounded-lg bg-white shadow-sm h-32 overflow-hidden">
+                          {/* Section Header */}
+                          <div className="p-2 bg-gray-50 border-b border-gray-200 flex items-center justify-between">
+                            <div className="flex items-center space-x-2">
+                              {sectionIcon}
+                              <span className="font-medium text-gray-900 text-xs">{sectionLabel}</span>
+                              <Badge variant="outline" className="text-xs bg-blue-50 text-blue-700 border-blue-200">
+                                {key === 'description' ? 'Analysis' :
+                                 key === 'objects' ? 'Variables' :
+                                 key === 'text' ? 'Details' :
+                                 key === 'insights' ? 'Findings' :
+                                 key === 'context' ? 'Framework' :
+                                 key === 'technical' ? 'Methodology' :
+                                 'Implications'}
+                              </Badge>
+                            </div>
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              onClick={() => copyToClipboard(
+                                Array.isArray(content) 
+                                  ? (content as string[]).join('\n')
+                                  : content as string, 
+                                key
+                              )}
+                              className="text-gray-600 hover:text-blue-600 h-6 w-6 p-0"
+                            >
+                              {copied === key ? <Check className="w-3 h-3" /> : <Copy className="w-3 h-3" />}
+                            </Button>
+                          </div>
+                          
+                          {/* Section Content */}
+                          <div className="p-2 h-24 overflow-y-auto">
+                            <div className="prose prose-gray max-w-none">
+                              {Array.isArray(content) ? (
+                                <ul className="space-y-1">
+                                  {(content as string[]).slice(0, 3).map((item, index) => (
+                                    <li key={index} className="bg-gray-50 p-1 rounded border border-gray-200 text-gray-800">
+                                      <div className="flex items-start space-x-1">
+                                        <span className="flex-shrink-0 w-4 h-4 bg-blue-100 text-blue-600 rounded-full flex items-center justify-center text-xs font-medium">
+                                          {index + 1}
+                                        </span>
+                                        <span className="text-gray-700 text-xs leading-tight">{item.substring(0, 80)}...</span>
+                                      </div>
+                                    </li>
+                                  ))}
+                                  {(content as string[]).length > 3 && (
+                                    <li className="text-xs text-gray-500 italic">+{(content as string[]).length - 3} more items</li>
+                                  )}
+                                </ul>
+                              ) : (
+                                <div className="bg-gray-50 p-2 rounded border border-gray-200">
+                                  <p className="text-gray-800 text-xs leading-tight">
+                                    {(content as string).substring(0, 150)}...
+                                  </p>
+                                </div>
+                              )}
+                            </div>
+                          </div>
                         </div>
-                      )}
-                    </div>
+                      )
+                    })}
+                  </div>
+
+                  {/* Right Column */}
+                  <div className="space-y-2">
+                    {Object.entries(analysis).slice(Math.ceil(Object.keys(analysis).length / 2)).map(([key, content]) => {
+                      if (!content || (Array.isArray(content) && content.length === 0)) return null
+                      
+                      const sectionLabel = getTabLabel(key as keyof ImageAnalysis)
+                      const sectionIcon = getTabIcon(key as keyof ImageAnalysis)
+                      
+                      return (
+                        <div key={key} className="border border-gray-200 rounded-lg bg-white shadow-sm h-32 overflow-hidden">
+                          {/* Section Header */}
+                          <div className="p-2 bg-gray-50 border-b border-gray-200 flex items-center justify-between">
+                            <div className="flex items-center space-x-2">
+                              {sectionIcon}
+                              <span className="font-medium text-gray-900 text-xs">{sectionLabel}</span>
+                              <Badge variant="outline" className="text-xs bg-blue-50 text-blue-700 border-blue-200">
+                                {key === 'description' ? 'Analysis' :
+                                 key === 'objects' ? 'Variables' :
+                                 key === 'text' ? 'Details' :
+                                 key === 'insights' ? 'Findings' :
+                                 key === 'context' ? 'Framework' :
+                                 key === 'technical' ? 'Methodology' :
+                                 'Implications'}
+                              </Badge>
+                            </div>
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              onClick={() => copyToClipboard(
+                                Array.isArray(content) 
+                                  ? (content as string[]).join('\n')
+                                  : content as string, 
+                                key
+                              )}
+                              className="text-gray-600 hover:text-blue-600 h-6 w-6 p-0"
+                            >
+                              {copied === key ? <Check className="w-3 h-3" /> : <Copy className="w-3 h-3" />}
+                            </Button>
+                          </div>
+                          
+                          {/* Section Content */}
+                          <div className="p-2 h-24 overflow-y-auto">
+                            <div className="prose prose-gray max-w-none">
+                              {Array.isArray(content) ? (
+                                <ul className="space-y-1">
+                                  {(content as string[]).slice(0, 3).map((item, index) => (
+                                    <li key={index} className="bg-gray-50 p-1 rounded border border-gray-200 text-gray-800">
+                                      <div className="flex items-start space-x-1">
+                                        <span className="flex-shrink-0 w-4 h-4 bg-blue-100 text-blue-600 rounded-full flex items-center justify-center text-xs font-medium">
+                                          {index + 1}
+                                        </span>
+                                        <span className="text-gray-700 text-xs leading-tight">{item.substring(0, 80)}...</span>
+                                      </div>
+                                    </li>
+                                  ))}
+                                  {(content as string[]).length > 3 && (
+                                    <li className="text-xs text-gray-500 italic">+{(content as string[]).length - 3} more items</li>
+                                  )}
+                                </ul>
+                              ) : (
+                                <div className="bg-gray-50 p-2 rounded border border-gray-200">
+                                  <p className="text-gray-800 text-xs leading-tight">
+                                    {(content as string).substring(0, 150)}...
+                                  </p>
+                                </div>
+                              )}
+                            </div>
+                          </div>
+                        </div>
+                      )
+                    })}
                   </div>
                 </div>
               </div>

@@ -21,11 +21,23 @@ export default function ElegantUploadPage() {
   const uploadFile = async (file: File): Promise<string | null> => {
     console.log('Starting upload for file:', file.name, 'Size:', file.size, 'Type:', file.type)
     
+    // Show upload started toast
+    toast.info('📁 Starting upload...', {
+      description: `Uploading ${file.name}`,
+      duration: 2000
+    })
+    
     try {
       const formData = new FormData()
       formData.append('file', file)
 
       console.log('Sending upload request...')
+
+      // Show uploading progress toast
+      toast.info('🔄 Uploading file...', {
+        description: 'Please wait while we upload your PDF',
+        duration: 3000
+      })
 
       // Simulate upload progress
       const progressInterval = setInterval(() => {
@@ -56,6 +68,27 @@ export default function ElegantUploadPage() {
 
       const result = await response.json()
       console.log('Upload successful, result:', result)
+      
+      // Show upload success toast
+      toast.success('✅ File uploaded successfully!', {
+        description: 'Your PDF has been saved',
+        duration: 4000
+      })
+      
+      // Show metadata extraction started toast
+      toast.info('🔍 Extracting metadata...', {
+        description: 'Analyzing your PDF content',
+        duration: 3000
+      })
+      
+      // Wait a bit then show completion toast
+      setTimeout(() => {
+        toast.success('🎯 Ready for AI analysis!', {
+          description: 'Click "AI Research Prerequisites" to start',
+          duration: 5000
+        })
+      }, 2000)
+      
       return result.document.id
     } catch (error) {
       console.error('Upload error:', error)
@@ -98,11 +131,15 @@ export default function ElegantUploadPage() {
     const documentId = await uploadFile(file)
     
     if (documentId) {
-      toast.success('Document uploaded successfully!')
+      // Show final success toast before redirecting
+      toast.success('🎉 Document ready!', {
+        description: 'Redirecting to document viewer...',
+        duration: 3000
+      })
       console.log('Redirecting to document:', documentId)
       setTimeout(() => {
         router.push(`/document/${documentId}`)
-      }, 1500)
+      }, 2000)
     } else {
       console.log('Upload failed, resetting state')
       setIsUploading(false)
