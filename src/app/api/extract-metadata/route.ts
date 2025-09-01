@@ -15,7 +15,7 @@ async function extractTextFromPDF(file: File): Promise<{
     const data = await pdfParse(Buffer.from(buffer), {
       // Enhanced options for better text extraction
       max: 0, // No page limit
-      version: 'v2.0.0'
+      version: 'v2.0.550'
     })
 
     return {

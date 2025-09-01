@@ -38,6 +38,7 @@ interface AIResearchPrerequisitesProps {
   documentJournal: string
   documentYear: string
   documentUrl: string
+  documentText?: string // Add extracted text as optional prop
 }
 
 interface RelatedPaper {
@@ -102,7 +103,8 @@ export default function AIResearchPrerequisites({
   documentAuthors,
   documentJournal,
   documentYear,
-  documentUrl
+  documentUrl,
+  documentText
 }: AIResearchPrerequisitesProps) {
   const [research, setResearch] = useState<PaperResearch | null>(null)
   const [isLoading, setIsLoading] = useState(false)
@@ -132,7 +134,7 @@ export default function AIResearchPrerequisites({
       if (documentId) {
         setSearchPhase('Using metadata-based prerequisite analysis...')
         
-        // Use the new metadata-based API
+        // Use the new metadata-based API with extracted text
         const response = await fetch('/api/metadata-prerequisites', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -143,9 +145,10 @@ export default function AIResearchPrerequisites({
               authors: documentAuthors,
               journal: documentJournal,
               year: documentYear,
-              abstract: '', // Will be extracted from the actual PDF
+              abstract: documentText ? documentText.substring(0, 2000) : '', // Use extracted text as abstract
               tags: []
-            }
+            },
+            documentText: documentText // Pass the full extracted text for analysis
           })
         })
 

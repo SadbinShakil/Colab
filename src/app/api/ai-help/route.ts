@@ -75,9 +75,9 @@ Understanding this requires knowledge of:
   } catch (error) {
     console.error('AI help error:', error)
     return NextResponse.json({ 
-      error: `Failed to get AI response: ${error.message || error}`,
-      details: error.toString(),
-      type: error.constructor.name
+      error: `Failed to get AI response: ${error instanceof Error ? error.message : String(error)}`,
+      details: error instanceof Error ? error.toString() : String(error),
+      type: error instanceof Error ? error.constructor.name : 'Unknown'
     }, { status: 500 })
   }
 } 

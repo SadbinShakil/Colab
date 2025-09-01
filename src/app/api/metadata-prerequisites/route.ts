@@ -62,6 +62,30 @@ interface PrerequisiteAnalysis {
       importance: 'essential' | 'highly-recommended' | 'useful'
       summary: string
     }>
+    extensions: Array<{
+      title: string
+      authors: string[]
+      year: string
+      venue: string
+      importance: 'essential' | 'highly-recommended' | 'useful'
+      summary: string
+    }>
+    applications: Array<{
+      title: string
+      authors: string[]
+      year: string
+      venue: string
+      importance: 'essential' | 'highly-recommended' | 'useful'
+      summary: string
+    }>
+    recent: Array<{
+      title: string
+      authors: string[]
+      year: string
+      venue: string
+      importance: 'essential' | 'highly-recommended' | 'useful'
+      summary: string
+    }>
   }
   studyResources: string[]
   expertRecommendations: string[]
@@ -175,7 +199,7 @@ function extractMetadataFromText(text: string, pdfMetadata?: any, pdfInfo?: any)
 
 export async function POST(request: NextRequest) {
   try {
-    const { documentId, metadata }: { documentId: string; metadata: PaperMetadata } = await request.json()
+    const { documentId, metadata, documentText }: { documentId: string; metadata: PaperMetadata; documentText?: string } = await request.json()
 
     if (!documentId) {
       return NextResponse.json({ error: 'Document ID is required' }, { status: 400 })
@@ -193,10 +217,10 @@ export async function POST(request: NextRequest) {
         console.log('🔍 Using stored extracted metadata:', realMetadata)
         
         // Check if metadata extraction was completed
-        if (storedMetadata.enhancedMetadata?.status === 'completed') {
+        if (storedMetadata.abstract && storedMetadata.abstract.length > 0) {
           console.log('✅ Metadata extraction completed during upload - ready for analysis!')
-        } else if (storedMetadata.enhancedMetadata?.status === 'error') {
-          console.log('⚠️ Metadata extraction failed during upload:', storedMetadata.enhancedMetadata.error)
+        } else {
+          console.log('⚠️ Metadata extraction may be incomplete')
         }
       }
     } catch (extractError) {
@@ -213,8 +237,8 @@ export async function POST(request: NextRequest) {
     
     if (!process.env.OPENAI_API_KEY || process.env.OPENAI_API_KEY === 'sk-your-openai-api-key-here') {
       console.log('⚠️ Using demo mode - no valid API key found')
-      // Return intelligent mock response based on metadata analysis
-      const mockAnalysis = generateIntelligentMockAnalysis(realMetadata)
+      // Return intelligent mock response based on metadata analysis with extracted text
+      const mockAnalysis = generateIntelligentMockAnalysis(realMetadata, documentText)
       
       return NextResponse.json({
         success: true,
@@ -225,8 +249,8 @@ export async function POST(request: NextRequest) {
     
     console.log('✅ Using real AI mode - API key found')
 
-    // Generate comprehensive prerequisite analysis using AI
-    const analysis = await generateAIPrerequisiteAnalysis(realMetadata)
+    // Generate comprehensive prerequisite analysis using AI with extracted text
+    const analysis = await generateAIPrerequisiteAnalysis(realMetadata, documentText)
 
     return NextResponse.json({
       success: true,
@@ -237,13 +261,13 @@ export async function POST(request: NextRequest) {
   } catch (error) {
     console.error('Metadata prerequisites error:', error)
     return NextResponse.json({ 
-      error: `Failed to generate prerequisites analysis: ${error.message || error}`,
-      details: error.toString()
+      error: `Failed to generate prerequisites analysis: ${error instanceof Error ? error.message : String(error)}`,
+      details: error instanceof Error ? error.toString() : String(error)
     }, { status: 500 })
   }
 }
 
-async function generateAIPrerequisiteAnalysis(metadata: PaperMetadata): Promise<PrerequisiteAnalysis> {
+async function generateAIPrerequisiteAnalysis(metadata: PaperMetadata, documentText?: string): Promise<PrerequisiteAnalysis> {
   const prompt = `You are an expert academic research advisor with deep knowledge across all scientific fields. I need you to analyze this SPECIFIC research paper and provide accurate prerequisite recommendations based on the actual content.
 
 REAL PAPER DETAILS:
@@ -253,6 +277,9 @@ REAL PAPER DETAILS:
 - Year: "${metadata.year}"
 - Abstract: "${metadata.abstract || 'Abstract extracted from paper'}"
 - Keywords/Tags: ${metadata.tags?.join(', ') || 'None extracted'}
+
+${documentText ? `EXTRACTED PAPER CONTENT:
+${documentText.substring(0, 4000)}` : ''}
 
 CRITICAL: Use your actual knowledge of this paper if you recognize it. If you know these authors, venue, or research area, provide SPECIFIC and ACCURATE recommendations based on:
 
@@ -325,28 +352,35 @@ IMPORTANT: Use your actual knowledge of real papers, authors, and venues. Provid
   }
 }
 
-function generateIntelligentMockAnalysis(metadata: PaperMetadata): PrerequisiteAnalysis {
-  // Analyze the metadata to provide intelligent mock responses
+function generateIntelligentMockAnalysis(metadata: PaperMetadata, documentText?: string): PrerequisiteAnalysis {
+  // Analyze the metadata and extracted text to provide intelligent mock responses
   const title = metadata.title.toLowerCase()
   const abstract = metadata.abstract?.toLowerCase() || ''
   const venue = metadata.journal?.toLowerCase() || ''
+  const extractedText = documentText?.toLowerCase() || ''
   
-  // Field detection based on metadata
+  // Field detection based on metadata and extracted text
   let field = 'Computer Science'
   let difficulty: PrerequisiteAnalysis['difficulty'] = 'Graduate'
   
-  if (title.includes('neural') || title.includes('deep learning') || title.includes('machine learning') || abstract.includes('neural network')) {
+  const allText = `${title} ${abstract} ${extractedText}`.toLowerCase()
+  
+  if (allText.includes('neural') || allText.includes('deep learning') || allText.includes('machine learning') || allText.includes('neural network')) {
     field = 'Machine Learning'
     difficulty = venue.includes('nature') || venue.includes('science') ? 'Expert' : 'Graduate'
-  } else if (title.includes('quantum') || abstract.includes('quantum')) {
+  } else if (allText.includes('quantum') || allText.includes('qubit')) {
     field = 'Quantum Computing'
     difficulty = 'PhD'
-  } else if (title.includes('nlp') || title.includes('language') || abstract.includes('text')) {
+  } else if (allText.includes('nlp') || allText.includes('language') || allText.includes('text') || allText.includes('transformer') || allText.includes('attention')) {
     field = 'Natural Language Processing'
-  } else if (title.includes('vision') || title.includes('image') || abstract.includes('visual')) {
+  } else if (allText.includes('vision') || allText.includes('image') || allText.includes('visual') || allText.includes('convolutional')) {
     field = 'Computer Vision'
-  } else if (title.includes('blockchain') || abstract.includes('cryptocurrency')) {
+  } else if (allText.includes('blockchain') || allText.includes('cryptocurrency') || allText.includes('bitcoin')) {
     field = 'Blockchain Technology'
+  } else if (allText.includes('cryptography') || allText.includes('encryption') || allText.includes('security')) {
+    field = 'Cybersecurity'
+  } else if (allText.includes('algorithm') || allText.includes('complexity') || allText.includes('optimization')) {
+    field = 'Algorithms & Complexity'
   }
 
   // Generate field-specific prerequisites
@@ -422,7 +456,7 @@ function getFieldSpecificPrerequisites(field: string) {
     }
   }
 
-  return prerequisites[field] || {
+  return (prerequisites as any)[field] || {
     mathematical: ['Discrete Mathematics', 'Linear Algebra', 'Statistics'],
     programming: ['Python', 'Algorithm Implementation'],
     conceptual: ['Research Methodology', 'Problem Solving'],
@@ -523,7 +557,7 @@ function generateFieldRelatedPapers(field: string) {
     }
   }
 
-  return papers[field] || papers['Computer Science']
+  return (papers as any)[field] || papers['Computer Science']
 }
 
 function parseTextToAnalysis(response: string, metadata: PaperMetadata): PrerequisiteAnalysis {

@@ -24,7 +24,9 @@ import { toast } from 'sonner'
 import { getDocument } from '@/lib/documentStorage'
 import { checkOtherReaders } from '@/lib/collaborativeInsights'
 import CollaborativeInsightsModal from '@/components/CollaborativeInsightsModal'
+import DetailedInsightsModal from '@/components/DetailedInsightsModal'
 import AddInsightModal from '@/components/AddInsightModal'
+
 
 interface Annotation {
   id: string
@@ -97,8 +99,11 @@ export default function DocumentViewer({ params }: { params: Promise<{ id: strin
   
   // Collaborative insights state
   const [showCollaborativeInsights, setShowCollaborativeInsights] = useState(false)
+  const [showDetailedInsights, setShowDetailedInsights] = useState(false)
   const [collaborativeSummary, setCollaborativeSummary] = useState<any>(null)
   const [showAddInsight, setShowAddInsight] = useState(false)
+  
+
   
   // Demo comments for realistic interface
   const [demoComments] = useState([
@@ -985,6 +990,8 @@ export default function DocumentViewer({ params }: { params: Promise<{ id: strin
           >
             <Star className="h-4 w-4" />
           </Button>
+
+
             {/* User Menu */}
             <div className="relative group">
               <Button variant="outline" size="sm" className="flex items-center">
@@ -1056,6 +1063,7 @@ export default function DocumentViewer({ params }: { params: Promise<{ id: strin
               userId={currentUser?.id || 'guest'}
               onHighlightAdd={collaboration.addHighlight}
               collaborationHighlights={collaboration.highlights}
+              extractedText={extractedText} // Pass extracted text to prerequisite helper
             />
           </div>
         </div>
@@ -1454,9 +1462,19 @@ export default function DocumentViewer({ params }: { params: Promise<{ id: strin
           summary={collaborativeSummary}
           onShowInsights={() => {
             setShowCollaborativeInsights(false)
-            // You can add navigation to a detailed insights page here
-            toast.info('Detailed insights page coming soon!')
+            setShowDetailedInsights(true)
           }}
+        />
+      )}
+
+      {/* Detailed Insights Modal */}
+      {showDetailedInsights && collaborativeSummary && (
+        <DetailedInsightsModal
+          isOpen={showDetailedInsights}
+          onClose={() => setShowDetailedInsights(false)}
+          documentId={documentId}
+          documentTitle={document?.title || 'Attention Is All You Need'}
+          summary={collaborativeSummary}
         />
       )}
 
@@ -1476,6 +1494,8 @@ export default function DocumentViewer({ params }: { params: Promise<{ id: strin
           }}
         />
       )}
+
+
     </div>
   )
 }

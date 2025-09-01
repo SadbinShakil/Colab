@@ -71,6 +71,7 @@ interface ApryseWebViewerProps {
   onAnnotationAdd?: (annotation: any) => void
   onPageChange?: (newPage: number) => void
   onScroll?: (page: number, scrollY: number) => void
+  extractedText?: string // Add prop for extracted text from document page
 }
 
 interface Collaborator {
@@ -117,7 +118,8 @@ export default function ApryseWebViewer({
   collaborationHighlights = [],
   onAnnotationAdd,
   onPageChange,
-  onScroll
+  onScroll,
+  extractedText
 }: ApryseWebViewerProps) {
   const viewer = useRef<HTMLDivElement>(null)
   const [isLoading, setIsLoading] = useState(true)
@@ -199,6 +201,14 @@ export default function ApryseWebViewer({
   const [documentYear, setDocumentYear] = useState('')
   const [documentTags, setDocumentTags] = useState<string[]>([])
   const [metadataLoaded, setMetadataLoaded] = useState(false)
+
+  // Update documentContent when extractedText is available from parent
+  useEffect(() => {
+    if (extractedText && extractedText.length > 0) {
+      console.log('📄 [ApryseWebViewer] Updating documentContent with extracted text:', extractedText.length, 'characters')
+      setDocumentContent(extractedText)
+    }
+  }, [extractedText])
 
   // Join document and track collaborators
   useEffect(() => {
@@ -3135,6 +3145,7 @@ export default function ApryseWebViewer({
         documentJournal={documentJournal || ''}
         documentYear={documentYear || ''}
         documentUrl={documentUrl}
+        documentText={documentContent} // Pass the extracted text
       />
     </div>
   )
