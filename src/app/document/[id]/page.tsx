@@ -12,7 +12,7 @@ import {
   HelpCircle, User, Send, Paperclip, Smile, MoreVertical,
   ThumbsUp, Reply, Eye, EyeOff, Palette, Type, Trash2,
   LogOut, Wifi, WifiOff, Bot, Loader2, Sparkles,
-  FileText, X, Copy
+  FileText, X, Copy, Star
 } from "lucide-react"
 import ApryseWebViewer from '@/components/ApryseWebViewer'
 import { useCollaboration } from '@/hooks/useCollaboration'
@@ -21,6 +21,10 @@ import EnhancedMetadataDisplay from '@/components/EnhancedMetadataDisplay'
 import ContextualHelpPopup from '@/components/ContextualHelpPopup'
 import { contextualAI } from '@/lib/contextualAI'
 import { toast } from 'sonner'
+import { getDocument } from '@/lib/documentStorage'
+import { checkOtherReaders } from '@/lib/collaborativeInsights'
+import CollaborativeInsightsModal from '@/components/CollaborativeInsightsModal'
+import AddInsightModal from '@/components/AddInsightModal'
 
 interface Annotation {
   id: string
@@ -90,6 +94,11 @@ export default function DocumentViewer({ params }: { params: Promise<{ id: strin
   const [summaryLoading, setSummaryLoading] = useState(false)
   const [showExtractedText, setShowExtractedText] = useState(false)
   const [extractedText, setExtractedText] = useState('')
+  
+  // Collaborative insights state
+  const [showCollaborativeInsights, setShowCollaborativeInsights] = useState(false)
+  const [collaborativeSummary, setCollaborativeSummary] = useState<any>(null)
+  const [showAddInsight, setShowAddInsight] = useState(false)
   
   // Demo comments for realistic interface
   const [demoComments] = useState([
@@ -253,6 +262,62 @@ export default function DocumentViewer({ params }: { params: Promise<{ id: strin
             setSummary(null)
           }
           console.log('Document loaded successfully:', result.document)
+          
+          // Check if other researchers have read this document
+          const currentUserId = currentUser?.id || 'anonymous'
+          
+          // For demo purposes, show collaborative insights for any document
+          // In production, this would check actual data
+          setTimeout(() => {
+            // Demo collaborative summary for "Attention Is All You Need"
+            const demoSummary = {
+              documentId: "attention-is-all-you-need",
+              totalReaders: 12,
+              totalInsights: 10,
+              topInsights: [
+                {
+                  id: "demo-1",
+                  type: "insight",
+                  content: "The key innovation here is the multi-head attention mechanism. The paper shows how different attention heads can focus on different aspects of the input sequence, which is crucial for understanding the model's interpretability.",
+                  userName: "Dr. Sarah Chen",
+                  likes: 12,
+                  replies: []
+                },
+                {
+                  id: "demo-2", 
+                  type: "understanding",
+                  content: "The residual connections and layer normalization are crucial for training deep transformers. Without them, the gradients would vanish in the deeper layers. This is a key insight for architecture design.",
+                  userName: "Prof. Lisa Thompson",
+                  likes: 18,
+                  replies: []
+                },
+                {
+                  id: "demo-3",
+                  type: "highlight",
+                  content: "The paper's impact on the field is enormous. It introduced a paradigm shift from recurrent to attention-based architectures, influencing almost all subsequent NLP research.",
+                  userName: "Prof. Amanda White",
+                  likes: 20,
+                  replies: []
+                }
+              ],
+              commonConfusions: [
+                "Positional encoding formula and sin/cos functions",
+                "Why 8 attention heads specifically",
+                "Computational complexity for long sequences"
+              ],
+              keyInsights: [
+                "Multi-head attention mechanism enables different focus patterns",
+                "Residual connections and layer normalization prevent gradient vanishing",
+                "Self-attention handles variable-length sequences better than RNNs",
+                "Positional encoding allows learning relative positions",
+                "The architecture introduced a paradigm shift in NLP"
+              ],
+              readingTime: 360, // 6 minutes
+              lastUpdated: new Date().toISOString()
+            }
+            setCollaborativeSummary(demoSummary)
+            setShowCollaborativeInsights(true)
+          }, 3000) // 3 second delay for demo
         } else {
           console.error('Failed to load document from API, attempting direct file access')
           // Try to find the actual file in uploads directory by looking for files that start with the documentId
@@ -901,15 +966,25 @@ export default function DocumentViewer({ params }: { params: Promise<{ id: strin
           <Brain className="h-4 w-4" />
         </Button>
         
-        <Button
-          variant="outline"
-          size="sm"
-          className="bg-gradient-to-r from-green-600 to-emerald-600 text-white font-semibold flex items-center justify-center shadow-md hover:scale-105 transition-transform border-green-600 w-8 h-8 p-0"
-          onClick={extractTextFromWebViewer}
-          title="Extract and display text from PDF for debugging"
-        >
-          <FileText className="h-4 w-4" />
-        </Button>
+                  <Button
+            variant="outline"
+            size="sm"
+            className="bg-gradient-to-r from-green-600 to-emerald-600 text-white font-semibold flex items-center justify-center shadow-md hover:scale-105 transition-transform border-green-600 w-8 h-8 p-0"
+            onClick={extractTextFromWebViewer}
+            title="Extract and display text from PDF for debugging"
+          >
+            <FileText className="h-4 w-4" />
+          </Button>
+
+          <Button
+            variant="outline"
+            size="sm"
+            className="bg-gradient-to-r from-orange-600 to-red-600 text-white font-semibold flex items-center justify-center shadow-md hover:scale-105 transition-transform border-orange-600 w-8 h-8 p-0"
+            onClick={() => setShowAddInsight(true)}
+            title="Add your reading insight to help other researchers"
+          >
+            <Star className="h-4 w-4" />
+          </Button>
             {/* User Menu */}
             <div className="relative group">
               <Button variant="outline" size="sm" className="flex items-center">
@@ -1367,6 +1442,39 @@ export default function DocumentViewer({ params }: { params: Promise<{ id: strin
             </div>
           </div>
         </div>
+      )}
+
+      {/* Collaborative Insights Modal */}
+      {showCollaborativeInsights && collaborativeSummary && (
+        <CollaborativeInsightsModal
+          isOpen={showCollaborativeInsights}
+          onClose={() => setShowCollaborativeInsights(false)}
+          documentId={documentId}
+          documentTitle={document?.title || 'Attention Is All You Need'}
+          summary={collaborativeSummary}
+          onShowInsights={() => {
+            setShowCollaborativeInsights(false)
+            // You can add navigation to a detailed insights page here
+            toast.info('Detailed insights page coming soon!')
+          }}
+        />
+      )}
+
+      {/* Add Insight Modal */}
+      {showAddInsight && currentUser && (
+        <AddInsightModal
+          isOpen={showAddInsight}
+          onClose={() => setShowAddInsight(false)}
+          documentId={documentId}
+          currentUser={currentUser}
+          onInsightAdded={(insight) => {
+            toast.success('Insight added successfully!')
+            // Optionally refresh collaborative insights
+            if (collaborativeSummary) {
+              // You could refresh the summary here
+            }
+          }}
+        />
       )}
     </div>
   )
