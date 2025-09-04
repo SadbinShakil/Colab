@@ -16,7 +16,8 @@ import {
   Calculator,
   Table2,
   Image as ImageIcon,
-  GraduationCap
+  GraduationCap,
+  HelpCircle
 } from 'lucide-react'
 import { getContentType } from '../utils/contentDetector'
 import { isTableContent } from '../utils/tableDetector'
@@ -33,6 +34,7 @@ interface TextSelectionPopupProps {
   onTableExplain?: () => void
   onImageExplain?: () => void
   onPrerequisiteHelp?: () => void
+  onStuckHelp?: () => void
   onCopy?: () => void
   documentContext?: string
 }
@@ -48,6 +50,7 @@ export default function TextSelectionPopup({
   onTableExplain,
   onImageExplain,
   onPrerequisiteHelp,
+  onStuckHelp,
   onCopy,
   documentContext
 }: TextSelectionPopupProps) {
@@ -302,6 +305,23 @@ export default function TextSelectionPopup({
                   <div className="absolute -top-1 -right-1 w-2 h-2 bg-gradient-to-r from-green-500 to-teal-500 rounded-full animate-pulse"></div>
                 </div>
                 <span className="text-xs font-medium bg-gradient-to-r from-green-700 to-teal-700 bg-clip-text text-transparent">Prerequisites</span>
+              </Button>
+
+              {/* I'm Stuck Here */}
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => {
+                  if (onStuckHelp) onStuckHelp()
+                }}
+                className="flex flex-col items-center gap-1 h-auto py-2 hover:bg-gradient-to-r hover:from-red-50 hover:to-orange-50"
+                title="Mark this area as confusing and get help from the community"
+              >
+                <div className="relative">
+                  <HelpCircle className="h-4 w-4 text-red-600" />
+                  <div className="absolute -top-1 -right-1 w-2 h-2 bg-gradient-to-r from-red-500 to-orange-500 rounded-full animate-pulse"></div>
+                </div>
+                <span className="text-xs font-medium bg-gradient-to-r from-red-700 to-orange-700 bg-clip-text text-transparent">I'm Stuck</span>
               </Button>
 
               {/* Web Search */}

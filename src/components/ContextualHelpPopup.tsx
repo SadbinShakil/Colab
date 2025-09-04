@@ -114,6 +114,21 @@ export default function ContextualHelpPopup({ onClose }: ContextualHelpPopupProp
     }
   }
 
+  const getStruggleReasoning = (type: string) => {
+    switch (type) {
+      case 'highlighting':
+        return 'You\'ve highlighted several parts of this section, indicating a strong interest in understanding the content. This suggests a desire for deeper comprehension and the ability to recall key information effectively.'
+      case 'time_spent':
+        return 'You\'ve been reading this section for a while, which is a positive sign of engagement. However, the duration might indicate a need for more focused and efficient learning. This could suggest a desire for a more structured approach or a need to break down complex concepts.'
+      case 'revisiting':
+        return 'You\'ve returned to this section multiple times, which is a strong indicator of your commitment to mastering the material. This suggests a deep desire to understand and retain the information, as well as a willingness to invest time in the learning process.'
+      case 'annotations':
+        return 'You\'ve added several notes here, which is a great way to organize and reinforce your understanding. This indicates a proactive approach to learning, as well as a strong desire to connect new information with existing knowledge.'
+      default:
+        return 'Based on your reading behavior, I can infer that you are a diligent learner who values understanding and retention of information. Your engagement with the material is positive, and you show a strong desire to learn and apply the concepts.'
+    }
+  }
+
   return (
     <div className="fixed bottom-4 right-4 z-50 max-w-lg animate-in slide-in-from-bottom-2 duration-300">
       <Card className="shadow-2xl border-0 bg-gradient-to-br from-white via-blue-50 to-indigo-100 backdrop-blur-sm">
@@ -167,6 +182,17 @@ export default function ContextualHelpPopup({ onClose }: ContextualHelpPopupProp
                   <TrendingUp className="w-4 h-4 text-blue-600" />
                   <span className="font-semibold text-blue-800 text-sm">Reading Pattern Analysis</span>
                 </div>
+                
+                {/* Enhanced reasoning display */}
+                <div className="mb-3 p-3 bg-white/60 rounded-lg border border-blue-200">
+                  <div className="flex items-start gap-2">
+                    <Lightbulb className="w-4 h-4 text-blue-600 mt-0.5 flex-shrink-0" />
+                    <p className="text-sm text-gray-700 leading-relaxed">
+                      {getStruggleReasoning(currentStruggle.struggleType)}
+                    </p>
+                  </div>
+                </div>
+                
                 <p className="text-sm text-gray-700 leading-relaxed">
                   {getStruggleMessage(currentStruggle.struggleType)}
                 </p>

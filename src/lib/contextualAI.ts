@@ -99,6 +99,21 @@ class ContextualAIService {
     this.analyzeStrugglePatterns(sectionId)
   }
 
+  // Monitor scrolling behavior within sections
+  trackScroll(sectionId: string, location: { page: number; x: number; y: number }, scrollDirection: 'up' | 'down') {
+    console.log('📜 [ContextualAI] Tracking scroll:', { sectionId, scrollDirection, location })
+    
+    const action: UserAction = {
+      type: 'scroll',
+      timestamp: new Date(),
+      location,
+      metadata: { direction: scrollDirection }
+    }
+    
+    this.addUserAction(sectionId, action)
+    this.analyzeStrugglePatterns(sectionId)
+  }
+
   private addUserAction(sectionId: string, action: UserAction) {
     if (!this.userBehavior.has(sectionId)) {
       this.userBehavior.set(sectionId, [])

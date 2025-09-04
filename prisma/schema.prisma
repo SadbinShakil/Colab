@@ -22,13 +22,14 @@ model User {
   updatedAt DateTime @updatedAt
 
   // Relationships
-  papers      Paper[]
-  annotations Annotation[]
-  comments    Comment[]
-  reactions   Reaction[]
-  notes       QuickNote[]
-  messages    ChatMessage[]
-  stuckHelps  StuckHelp[]
+  papers            Paper[]
+  annotations       Annotation[]
+  comments          Comment[]
+  reactions         Reaction[]
+  notes             QuickNote[]
+  messages          ChatMessage[]
+  stuckHelps        StuckHelp[]
+  stuckHelpResponses StuckHelpResponse[]
 
   @@map("users")
 }
@@ -157,10 +158,29 @@ model StuckHelp {
   updatedAt   DateTime   @updatedAt
 
   // Relationships
-  paper Paper @relation(fields: [paperId], references: [id], onDelete: Cascade)
-  user  User  @relation(fields: [userId], references: [id])
+  paper     Paper              @relation(fields: [paperId], references: [id], onDelete: Cascade)
+  user      User               @relation(fields: [userId], references: [id])
+  responses StuckHelpResponse[]
 
   @@map("stuck_helps")
+}
+
+model StuckHelpResponse {
+  id          String   @id @default(cuid())
+  stuckHelpId String
+  userId      String
+  content     String
+  type        String   @default("human") // "human" or "ai"
+  isHelpful   Boolean  @default(false)
+  likes       Int      @default(0)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  // Relationships
+  stuckHelp StuckHelp @relation(fields: [stuckHelpId], references: [id], onDelete: Cascade)
+  user      User      @relation(fields: [userId], references: [id])
+
+  @@map("stuck_help_responses")
 }
 
 model AISummary {

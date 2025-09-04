@@ -769,12 +769,40 @@ export default function DocumentViewer({ params }: { params: Promise<{ id: strin
     
     setTimeout(() => {
       contextualAI.trackHighlight(sectionId, 'dispensing with recurrence and convolutions entirely', location)
+      toast.info('📊 Pattern Detection: Highlight #3', { duration: 1000 })
+    }, 1500)
+    
+    // Simulate time spent on section
+    setTimeout(() => {
+      contextualAI.trackTimeSpent(sectionId, 180000, location) // 3 minutes
+      toast.info('⏰ Time Analysis: Extended reading detected', { duration: 1000 })
+    }, 2000)
+    
+    // Simulate revisiting behavior
+    setTimeout(() => {
+      contextualAI.trackRevisit(sectionId, location)
+      toast.info('🔄 Revisit Analysis: Return to section detected', { duration: 1000 })
+    }, 2500)
+    
+    // Simulate annotation behavior
+    setTimeout(() => {
+      contextualAI.trackAnnotation(sectionId, 'Need to understand attention mechanism better', location)
+      toast.info('💭 Annotation Analysis: Note-taking detected', { duration: 1000 })
+    }, 3000)
+    
+    // Simulate another revisit
+    setTimeout(() => {
+      contextualAI.trackRevisit(sectionId, location)
+      toast.info('🔄 Revisit Analysis: Second return detected', { duration: 1000 })
+    }, 3500)
+    
+    setTimeout(() => {
       console.log('✅ [Manual Trigger] Advanced contextual analysis complete!')
       toast.success('🎯 AI Research Assistant Activated!', {
         description: 'Advanced contextual help now available in bottom-right corner',
         duration: 4000
       })
-    }, 1500)
+    }, 4000)
   }
 
   useEffect(() => {
@@ -959,6 +987,7 @@ export default function DocumentViewer({ params }: { params: Promise<{ id: strin
               <Sparkles className="h-4 w-4" />
               <span className="hidden md:inline">AI Summary</span>
             </Button>
+
             
             {/* AI Research Assistant Trigger Button */}
                     <Button
@@ -1494,6 +1523,7 @@ export default function DocumentViewer({ params }: { params: Promise<{ id: strin
           }}
         />
       )}
+
 
 
     </div>

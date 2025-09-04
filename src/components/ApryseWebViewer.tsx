@@ -141,6 +141,13 @@ export default function ApryseWebViewer({
   const [inviteRole, setInviteRole] = useState<'viewer' | 'editor' | 'admin'>('viewer')
   const [inviteMessage, setInviteMessage] = useState('')
   const [currentUserRole, setCurrentUserRole] = useState<'viewer' | 'editor' | 'admin'>('viewer')
+  const [stuckMarkers, setStuckMarkers] = useState<Array<{
+    id: string
+    x: number
+    y: number
+    text: string
+    page: number
+  }>>([])
   // Add state for current document URL
   const [currentDocumentUrl, setCurrentDocumentUrl] = useState(documentUrl);
   // Track the last loaded backend PDF URL (no cache-busting)
@@ -661,6 +668,28 @@ export default function ApryseWebViewer({
     }
     setShowShareMenu(false)
   }
+
+  const handleStuckHelp = async () => {
+    if (!selectedText) return
+
+    // Create a simple stuck marker using our overlay system
+    const newMarker = {
+      id: `stuck-${Date.now()}`,
+      x: selectionPosition.x + 10, // Position very close to selection
+      y: selectionPosition.y - 30,  // Slightly above selection
+      text: 'I\'m stuck here',
+      page: currentPage
+    }
+
+    setStuckMarkers(prev => [...prev, newMarker])
+    toast.success('"I\'m stuck here" marker added!')
+  }
+
+  const handleRemoveStuckMarker = (markerId: string) => {
+    setStuckMarkers(prev => prev.filter(marker => marker.id !== markerId))
+    toast.success('Stuck marker removed!')
+  }
+
 
   const handleEmailShare = () => {
     const subject = encodeURIComponent('Research Document Shared')
@@ -2793,14 +2822,54 @@ export default function ApryseWebViewer({
         {/* WebViewer Container */}
         <div 
           id="webviewer-container"
-          className="webviewer flex-1 w-full" 
+          className="webviewer flex-1 w-full relative" 
           ref={viewer}
           style={{ 
             height: 'calc(100vh - 100px)',
             minHeight: '800px',
             width: '100%'
           }}
-        />
+        >
+          {/* Stuck Markers Overlay */}
+          {stuckMarkers
+            .filter(marker => marker.page === currentPage)
+            .map(marker => (
+              <div
+                key={marker.id}
+                className="absolute z-50 group"
+                style={{
+                  left: marker.x,
+                  top: marker.y,
+                }}
+              >
+                <div className="bg-gradient-to-r from-red-50 to-orange-50 border-2 border-red-400 rounded-xl px-4 py-3 shadow-xl backdrop-blur-sm">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center space-x-2">
+                      <div className="w-3 h-3 bg-red-500 rounded-full animate-pulse"></div>
+                      <span className="text-red-700 font-semibold text-sm">
+                        {marker.text}
+                      </span>
+                    </div>
+                    <button
+                      onClick={() => handleRemoveStuckMarker(marker.id)}
+                      className="opacity-0 group-hover:opacity-100 transition-opacity duration-200 ml-2 p-1 hover:bg-red-200 rounded-full"
+                      title="Mark as solved"
+                    >
+                      <svg className="w-4 h-4 text-red-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                      </svg>
+                    </button>
+                  </div>
+                  <div className="mt-1 flex items-center space-x-1">
+                    <div className="w-2 h-2 bg-gray-400 rounded-full"></div>
+                    <span className="text-xs text-gray-600 font-medium">
+                      Anonymous Reader
+                    </span>
+                  </div>
+                </div>
+              </div>
+            ))}
+        </div>
       </div>
 
       {/* Invite Collaborator Modal */}
@@ -2975,6 +3044,7 @@ export default function ApryseWebViewer({
         userId={userId}
         userName={userName}
       />
+
       
       {/* Text Selection Popup */}
       {showTextSelectionPopup && selectedText && (
@@ -3116,6 +3186,10 @@ export default function ApryseWebViewer({
             setPrerequisiteText(selectedText);
             setShowPrerequisiteHelper(true);
             setShowTextSelectionPopup(false);
+          }}
+          onStuckHelp={() => {
+            setShowTextSelectionPopup(false);
+            handleStuckHelp();
           }}
           onCopy={() => {
             // Copy is handled internally by the popup

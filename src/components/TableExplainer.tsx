@@ -24,7 +24,9 @@ import {
   LineChart,
   Filter,
   SortAsc,
-  Calculator
+  Calculator,
+  BookOpen,
+  AlertTriangle
 } from 'lucide-react'
 
 interface TableExplainerProps {
@@ -41,12 +43,12 @@ interface TableExplainerProps {
 }
 
 interface TableAnalysis {
-  overview: string
-  keyFindings: string[]
-  patterns: string[]
-  insights: string[]
-  summary: string
-  recommendations?: string[]
+  dataStory: string
+  researchSignificance: string
+  keyRelationships: string[]
+  dataInsights: string[]
+  studyConnections: string
+  practicalImplications: string
 }
 
 export default function TableExplainer({
@@ -67,6 +69,7 @@ export default function TableExplainer({
   const [copied, setCopied] = useState(false)
   const [showCustomQuestion, setShowCustomQuestion] = useState(false)
   const [customQuestion, setCustomQuestion] = useState('')
+  const [captionFound, setCaptionFound] = useState(false)
   const textareaRef = useRef<HTMLTextAreaElement>(null)
 
   // Auto-focus textarea when custom question is shown
@@ -76,39 +79,67 @@ export default function TableExplainer({
     }
   }, [showCustomQuestion])
 
-  // Enhanced table analysis prompt
+  // Enhanced table analysis prompt with contextual caption matching
   const buildTableAnalysisPrompt = (tableText: string, customQ?: string) => {
+    // Check if the selected text appears to be a table caption
+    const isLikelyCaption = tableText.toLowerCase().includes('table') || 
+                           tableText.toLowerCase().includes('figure') ||
+                           tableText.length < 200
+
+    // If it's likely a caption, try to find it in the document content
+    let contextualContent = tableText
+    let foundContext = ''
+
+    if (isLikelyCaption && documentContent) {
+      // Search for the caption in the document content
+      const captionIndex = documentContent.toLowerCase().indexOf(tableText.toLowerCase())
+      if (captionIndex !== -1) {
+        setCaptionFound(true)
+        // Extract surrounding context (500 chars before and after)
+        const start = Math.max(0, captionIndex - 500)
+        const end = Math.min(documentContent.length, captionIndex + tableText.length + 500)
+        foundContext = documentContent.substring(start, end)
+        contextualContent = `Caption: ${tableText}\n\nDocument Context:\n${foundContext}`
+        
+        console.log('🔍 Table caption found in document - using contextual analysis')
+      } else {
+        setCaptionFound(false)
+        console.log('⚠️ Table caption not found in document - using basic analysis')
+      }
+    }
+
     if (customQ) {
       return `Please answer this specific question about the table data: "${customQ}"
 
 Table Data:
-${tableText}
+${contextualContent}
 
 Provide a detailed response to the question.`
     }
 
-    return `You are an expert data analyst. Please analyze this table data and provide comprehensive insights.
+    return `You are an expert research analyst specializing in data interpretation and scientific storytelling. Please analyze this table data and tell the story behind the numbers.
 
 Table Data:
-${tableText}
+${contextualContent}
 
 Please provide your analysis in this JSON format:
 {
-  "overview": "Brief description of what this table shows and its purpose",
-  "keyFindings": ["finding1", "finding2", "finding3"],
-  "patterns": ["pattern1", "pattern2", "pattern3"],
-  "insights": ["insight1", "insight2", "insight3"],
-  "summary": "Plain English summary of the main conclusions",
-  "recommendations": ["recommendation1", "recommendation2"]
+  "dataStory": "Narrative explanation of what this table reveals about the research - the story behind the numbers",
+  "researchSignificance": "Why this table is important for the study and what it contributes to the research objectives",
+  "keyRelationships": ["relationship1", "relationship2", "relationship3"],
+  "dataInsights": ["insight1", "insight2", "insight3"],
+  "studyConnections": "How this table connects to the broader research methodology, hypotheses, and conclusions",
+  "practicalImplications": "What these findings mean for the field, future research, or real-world applications"
 }
 
 Focus on:
-- What the data represents
-- Notable trends, patterns, or correlations
-- Highest/lowest values and what they mean
-- Relationships between different columns/rows
-- Practical implications and insights
-- Any anomalies or interesting observations`
+- What story does this data tell?
+- How does it support or challenge the research objectives?
+- What relationships and patterns emerge that are significant for the study?
+- Why should researchers care about these findings?
+- How does this table contribute to the overall research narrative?
+
+Tell the story, not just the statistics.`
   }
 
   // Analyze table data
@@ -146,12 +177,12 @@ Focus on:
         } catch (parseError) {
           // Fallback to plain text response
           setAnalysis({
-            overview: "Table Analysis",
-            keyFindings: [],
-            patterns: [],
-            insights: [],
-            summary: data.response.answer,
-            recommendations: []
+            dataStory: "Table Analysis",
+            researchSignificance: "Analysis of table data",
+            keyRelationships: [],
+            dataInsights: [],
+            studyConnections: data.response.answer,
+            practicalImplications: "Further analysis needed"
           })
         }
       } else {
@@ -181,14 +212,51 @@ Focus on:
     }
   }, [isOpen, selectedText])
 
-  const copyToClipboard = async () => {
+  const copyToClipboard = async (text: string, type: string) => {
     try {
-      const textToCopy = analysis?.summary || ''
-      await navigator.clipboard.writeText(textToCopy)
+      await navigator.clipboard.writeText(text)
       setCopied(true)
       setTimeout(() => setCopied(false), 2000)
     } catch (err) {
       console.error('Failed to copy:', err)
+    }
+  }
+
+  const getTabIcon = (key: string) => {
+    switch (key) {
+      case 'dataStory':
+        return <BookOpen className="w-4 h-4" />
+      case 'researchSignificance':
+        return <Target className="w-4 h-4" />
+      case 'keyRelationships':
+        return <TrendingUp className="w-4 h-4" />
+      case 'dataInsights':
+        return <Lightbulb className="w-4 h-4" />
+      case 'studyConnections':
+        return <Database className="w-4 h-4" />
+      case 'practicalImplications':
+        return <Zap className="w-4 h-4" />
+      default:
+        return <BarChart3 className="w-4 h-4" />
+    }
+  }
+
+  const getTabLabel = (key: string) => {
+    switch (key) {
+      case 'dataStory':
+        return 'Data Story'
+      case 'researchSignificance':
+        return 'Research Significance'
+      case 'keyRelationships':
+        return 'Key Relationships'
+      case 'dataInsights':
+        return 'Data Insights'
+      case 'studyConnections':
+        return 'Study Connections'
+      case 'practicalImplications':
+        return 'Practical Implications'
+      default:
+        return key.charAt(0).toUpperCase() + key.slice(1)
     }
   }
 
@@ -197,20 +265,25 @@ Focus on:
   return (
     <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
       <Card className="w-full max-w-6xl h-[95vh] flex flex-col shadow-2xl">
-        <CardHeader className="bg-gradient-to-r from-orange-600 via-red-600 to-pink-600 text-white shadow-lg">
+        <CardHeader className="bg-gradient-to-r from-blue-600 via-purple-600 to-indigo-600 text-white shadow-lg">
           <div className="flex items-center justify-between">
             <div className="flex items-center space-x-3">
               <div className="relative">
                 <Table2 className="w-8 h-8" />
-                <Database className="w-4 h-4 absolute -top-1 -right-1 animate-pulse" />
+                <Zap className="w-4 h-4 absolute -top-1 -right-1 animate-pulse" />
               </div>
               <div>
-                <CardTitle className="text-2xl font-bold">Table AI Explainer</CardTitle>
-                <div className="text-orange-100 text-sm">Smart Data Analysis • Pattern Detection • Clear Insights</div>
+                <CardTitle className="text-2xl font-bold">Smart Table AI Analyzer</CardTitle>
+                                 <div className="text-blue-100 text-sm">Data Storytelling • Research Significance • Scientific Insights</div>
               </div>
               <Badge variant="secondary" className="bg-white/20 text-white border-0 px-3 py-1">
-                📊 Data Expert
+                Advanced Data AI
               </Badge>
+              {captionFound && (
+                <Badge className="bg-green-100 text-green-800 border-green-200 px-2 py-1 text-xs">
+                  Contextual Analysis
+                </Badge>
+              )}
             </div>
             <Button
               variant="ghost"
@@ -221,302 +294,349 @@ Focus on:
               <X className="w-5 h-5" />
             </Button>
           </div>
-
-          {selectedText && (
-            <div className="mt-4 p-4 bg-white/10 rounded-lg border border-white/20">
-              <div className="text-sm opacity-90 mb-3 font-medium flex items-center space-x-2">
-                <Database className="w-4 h-4" />
-                <span>Table Data to Analyze:</span>
-              </div>
-              <div className="font-mono text-sm bg-white/20 p-3 rounded border border-white/10 text-white font-bold max-h-32 overflow-y-auto">
-                {selectedText}
-              </div>
+          
+          {/* Smart Controls */}
+          <div className="mt-4 flex flex-wrap gap-3">
+            <div className="flex items-center space-x-2">
+              <Target className="w-4 h-4" />
+              <span className="text-sm font-medium">Mode:</span>
+                             <Badge variant="outline" className="bg-white/10 border-white/20 text-white px-3 py-1 text-xs">
+                 <BookOpen className="w-3 h-3 mr-1" />
+                 Storytelling
+               </Badge>
             </div>
-          )}
-        </CardHeader>
 
-        <CardContent className="p-0 flex-1 flex flex-col overflow-y-auto">
-          {/* Custom Question Input */}
-          {showCustomQuestion && (
-            <div className="p-4 border-b bg-gradient-to-r from-orange-50 to-red-50">
-              <div className="flex space-x-2">
-                <textarea
-                  ref={textareaRef}
-                  value={customQuestion}
-                  onChange={(e) => setCustomQuestion(e.target.value)}
-                  placeholder="Ask a specific question about this table data..."
-                  className="flex-1 p-3 border rounded-lg resize-none focus:ring-2 focus:ring-orange-500"
-                  rows={2}
-                  onKeyDown={(e) => {
-                    if (e.key === 'Enter' && !e.shiftKey) {
-                      e.preventDefault()
-                      handleCustomQuestion()
-                    }
-                  }}
-                />
-                <Button onClick={handleCustomQuestion} disabled={!customQuestion.trim()} className="bg-gradient-to-r from-orange-600 to-red-600">
-                  <Zap className="w-4 h-4 mr-2" />
-                  Ask
-                </Button>
-                <Button variant="outline" onClick={() => setShowCustomQuestion(false)}>
-                  Cancel
-                </Button>
-              </div>
-            </div>
-          )}
-
-          {/* Action Buttons */}
-          <div className="p-4 border-b bg-gray-50">
-            <div className="flex flex-wrap gap-2">
-              <Button
-                variant="outline"
-                onClick={() => setShowCustomQuestion(!showCustomQuestion)}
-                className="flex items-center space-x-2"
-              >
-                <MessageSquare className="w-4 h-4" />
-                <span>Ask Question</span>
-              </Button>
-              
-              {analysis && (
-                <>
-                  <Button
-                    variant="outline"
-                    onClick={copyToClipboard}
-                    className="flex items-center space-x-2"
-                  >
-                    {copied ? <Check className="w-4 h-4" /> : <Copy className="w-4 h-4" />}
-                    <span>{copied ? 'Copied!' : 'Copy Summary'}</span>
-                  </Button>
-                  
-                  <Button
-                    variant="outline"
-                    onClick={() => analyzeTable()}
-                    className="flex items-center space-x-2"
-                  >
-                    <RefreshCw className="w-4 h-4" />
-                    <span>Re-analyze</span>
-                  </Button>
-                </>
-              )}
+            <div className="flex items-center space-x-2">
+              <Database className="w-4 h-4" />
+              <span className="text-sm font-medium">AI Model:</span>
+              <Badge variant="outline" className="bg-white/10 border-white/20 text-white px-2 py-1 text-xs">
+                GPT-4 Data
+              </Badge>
             </div>
           </div>
+        </CardHeader>
 
-          {/* Loading State */}
-          {isLoading && (
-            <div className="p-12 text-center bg-white">
-              <div className="relative mx-auto mb-6 w-20 h-20">
-                <div className="animate-spin rounded-full h-20 w-20 border-4 border-orange-200 border-t-orange-600"></div>
-                <BarChart3 className="w-8 h-8 absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 text-orange-600" />
-              </div>
-              <h3 className="text-xl font-semibold text-gray-900 mb-2">📊 Analyzing table data...</h3>
-              <p className="text-gray-700 text-lg mb-2">Detecting patterns, trends, and key insights</p>
-              <p className="text-sm text-gray-600">This may take 15-25 seconds for comprehensive analysis</p>
-              <div className="mt-4 flex justify-center space-x-2">
-                <Badge className="bg-orange-100 text-orange-800 px-3 py-1">
-                  <Activity className="w-3 h-3 mr-1" />
-                  Pattern Detection
-                </Badge>
-                <Badge className="bg-red-100 text-red-800 px-3 py-1">
-                  <TrendingUp className="w-3 h-3 mr-1" />
-                  Trend Analysis
-                </Badge>
-              </div>
-            </div>
-          )}
-
-          {/* Error State */}
-          {error && (
-            <div className="p-12 text-center bg-white">
-              <Table2 className="w-20 h-20 text-red-500 mx-auto mb-6" />
-              <h3 className="text-xl font-bold text-red-700 mb-3">❌ Analysis Failed</h3>
-              <p className="text-red-600 mb-6 text-lg bg-red-50 p-3 rounded border border-red-200">{error}</p>
-              <Button 
-                onClick={() => analyzeTable()} 
-                variant="outline"
-                className="bg-red-50 border-red-300 text-red-700 hover:bg-red-100 px-6 py-2"
-              >
-                🔄 Try Again
-              </Button>
-            </div>
-          )}
-
-          {/* Table Analysis Results */}
-          {analysis && !isLoading && !error && (
-            <div className="flex-1 overflow-y-auto bg-white">
-              <div className="p-6">
-                {/* Overview */}
-                <div className="mb-8">
-                  <div className="flex items-center justify-between mb-4">
-                    <h3 className="text-2xl font-bold text-gray-900 flex items-center space-x-2">
-                      <Eye className="w-6 h-6 text-orange-600" />
-                      <span>Data Overview</span>
-                    </h3>
-                    <Badge variant="outline" className="text-xs bg-orange-50 text-orange-700 border-orange-200">
-                      Powered by GPT-4
-                    </Badge>
-                  </div>
-                  
-                  <div className="prose prose-lg max-w-none">
-                    <div className="whitespace-pre-wrap text-gray-900 leading-relaxed text-base font-normal bg-gradient-to-br from-orange-50 to-red-50 p-6 rounded-xl border border-orange-200 shadow-sm">
-                      {analysis.overview}
-                    </div>
-                  </div>
+        <CardContent className="p-0 flex-1 flex overflow-hidden">
+          {/* Left Panel - Context & Controls */}
+          <div className="w-1/3 border-r border-gray-200 flex flex-col overflow-y-auto">
+            {selectedText && (
+              <div className="p-4 bg-gradient-to-br from-gray-50 to-blue-50 rounded-lg border border-gray-200">
+                <div className="text-sm font-medium mb-3 text-gray-700 flex items-center space-x-2">
+                  <Table2 className="w-4 h-4" />
+                  <span>Table Data to Analyze:</span>
                 </div>
-
-                {/* Analysis Grid */}
-                <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                  {/* Key Findings */}
-                  {analysis.keyFindings && analysis.keyFindings.length > 0 && (
-                    <Card className="border-l-4 border-l-green-500">
-                      <CardHeader className="pb-3">
-                        <CardTitle className="text-lg flex items-center space-x-2">
-                          <Target className="w-5 h-5 text-green-600" />
-                          <span>Key Findings</span>
-                        </CardTitle>
-                      </CardHeader>
-                      <CardContent className="pt-0 space-y-3">
-                        {analysis.keyFindings.map((finding, index) => (
-                          <div key={index} className="flex items-start space-x-2 p-3 bg-green-50 rounded-lg border border-green-200">
-                            <div className="w-6 h-6 bg-green-500 text-white rounded-full flex items-center justify-center text-sm font-bold flex-shrink-0">
-                              {index + 1}
-                            </div>
-                            <p className="text-green-800 text-sm">{finding}</p>
-                          </div>
-                        ))}
-                      </CardContent>
-                    </Card>
-                  )}
-
-                  {/* Patterns */}
-                  {analysis.patterns && analysis.patterns.length > 0 && (
-                    <Card className="border-l-4 border-l-blue-500">
-                      <CardHeader className="pb-3">
-                        <CardTitle className="text-lg flex items-center space-x-2">
-                          <TrendingUp className="w-5 h-5 text-blue-600" />
-                          <span>Patterns & Trends</span>
-                        </CardTitle>
-                      </CardHeader>
-                      <CardContent className="pt-0 space-y-2">
-                        {analysis.patterns.map((pattern, index) => (
-                          <div key={index} className="p-3 bg-blue-50 rounded-lg border border-blue-200">
-                            <p className="text-blue-800 text-sm">{pattern}</p>
-                          </div>
-                        ))}
-                      </CardContent>
-                    </Card>
-                  )}
-
-                  {/* Insights */}
-                  {analysis.insights && analysis.insights.length > 0 && (
-                    <Card className="border-l-4 border-l-purple-500">
-                      <CardHeader className="pb-3">
-                        <CardTitle className="text-lg flex items-center space-x-2">
-                          <Lightbulb className="w-5 h-5 text-purple-600" />
-                          <span>Key Insights</span>
-                        </CardTitle>
-                      </CardHeader>
-                      <CardContent className="pt-0 space-y-2">
-                        {analysis.insights.map((insight, index) => (
-                          <div key={index} className="p-3 bg-purple-50 rounded-lg border border-purple-200">
-                            <p className="text-purple-800 text-sm">{insight}</p>
-                          </div>
-                        ))}
-                      </CardContent>
-                    </Card>
-                  )}
-
-                  {/* Recommendations */}
-                  {analysis.recommendations && analysis.recommendations.length > 0 && (
-                    <Card className="border-l-4 border-l-indigo-500">
-                      <CardHeader className="pb-3">
-                        <CardTitle className="text-lg flex items-center space-x-2">
-                          <Zap className="w-5 h-5 text-indigo-600" />
-                          <span>Recommendations</span>
-                        </CardTitle>
-                      </CardHeader>
-                      <CardContent className="pt-0 space-y-2">
-                        {analysis.recommendations.map((rec, index) => (
-                          <div key={index} className="p-3 bg-indigo-50 rounded-lg border border-indigo-200">
-                            <p className="text-indigo-800 text-sm">{rec}</p>
-                          </div>
-                        ))}
-                      </CardContent>
-                    </Card>
-                  )}
+                <div className="font-mono text-sm bg-white p-3 rounded border border-gray-200 text-gray-800 max-h-32 overflow-y-auto">
+                  {selectedText}
                 </div>
-
-                {/* Summary */}
-                {analysis.summary && (
-                  <div className="mt-8">
-                    <h3 className="text-xl font-bold text-gray-900 mb-4 flex items-center space-x-2">
-                      <Calculator className="w-5 h-5 text-gray-600" />
-                      <span>Plain English Summary</span>
-                    </h3>
-                    <div className="p-6 bg-gray-50 rounded-xl border border-gray-200">
-                      <p className="text-gray-800 leading-relaxed">{analysis.summary}</p>
+                {documentContent && (
+                  <div className="mt-2 flex items-center space-x-2 text-xs">
+                    <div className="flex items-center space-x-1">
+                      {captionFound ? (
+                        <>
+                          <Check className="w-3 h-3 text-green-600" />
+                          <span className="text-green-700">Caption found in document - Contextual analysis enabled</span>
+                        </>
+                      ) : (
+                        <>
+                          <AlertTriangle className="w-3 h-3 text-yellow-600" />
+                          <span className="text-yellow-700">Caption not found in document - Basic analysis only</span>
+                        </>
+                      )}
                     </div>
                   </div>
                 )}
+              </div>
+            )}
 
-                {/* Quick Actions */}
-                <div className="mt-8 p-4 bg-gradient-to-r from-gray-50 to-orange-50 rounded-xl border border-gray-200">
-                  <h4 className="font-semibold text-gray-900 mb-3 flex items-center space-x-2">
-                    <Filter className="w-4 h-4" />
-                    <span>Further Analysis</span>
-                  </h4>
-                  <div className="flex flex-wrap gap-3">
-                    <Button
-                      variant="outline"
-                      onClick={() => {
-                        setCustomQuestion("What are the statistical correlations in this data?")
-                        setShowCustomQuestion(true)
-                      }}
-                      className="flex items-center space-x-2"
-                    >
-                      <LineChart className="w-4 h-4" />
-                      <span>Correlations</span>
-                    </Button>
-                    
-                    <Button
-                      variant="outline"
-                      onClick={() => {
-                        setCustomQuestion("What are the outliers or anomalies in this table?")
-                        setShowCustomQuestion(true)
-                      }}
-                      className="flex items-center space-x-2"
-                    >
-                      <Search className="w-4 h-4" />
-                      <span>Find Outliers</span>
-                    </Button>
+            {documentContext && (
+              <div className="p-4 bg-gradient-to-br from-gray-50 to-blue-50 rounded-lg border border-gray-200 mt-4">
+                <div className="text-sm font-medium mb-3 text-gray-700 flex items-center space-x-2">
+                  <BookOpen className="w-4 h-4" />
+                  <span>Document Context:</span>
+                </div>
+                <div className="prose prose-sm max-w-none text-gray-900 leading-relaxed">
+                  {documentContext}
+                </div>
+              </div>
+            )}
 
-                    <Button
-                      variant="outline"
-                      onClick={() => {
-                        setCustomQuestion("How can this data be visualized most effectively?")
-                        setShowCustomQuestion(true)
-                      }}
-                      className="flex items-center space-x-2"
-                    >
-                      <PieChart className="w-4 h-4" />
-                      <span>Visualization Ideas</span>
-                    </Button>
+            {/* Quick Actions */}
+            <div className="p-4 border-b bg-gradient-to-br from-blue-50 to-indigo-50 mt-4">
+              <div className="text-sm font-medium mb-3 text-gray-700 flex items-center space-x-2">
+                <Zap className="w-4 h-4 text-blue-600" />
+                <span>Quick Actions</span>
+              </div>
+              <div className="grid grid-cols-2 gap-2">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setShowCustomQuestion(!showCustomQuestion)}
+                  className="text-xs h-8 bg-white hover:bg-blue-50 border-blue-200 text-blue-700"
+                >
+                  <MessageSquare className="w-3 h-3 mr-1" />
+                  Custom Q
+                </Button>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => analyzeTable()}
+                  className="text-xs h-8 bg-white hover:bg-green-50 border-green-200 text-green-700"
+                >
+                  <RefreshCw className="w-3 h-3 mr-1" />
+                  Re-analyze
+                </Button>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => copyToClipboard(JSON.stringify(analysis, null, 2), 'full')}
+                  className="text-xs h-8 bg-white hover:bg-purple-50 border-purple-200 text-purple-700"
+                >
+                  {copied ? <Check className="w-3 h-3 mr-1" /> : <Copy className="w-3 h-3 mr-1" />}
+                  Copy All
+                </Button>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => copyToClipboard(selectedText, 'table')}
+                  className="text-xs h-8 bg-white hover:bg-orange-50 border-orange-200 text-orange-700"
+                >
+                  <Copy className="w-3 h-3 mr-1" />
+                  Copy Table
+                </Button>
+              </div>
+            </div>
 
-                    <Button
-                      variant="outline"
-                      onClick={() => {
-                        setCustomQuestion("What are the business implications of this data?")
-                        setShowCustomQuestion(true)
-                      }}
-                      className="flex items-center space-x-2"
-                    >
-                      <Target className="w-4 h-4" />
-                      <span>Business Impact</span>
-                    </Button>
+            {/* AI Status */}
+            <div className="p-4 border-b bg-gradient-to-br from-purple-50 to-pink-50">
+              <div className="text-sm font-medium mb-3 text-gray-700 flex items-center space-x-2">
+                <Database className="w-4 h-4 text-purple-600" />
+                <span>AI Status</span>
+              </div>
+              <div className="space-y-2">
+                                 <div className="flex items-center justify-between text-xs">
+                   <span className="text-gray-600">Current Mode:</span>
+                   <Badge className="bg-purple-100 text-purple-800 px-2 py-1">
+                     Storytelling
+                   </Badge>
+                 </div>
+                <div className="flex items-center justify-between text-xs">
+                  <span className="text-gray-600">AI Model:</span>
+                  <Badge variant="outline" className="bg-white text-gray-700 px-2 py-1">
+                    GPT-4 Data
+                  </Badge>
+                </div>
+                                 <div className="flex items-center justify-between text-xs">
+                   <span className="text-gray-600">Analysis Type:</span>
+                   <Badge className="bg-blue-100 text-blue-800 px-2 py-1">
+                     Narrative
+                   </Badge>
+                 </div>
+              </div>
+            </div>
+
+            {/* Analysis Summary */}
+            {analysis && (
+              <div className="p-4 border-b bg-gradient-to-br from-green-50 to-emerald-50">
+                <div className="text-sm font-medium mb-3 text-gray-700 flex items-center space-x-2">
+                  <Lightbulb className="w-4 h-4 text-green-600" />
+                  <span>Analysis Summary</span>
+                </div>
+                <div className="space-y-2">
+                  {Object.entries(analysis).map(([key, content]) => {
+                    if (!content || (Array.isArray(content) && content.length === 0)) return null
+                    return (
+                      <div key={key} className="text-xs bg-white p-2 rounded border border-green-200 text-green-700">
+                        {getTabIcon(key)} {getTabLabel(key)}: {
+                          Array.isArray(content) ? `${content.length} items` : 'Available'
+                        }
+                      </div>
+                    )
+                  })}
+                </div>
+              </div>
+            )}
+
+            {/* Empty State */}
+            {!analysis && !isLoading && !error && (
+              <div className="flex-1 flex items-center justify-center bg-gradient-to-br from-gray-50 to-blue-50">
+                <div className="text-center p-4">
+                  <Table2 className="w-12 h-12 text-gray-400 mx-auto mb-3" />
+                                     <h3 className="text-sm font-semibold text-gray-600 mb-2">Ready to Tell the Story</h3>
+                   <p className="text-xs text-gray-500 mb-3">Select table data and discover the research narrative</p>
+                   <div className="flex justify-center space-x-2">
+                     <Badge className="bg-blue-100 text-blue-800 px-3 py-1 text-xs">
+                       Storytelling Mode
+                     </Badge>
+                     <Badge className="bg-purple-100 text-purple-800 px-3 py-1 text-xs">
+                       GPT-4 Research
+                     </Badge>
+                   </div>
+                </div>
+              </div>
+            )}
+          </div>
+
+          {/* Right Panel - Analysis Content */}
+          <div className="flex-1 flex flex-col overflow-y-auto bg-white">
+            {/* Custom Question Input */}
+            {showCustomQuestion && (
+              <div className="p-4 border-b bg-gradient-to-r from-purple-50 to-blue-50">
+                <div className="flex space-x-2">
+                  <textarea
+                    ref={textareaRef}
+                    value={customQuestion}
+                    onChange={(e) => setCustomQuestion(e.target.value)}
+                    placeholder="Ask a specific question about the table data..."
+                    className="flex-1 p-3 border rounded-lg resize-none focus:ring-2 focus:ring-purple-500"
+                    rows={2}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter' && !e.shiftKey) {
+                        e.preventDefault()
+                        handleCustomQuestion()
+                      }
+                    }}
+                  />
+                  <Button onClick={handleCustomQuestion} disabled={!customQuestion.trim()} className="bg-gradient-to-r from-purple-600 to-blue-600">
+                    <Search className="w-4 h-4 mr-2" />
+                    Ask
+                  </Button>
+                  <Button variant="outline" onClick={() => setShowCustomQuestion(false)}>
+                    Cancel
+                  </Button>
+                </div>
+              </div>
+            )}
+
+            {/* Loading State */}
+            {isLoading && (
+              <div className="p-12 text-center bg-white">
+                <div className="relative mx-auto mb-6 w-20 h-20">
+                  <div className="animate-spin rounded-full h-20 w-20 border-4 border-blue-200 border-t-blue-600"></div>
+                  <Table2 className="w-8 h-8 absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 text-blue-600" />
+                </div>
+                                 <h3 className="text-xl font-semibold text-gray-900 mb-2">📊 AI is discovering the story...</h3>
+                 <p className="text-gray-700 text-lg mb-2">Uncovering the research narrative behind the data</p>
+                 <p className="text-sm text-gray-600">This may take 15-30 seconds for meaningful insights</p>
+                 <div className="mt-4 flex justify-center space-x-2">
+                   <Badge className="bg-blue-100 text-blue-800 px-3 py-1">
+                     Storytelling Mode
+                   </Badge>
+                   <Badge variant="outline" className="px-3 py-1">
+                     GPT-4 Research
+                   </Badge>
+                 </div>
+              </div>
+            )}
+
+            {/* Error State */}
+            {error && (
+              <div className="p-12 text-center bg-white">
+                <AlertTriangle className="w-20 h-20 text-red-500 mx-auto mb-6" />
+                <h3 className="text-xl font-bold text-red-700 mb-3">❌ Table Analysis Failed</h3>
+                <p className="text-red-600 mb-6 text-lg bg-red-50 p-3 rounded border border-red-200">{error}</p>
+                <Button 
+                  onClick={() => analyzeTable()} 
+                  variant="outline"
+                  className="bg-red-50 border-red-300 text-red-700 hover:bg-red-100 px-6 py-2"
+                >
+                  🔄 Try Again
+                </Button>
+              </div>
+            )}
+
+            {/* Analysis Content */}
+            {analysis && !isLoading && !error && (
+              <div className="flex-1 overflow-y-auto bg-white">
+                <div className="p-6">
+                  {/* Main Analysis Header */}
+                  <div className="mb-8">
+                    <div className="flex items-center justify-between mb-4">
+                      <h3 className="text-2xl font-bold text-gray-900 flex items-center space-x-2">
+                        <Table2 className="w-6 h-6 text-blue-600" />
+                        <span>Table Analysis Results</span>
+                      </h3>
+                      <div className="flex space-x-2">
+                        <Badge className="bg-blue-100 text-blue-800 px-3 py-1">
+                          Analytical Mode
+                        </Badge>
+                        <Badge variant="outline" className="text-xs bg-purple-50 text-purple-700 border-purple-200">
+                          Powered by GPT-4 Data
+                        </Badge>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Analysis Sections Grid */}
+                  <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                    {Object.entries(analysis).map(([key, content]) => {
+                      if (!content || (Array.isArray(content) && content.length === 0)) return null
+                      
+                      const sectionLabel = getTabLabel(key)
+                      const sectionIcon = getTabIcon(key)
+                      
+                      return (
+                        <Card key={key} className="border-l-4 border-l-blue-500">
+                          <CardHeader className="pb-3">
+                            <CardTitle className="text-lg flex items-center space-x-2">
+                              {sectionIcon}
+                              <span>{sectionLabel}</span>
+                            </CardTitle>
+                          </CardHeader>
+                          <CardContent className="pt-0">
+                            {Array.isArray(content) ? (
+                              <div className="space-y-2">
+                                {content.slice(0, 5).map((item, index) => (
+                                  <div key={index} className="p-3 bg-gray-50 rounded-lg border border-gray-200">
+                                    <div className="flex items-start space-x-2">
+                                      <span className="flex-shrink-0 w-5 h-5 bg-blue-100 text-blue-600 rounded-full flex items-center justify-center text-xs font-medium">
+                                        {index + 1}
+                                      </span>
+                                      <p className="text-gray-800 text-sm leading-relaxed">{item}</p>
+                                    </div>
+                                  </div>
+                                ))}
+                                {content.length > 5 && (
+                                  <div className="text-center">
+                                    <Badge variant="outline" className="text-xs text-gray-500">
+                                      +{content.length - 5} more items
+                                    </Badge>
+                                  </div>
+                                )}
+                              </div>
+                            ) : (
+                              <div className="prose prose-sm max-w-none">
+                                <div className="whitespace-pre-wrap text-gray-900 leading-relaxed bg-gradient-to-br from-gray-50 to-blue-50 p-4 rounded-xl border border-gray-200">
+                                  {content}
+                                </div>
+                              </div>
+                            )}
+                            
+                            {/* Copy Button */}
+                            <div className="mt-3 flex justify-end">
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                onClick={() => copyToClipboard(
+                                  Array.isArray(content) 
+                                    ? (content as string[]).join('\n')
+                                    : content as string, 
+                                  key
+                                )}
+                                className="text-xs"
+                              >
+                                {copied ? <Check className="w-3 h-3 mr-1" /> : <Copy className="w-3 h-3 mr-1" />}
+                                {copied ? 'Copied!' : 'Copy'}
+                              </Button>
+                            </div>
+                          </CardContent>
+                        </Card>
+                      )
+                    })}
                   </div>
                 </div>
               </div>
-            </div>
-          )}
+            )}
+          </div>
         </CardContent>
       </Card>
     </div>

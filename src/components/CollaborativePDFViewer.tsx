@@ -11,6 +11,7 @@ import {
 } from 'lucide-react'
 import dynamic from 'next/dynamic'
 import ChatSidebar from './ChatSidebar'
+import StuckHelpModal from './StuckHelpModal'
 
 // Dynamic import to avoid SSR issues
 const Document = dynamic(
@@ -76,6 +77,10 @@ export default function CollaborativePDFViewer({ fileUrl, documentId }: Collabor
   const [selectionStart, setSelectionStart] = useState<{ x: number; y: number } | null>(null)
   const [selection, setSelection] = useState<{ x: number; y: number; width: number; height: number } | null>(null)
   const [isChatOpen, setIsChatOpen] = useState(false)
+  const [stuckHelpModal, setStuckHelpModal] = useState<{
+    isOpen: boolean
+    stuckHelp: any | null
+  }>({ isOpen: false, stuckHelp: null })
 
   const containerRef = useRef<HTMLDivElement>(null)
   const eventSourceRef = useRef<EventSource | null>(null)
@@ -106,7 +111,38 @@ export default function CollaborativePDFViewer({ fileUrl, documentId }: Collabor
     }
     
     setupPDFWorker()
-  }, [])
+    
+    // Load existing stuck help markers
+    loadStuckHelpMarkers()
+  }, [documentId])
+
+  const loadStuckHelpMarkers = async () => {
+    try {
+      const response = await fetch(`/api/stuck-help?documentId=${documentId}`)
+      if (response.ok) {
+        const data = await response.json()
+        // Convert stuck help to annotation format for display
+        const stuckHelpAnnotations = data.stuckHelps.map((stuckHelp: any) => ({
+          id: stuckHelp.id,
+          type: 'help',
+          x: stuckHelp.position.x,
+          y: stuckHelp.position.y,
+          width: stuckHelp.position.width,
+          height: stuckHelp.position.height,
+          color: '#ff0000', // Red color for stuck help
+          text: stuckHelp.description,
+          author: stuckHelp.isAnonymous ? 'Anonymous' : stuckHelp.user.name,
+          authorId: stuckHelp.userId,
+          timestamp: stuckHelp.createdAt,
+          pageNumber: stuckHelp.page
+        }))
+        
+        setAnnotations(prev => [...prev, ...stuckHelpAnnotations])
+      }
+    } catch (error) {
+      console.error('Failed to load stuck help markers:', error)
+    }
+  }
 
   // Set up real-time collaboration
   useEffect(() => {
@@ -260,34 +296,83 @@ export default function CollaborativePDFViewer({ fileUrl, documentId }: Collabor
       return
     }
 
-    const annotationText = prompt(`Add ${selectedTool}:`) || ''
-    if (!annotationText) {
-      setIsSelecting(false)
-      setSelectionStart(null)
-      setSelection(null)
-      return
+    if (selectedTool === 'help') {
+      // Handle stuck help creation
+      const description = prompt('Describe what you\'re struggling with:') || ''
+      if (!description) {
+        setIsSelecting(false)
+        setSelectionStart(null)
+        setSelection(null)
+        return
+      }
+
+      const section = prompt('What section is this? (e.g., "Introduction", "Methodology"):') || 'Unknown'
+      const isAnonymous = confirm('Would you like to post this anonymously?')
+
+      try {
+        const response = await fetch('/api/stuck-help', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            paperId: documentId,
+            userId: currentUser.id,
+            section,
+            description,
+            page: pageNumber,
+            position: {
+              x: selection.x,
+              y: selection.y,
+              width: selection.width,
+              height: selection.height
+            },
+            isAnonymous
+          })
+        })
+
+        if (response.ok) {
+          const data = await response.json()
+          setStuckHelpModal({
+            isOpen: true,
+            stuckHelp: data.stuckHelp
+          })
+        }
+      } catch (error) {
+        console.error('Failed to create stuck help:', error)
+        alert('Failed to create stuck help request. Please try again.')
+      }
+    } else {
+      // Handle regular annotations
+      const annotationText = prompt(`Add ${selectedTool}:`) || ''
+      if (!annotationText) {
+        setIsSelecting(false)
+        setSelectionStart(null)
+        setSelection(null)
+        return
+      }
+
+      const newAnnotation: Annotation = {
+        id: `${Date.now()}_${currentUser.id}`,
+        type: selectedTool as 'highlight' | 'comment',
+        x: selection.x,
+        y: selection.y,
+        width: selection.width,
+        height: selection.height,
+        color: selectedTool === 'highlight' ? '#ffff00' : '#00ff00',
+        text: annotationText,
+        author: currentUser.name,
+        authorId: currentUser.id,
+        timestamp: new Date().toISOString(),
+        pageNumber: pageNumber
+      }
+
+      // Add locally first for immediate feedback
+      setAnnotations(prev => [...prev, newAnnotation])
+
+      // Broadcast to other users
+      await broadcastEvent('annotation_added', newAnnotation)
     }
-
-    const newAnnotation: Annotation = {
-      id: `${Date.now()}_${currentUser.id}`,
-      type: selectedTool as 'highlight' | 'comment' | 'help',
-      x: selection.x,
-      y: selection.y,
-      width: selection.width,
-      height: selection.height,
-      color: selectedTool === 'highlight' ? '#ffff00' : selectedTool === 'comment' ? '#00ff00' : '#ff0000',
-      text: annotationText,
-      author: currentUser.name,
-      authorId: currentUser.id,
-      timestamp: new Date().toISOString(),
-      pageNumber: pageNumber
-    }
-
-    // Add locally first for immediate feedback
-    setAnnotations(prev => [...prev, newAnnotation])
-
-    // Broadcast to other users
-    await broadcastEvent('annotation_added', newAnnotation)
 
     setIsSelecting(false)
     setSelectionStart(null)
@@ -306,6 +391,66 @@ export default function CollaborativePDFViewer({ fileUrl, documentId }: Collabor
       // Fallback to clipboard
       await navigator.clipboard.writeText(shareUrl)
       alert('Document link copied to clipboard!')
+    }
+  }
+
+  const handleStuckHelpResponse = async (response: string, type: 'human' | 'ai') => {
+    if (!stuckHelpModal.stuckHelp) return
+
+    try {
+      const res = await fetch(`/api/stuck-help/${stuckHelpModal.stuckHelp.id}/responses`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          userId: currentUser.id,
+          content: response,
+          type
+        })
+      })
+
+      if (res.ok) {
+        // Refresh the stuck help data
+        const updatedResponse = await fetch(`/api/stuck-help/${stuckHelpModal.stuckHelp.id}`)
+        if (updatedResponse.ok) {
+          const data = await updatedResponse.json()
+          setStuckHelpModal(prev => ({
+            ...prev,
+            stuckHelp: data.stuckHelp
+          }))
+        }
+      }
+    } catch (error) {
+      console.error('Failed to submit response:', error)
+    }
+  }
+
+  const handleMarkResolved = async (stuckHelpId: string) => {
+    try {
+      const res = await fetch(`/api/stuck-help/${stuckHelpId}`, {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          isResolved: true
+        })
+      })
+
+      if (res.ok) {
+        // Refresh the stuck help data
+        const updatedResponse = await fetch(`/api/stuck-help/${stuckHelpId}`)
+        if (updatedResponse.ok) {
+          const data = await updatedResponse.json()
+          setStuckHelpModal(prev => ({
+            ...prev,
+            stuckHelp: data.stuckHelp
+          }))
+        }
+      }
+    } catch (error) {
+      console.error('Failed to mark as resolved:', error)
     }
   }
 
@@ -493,6 +638,74 @@ export default function CollaborativePDFViewer({ fileUrl, documentId }: Collabor
                 />
               </Document>
 
+              {/* Annotation Overlays */}
+              {annotations
+                .filter(annotation => annotation.pageNumber === pageNumber)
+                .map(annotation => (
+                  <div
+                    key={annotation.id}
+                    className="absolute pointer-events-auto cursor-pointer z-20"
+                    style={{
+                      left: annotation.x,
+                      top: annotation.y,
+                      width: annotation.width,
+                      height: annotation.height,
+                    }}
+                    onClick={() => {
+                      if (annotation.type === 'help') {
+                        // Open stuck help modal for help annotations
+                        setStuckHelpModal({
+                          isOpen: true,
+                          stuckHelp: {
+                            id: annotation.id,
+                            paperId: documentId,
+                            userId: annotation.authorId,
+                            userName: annotation.author,
+                            section: 'Unknown',
+                            description: annotation.text,
+                            page: annotation.pageNumber,
+                            position: {
+                              x: annotation.x,
+                              y: annotation.y,
+                              width: annotation.width,
+                              height: annotation.height
+                            },
+                            isResolved: false,
+                            isAnonymous: false,
+                            status: 'OPEN',
+                            createdAt: annotation.timestamp,
+                            updatedAt: annotation.timestamp,
+                            responses: []
+                          }
+                        })
+                      }
+                    }}
+                  >
+                    <div
+                      className="w-full h-full border-2 border-opacity-60 rounded-sm transition-all duration-200 hover:border-opacity-100"
+                      style={{
+                        backgroundColor: annotation.color + '40', // Add transparency
+                        borderColor: annotation.color,
+                      }}
+                    />
+                    {/* Annotation Icon */}
+                    <div
+                      className="absolute -top-2 -right-2 w-6 h-6 rounded-full border-2 border-white shadow-sm flex items-center justify-center"
+                      style={{ backgroundColor: annotation.color }}
+                    >
+                      {annotation.type === 'highlight' && <Highlighter className="w-3 h-3 text-white" />}
+                      {annotation.type === 'comment' && <MessageSquare className="w-3 h-3 text-white" />}
+                      {annotation.type === 'help' && <HelpCircle className="w-3 h-3 text-white" />}
+                    </div>
+                    {/* Annotation Tooltip */}
+                    <div className="absolute top-full left-0 mt-1 px-2 py-1 bg-gray-900 text-white text-xs rounded shadow-lg opacity-0 hover:opacity-100 transition-opacity duration-200 whitespace-nowrap z-30">
+                      {annotation.type === 'help' ? 'I\'m stuck here' : annotation.type}
+                      <br />
+                      by {annotation.author}
+                    </div>
+                  </div>
+                ))}
+
               {/* Live Cursors - Minimal Style */}
               {activeUsers
                 .filter(user => user.cursor?.pageNumber === pageNumber)
@@ -562,6 +775,17 @@ export default function CollaborativePDFViewer({ fileUrl, documentId }: Collabor
         currentUser={currentUser}
         isOpen={isChatOpen}
         onClose={() => setIsChatOpen(false)}
+      />
+
+      {/* Stuck Help Modal */}
+      <StuckHelpModal
+        isOpen={stuckHelpModal.isOpen}
+        onClose={() => setStuckHelpModal({ isOpen: false, stuckHelp: null })}
+        stuckHelp={stuckHelpModal.stuckHelp}
+        documentId={documentId}
+        documentTitle="Research Paper"
+        onResponseSubmit={handleStuckHelpResponse}
+        onMarkResolved={handleMarkResolved}
       />
     </div>
   )

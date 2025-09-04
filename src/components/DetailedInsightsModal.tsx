@@ -155,9 +155,10 @@ export default function DetailedInsightsModal({
       isPublic: true,
       likes: 18,
       replies: [
-        { id: "reply-4", userId: "user-1", userName: "Priya Patel", content: "I had the same struggle! RoPE (Rotary Position Embedding) is much better for long sequences. It's used in models like LLaMA and PaLM. The key insight is that it encodes relative positions in a way that generalizes to any sequence length.", timestamp: new Date().toISOString() }
+        { id: "reply-4", userId: "user-1", userName: "Priya Patel", content: "I had the same struggle! RoPE (Rotary Position Embedding) is much better for long sequences. It's used in models like LLaMA and PaLM. The key insight is that it encodes relative positions in a way that generalizes to any sequence length.", timestamp: new Date().toISOString(), documentId: "attention-is-all-you-need", type: "insight", isPublic: true, likes: 2, replies: [] }
       ],
-      parentId: undefined
+      parentId: undefined,
+      timestamp: new Date().toISOString()
     },
     {
       id: "demo-5",
@@ -173,7 +174,8 @@ export default function DetailedInsightsModal({
       isPublic: true,
       likes: 27,
       replies: [],
-      parentId: undefined
+      parentId: undefined,
+      timestamp: new Date().toISOString()
     },
     {
       id: "demo-6",
@@ -189,7 +191,8 @@ export default function DetailedInsightsModal({
       isPublic: true,
       likes: 34,
       replies: [],
-      parentId: undefined
+      parentId: undefined,
+      timestamp: new Date().toISOString()
     },
     {
       id: "demo-7",
@@ -205,7 +208,8 @@ export default function DetailedInsightsModal({
       isPublic: true,
       likes: 29,
       replies: [],
-      parentId: null
+      parentId: undefined,
+      timestamp: new Date().toISOString()
     },
     {
       id: "demo-8",
@@ -221,7 +225,8 @@ export default function DetailedInsightsModal({
       isPublic: true,
       likes: 22,
       replies: [],
-      parentId: null
+      parentId: undefined,
+      timestamp: new Date().toISOString()
     }
   ]
 
@@ -254,7 +259,7 @@ export default function DetailedInsightsModal({
     .filter(insight => {
       const matchesSearch = insight.content.toLowerCase().includes(searchTerm.toLowerCase()) ||
                            insight.userName.toLowerCase().includes(searchTerm.toLowerCase()) ||
-                           insight.tags.some(tag => tag.toLowerCase().includes(searchTerm.toLowerCase()))
+                           (insight.tags && insight.tags.some(tag => tag.toLowerCase().includes(searchTerm.toLowerCase())))
       const matchesType = selectedType === 'all' || insight.type === selectedType
       return matchesSearch && matchesType
     })
@@ -393,7 +398,7 @@ export default function DetailedInsightsModal({
                         <p className="text-gray-800 mb-3 leading-relaxed">{insight.content}</p>
                         
                         {/* Tags */}
-                        {insight.tags.length > 0 && (
+                        {insight.tags && insight.tags.length > 0 && (
                           <div className="flex flex-wrap gap-1 mb-3">
                             {insight.tags.map((tag, index) => (
                               <Badge key={index} variant="secondary" className="text-xs">

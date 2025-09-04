@@ -309,301 +309,444 @@ Make the explanation comprehensive yet accessible for the specified level.`
               </Select>
             </div>
           </div>
-
-          {selectedText && (
-            <div className="mt-4 p-4 bg-white/10 rounded-lg border border-white/20">
-              <div className="text-sm opacity-90 mb-3 font-medium flex items-center space-x-2">
-                <Compass className="w-4 h-4" />
-                <span>Selected Text to Analyze:</span>
-              </div>
-              <div className="font-mono text-sm bg-white/20 p-3 rounded border border-white/10 text-white font-bold max-h-32 overflow-y-auto">
-                {selectedText}
-              </div>
-            </div>
-          )}
         </CardHeader>
 
-        <CardContent className="p-0 flex-1 flex flex-col overflow-y-auto">
-          {/* Custom Question Input */}
-          {showCustomQuestion && (
-            <div className="p-4 border-b bg-gradient-to-r from-purple-50 to-blue-50">
-              <div className="flex space-x-2">
-                <textarea
-                  ref={textareaRef}
-                  value={customQuestion}
-                  onChange={(e) => setCustomQuestion(e.target.value)}
-                  placeholder="Ask a specific question about the selected content..."
-                  className="flex-1 p-3 border rounded-lg resize-none focus:ring-2 focus:ring-purple-500"
-                  rows={2}
-                  onKeyDown={(e) => {
-                    if (e.key === 'Enter' && !e.shiftKey) {
-                      e.preventDefault()
-                      handleCustomQuestion()
-                    }
+        <CardContent className="p-0 flex-1 flex overflow-hidden">
+          {/* Left Panel - Selected Text & Context */}
+          <div className="w-1/3 border-r border-gray-200 flex flex-col overflow-y-auto">
+            {selectedText && (
+              <div className="p-4 bg-gradient-to-br from-gray-50 to-blue-50 rounded-lg border border-gray-200">
+                <div className="text-sm font-medium mb-3 text-gray-700 flex items-center space-x-2">
+                  <Compass className="w-4 h-4" />
+                  <span>Selected Text to Analyze:</span>
+                </div>
+                <div className="font-mono text-sm bg-white p-3 rounded border border-gray-200 text-gray-800 max-h-32 overflow-y-auto">
+                  {selectedText}
+                </div>
+              </div>
+            )}
+            {documentContext && (
+              <div className="p-4 bg-gradient-to-br from-gray-50 to-blue-50 rounded-lg border border-gray-200 mt-4">
+                <div className="text-sm font-medium mb-3 text-gray-700 flex items-center space-x-2">
+                  <History className="w-4 h-4" />
+                  <span>Document Context:</span>
+                </div>
+                <div className="prose prose-sm max-w-none text-gray-900 leading-relaxed">
+                  {documentContext}
+                </div>
+              </div>
+            )}
+
+            {/* Quick Actions - Utilizing Empty Space */}
+            <div className="p-4 border-b bg-gradient-to-br from-blue-50 to-indigo-50 mt-4">
+              <div className="text-sm font-medium mb-3 text-gray-700 flex items-center space-x-2">
+                <Zap className="w-4 h-4 text-blue-600" />
+                <span>Quick Actions</span>
+              </div>
+              <div className="grid grid-cols-2 gap-2">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => {
+                    const searchUrl = `https://www.google.com/search?q=${encodeURIComponent(selectedText)}`
+                    window.open(searchUrl, '_blank')
                   }}
-                />
-                <Button onClick={handleCustomQuestion} disabled={!customQuestion.trim()} className="bg-gradient-to-r from-purple-600 to-blue-600">
-                  <Zap className="w-4 h-4 mr-2" />
-                  Ask
+                  className="text-xs h-8 bg-white hover:bg-blue-50 border-blue-200 text-blue-700"
+                >
+                  <Search className="w-3 h-3 mr-1" />
+                  Web Search
                 </Button>
-                <Button variant="outline" onClick={() => setShowCustomQuestion(false)}>
-                  Cancel
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => {
+                    const scholarUrl = `https://scholar.google.com/scholar?q=${encodeURIComponent(selectedText)}`
+                    window.open(scholarUrl, '_blank')
+                  }}
+                  className="text-xs h-8 bg-white hover:bg-blue-50 border-blue-200 text-blue-700"
+                >
+                  <GraduationCap className="w-3 h-3 mr-1" />
+                  Scholar
+                </Button>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => generateAdvancedExplanation(`Provide a simpler explanation of: ${selectedText}`)}
+                  className="text-xs h-8 bg-white hover:bg-green-50 border-green-200 text-green-700"
+                >
+                  <Lightbulb className="w-3 h-3 mr-1" />
+                  Simplify
+                </Button>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => generateAdvancedExplanation(`What are the practical applications of: ${selectedText}`)}
+                  className="text-xs h-8 bg-white hover:bg-orange-50 border-orange-200 text-orange-700"
+                >
+                  <Target className="w-3 h-3 mr-1" />
+                  Applications
                 </Button>
               </div>
             </div>
-          )}
 
-          {/* Action Buttons */}
-          <div className="p-4 border-b bg-gray-50">
-            <div className="flex flex-wrap gap-2">
-              <Button
-                variant="outline"
-                onClick={() => setShowCustomQuestion(!showCustomQuestion)}
-                className="flex items-center space-x-2"
-              >
-                <MessageSquare className="w-4 h-4" />
-                <span>Custom Question</span>
-              </Button>
-              
-              {explanation && (
-                <>
-                  <Button
-                    variant="outline"
-                    onClick={copyToClipboard}
-                    className="flex items-center space-x-2"
-                  >
-                    {copied ? <Check className="w-4 h-4" /> : <Copy className="w-4 h-4" />}
-                    <span>{copied ? 'Copied!' : 'Copy'}</span>
-                  </Button>
-                  
-                  <Button
-                    variant="outline"
-                    onClick={saveExplanation}
-                    className="flex items-center space-x-2"
-                  >
-                    <Bookmark className="w-4 h-4" />
-                    <span>Save</span>
-                  </Button>
-                  
-                  <Button
-                    variant="outline"
-                    onClick={() => generateAdvancedExplanation()}
-                    className="flex items-center space-x-2"
-                  >
-                    <RefreshCw className="w-4 h-4" />
-                    <span>Regenerate</span>
-                  </Button>
-                </>
-              )}
+            {/* AI Status & Insights - More Space Utilization */}
+            <div className="p-4 border-b bg-gradient-to-br from-purple-50 to-pink-50">
+              <div className="text-sm font-medium mb-3 text-gray-700 flex items-center space-x-2">
+                <Brain className="w-4 h-4 text-purple-600" />
+                <span>AI Status</span>
+              </div>
+              <div className="space-y-2">
+                <div className="flex items-center justify-between text-xs">
+                  <span className="text-gray-600">Current Mode:</span>
+                  <Badge className="bg-purple-100 text-purple-800 px-2 py-1">
+                    {explanationType.charAt(0).toUpperCase() + explanationType.slice(1)}
+                  </Badge>
+                </div>
+                <div className="flex items-center justify-between text-xs">
+                  <span className="text-gray-600">Expertise Level:</span>
+                  <Badge className={`${levelColors[expertiseLevel]} px-2 py-1`}>
+                    {expertiseLevel.charAt(0).toUpperCase() + expertiseLevel.slice(1)}
+                  </Badge>
+                </div>
+                <div className="flex items-center justify-between text-xs">
+                  <span className="text-gray-600">AI Model:</span>
+                  <Badge variant="outline" className="bg-white text-gray-700 px-2 py-1">
+                    GPT-4
+                  </Badge>
+                </div>
+              </div>
             </div>
+
+            {/* Recent Insights - Utilizing Remaining Space */}
+            {explanation && (
+              <div className="p-4 border-b bg-gradient-to-br from-green-50 to-emerald-50">
+                <div className="text-sm font-medium mb-3 text-gray-700 flex items-center space-x-2">
+                  <Lightbulb className="w-4 h-4 text-green-600" />
+                  <span>Recent Insights</span>
+                </div>
+                <div className="space-y-2">
+                  {explanation.relatedConcepts && explanation.relatedConcepts.slice(0, 5).map((concept, index) => (
+                    <div key={index} className="text-xs bg-white p-2 rounded border border-green-200 text-green-700">
+                      💡 {concept}
+                    </div>
+                  ))}
+                  {explanation.followUpQuestions && explanation.followUpQuestions.slice(0, 3).map((question, index) => (
+                    <div key={`q-${index}`} className="text-xs bg-blue-50 p-2 rounded border border-blue-200 text-blue-700">
+                      ❓ {question}
+                    </div>
+                  ))}
+                  {explanation.analogies && explanation.analogies.slice(0, 2).map((analogy, index) => (
+                    <div key={`a-${index}`} className="text-xs bg-orange-50 p-2 rounded border border-orange-200 text-orange-700">
+                      🎯 {analogy}
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* Empty State - When No Explanation Yet */}
+            {!explanation && !isLoading && !error && (
+              <div className="flex-1 flex items-center justify-center bg-gradient-to-br from-gray-50 to-blue-50">
+                <div className="text-center p-4">
+                  <Brain className="w-12 h-12 text-gray-400 mx-auto mb-3" />
+                  <h3 className="text-sm font-semibold text-gray-600 mb-2">Ready to Explain</h3>
+                  <p className="text-xs text-gray-500 mb-3">Select text and choose your preferred explanation style</p>
+                  <div className="flex justify-center space-x-2">
+                    <Badge className="bg-purple-100 text-purple-800 px-3 py-1 text-xs">
+                      {explanationType.charAt(0).toUpperCase() + explanationType.slice(1)}
+                    </Badge>
+                    <Badge className="bg-blue-100 text-blue-800 px-3 py-1 text-xs">
+                      {expertiseLevel.charAt(0).toUpperCase() + expertiseLevel.slice(1)}
+                    </Badge>
+                  </div>
+                </div>
+              </div>
+            )}
           </div>
 
-          {/* Loading State */}
-          {isLoading && (
-            <div className="p-12 text-center bg-white">
-              <div className="relative mx-auto mb-6 w-20 h-20">
-                <div className="animate-spin rounded-full h-20 w-20 border-4 border-purple-200 border-t-purple-600"></div>
-                <Brain className="w-8 h-8 absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 text-purple-600" />
-              </div>
-              <h3 className="text-xl font-semibold text-gray-900 mb-2">🧠 AI is thinking...</h3>
-              <p className="text-gray-700 text-lg mb-2">Generating {explanationType} explanation at {expertiseLevel} level</p>
-              <p className="text-sm text-gray-600">This may take 15-30 seconds for advanced processing</p>
-              <div className="mt-4 flex justify-center space-x-2">
-                <Badge className={`${levelColors[expertiseLevel]} px-3 py-1`}>
-                  {expertiseLevel.charAt(0).toUpperCase() + expertiseLevel.slice(1)} Level
-                </Badge>
-                <Badge variant="outline" className="px-3 py-1">
-                  {typeIcons[explanationType]}
-                  <span className="ml-1">{explanationType.charAt(0).toUpperCase() + explanationType.slice(1)}</span>
-                </Badge>
-              </div>
-            </div>
-          )}
-
-          {/* Error State */}
-          {error && (
-            <div className="p-12 text-center bg-white">
-              <Search className="w-20 h-20 text-red-500 mx-auto mb-6" />
-              <h3 className="text-xl font-bold text-red-700 mb-3">❌ Explanation Failed</h3>
-              <p className="text-red-600 mb-6 text-lg bg-red-50 p-3 rounded border border-red-200">{error}</p>
-              <Button 
-                onClick={() => generateAdvancedExplanation()} 
-                variant="outline"
-                className="bg-red-50 border-red-300 text-red-700 hover:bg-red-100 px-6 py-2"
-              >
-                🔄 Try Again
-              </Button>
-            </div>
-          )}
-
-          {/* Advanced Explanation Content */}
-          {explanation && !isLoading && !error && (
-            <div className="flex-1 overflow-y-auto bg-white">
-              <div className="p-6">
-                {/* Main Explanation */}
-                <div className="mb-8">
-                  <div className="flex items-center justify-between mb-4">
-                    <h3 className="text-2xl font-bold text-gray-900 flex items-center space-x-2">
-                      {typeIcons[explanationType]}
-                      <span>{explanationType.charAt(0).toUpperCase() + explanationType.slice(1)} Explanation</span>
-                    </h3>
-                    <div className="flex space-x-2">
-                      <Badge className={`${levelColors[expertiseLevel]} px-3 py-1`}>
-                        {expertiseLevel.charAt(0).toUpperCase() + expertiseLevel.slice(1)}
-                      </Badge>
-                      <Badge variant="outline" className="text-xs bg-purple-50 text-purple-700 border-purple-200">
-                        Powered by GPT-4
-                      </Badge>
-                    </div>
-                  </div>
-                  
-                  <div className="prose prose-lg max-w-none">
-                    <div className="whitespace-pre-wrap text-gray-900 leading-relaxed text-base font-normal bg-gradient-to-br from-purple-50 to-blue-50 p-6 rounded-xl border border-purple-200 shadow-sm">
-                      {explanation.content}
-                    </div>
-                  </div>
+          {/* Right Panel - Explanation Content */}
+          <div className="flex-1 flex flex-col overflow-y-auto bg-white">
+            {/* Custom Question Input */}
+            {showCustomQuestion && (
+              <div className="p-4 border-b bg-gradient-to-r from-purple-50 to-blue-50">
+                <div className="flex space-x-2">
+                  <textarea
+                    ref={textareaRef}
+                    value={customQuestion}
+                    onChange={(e) => setCustomQuestion(e.target.value)}
+                    placeholder="Ask a specific question about the selected content..."
+                    className="flex-1 p-3 border rounded-lg resize-none focus:ring-2 focus:ring-purple-500"
+                    rows={2}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter' && !e.shiftKey) {
+                        e.preventDefault()
+                        handleCustomQuestion()
+                      }
+                    }}
+                  />
+                  <Button onClick={handleCustomQuestion} disabled={!customQuestion.trim()} className="bg-gradient-to-r from-purple-600 to-blue-600">
+                    <Zap className="w-4 h-4 mr-2" />
+                    Ask
+                  </Button>
+                  <Button variant="outline" onClick={() => setShowCustomQuestion(false)}>
+                    Cancel
+                  </Button>
                 </div>
+              </div>
+            )}
 
-                {/* Enhanced Features Grid */}
-                <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                  {/* Related Concepts */}
-                  {explanation.relatedConcepts && explanation.relatedConcepts.length > 0 && (
-                    <Card className="border-l-4 border-l-blue-500">
-                      <CardHeader className="pb-3">
-                        <CardTitle className="text-lg flex items-center space-x-2">
-                          <Layers className="w-5 h-5 text-blue-600" />
-                          <span>Related Concepts</span>
-                        </CardTitle>
-                      </CardHeader>
-                      <CardContent className="pt-0">
-                        <div className="flex flex-wrap gap-2">
-                          {explanation.relatedConcepts.map((concept, index) => (
-                            <Badge key={index} variant="secondary" className="bg-blue-50 text-blue-700 hover:bg-blue-100 cursor-pointer">
-                              {concept}
-                            </Badge>
-                          ))}
-                        </div>
-                      </CardContent>
-                    </Card>
-                  )}
-
-                  {/* Follow-up Questions */}
-                  {explanation.followUpQuestions && explanation.followUpQuestions.length > 0 && (
-                    <Card className="border-l-4 border-l-green-500">
-                      <CardHeader className="pb-3">
-                        <CardTitle className="text-lg flex items-center space-x-2">
-                          <MessageSquare className="w-5 h-5 text-green-600" />
-                          <span>Explore Further</span>
-                        </CardTitle>
-                      </CardHeader>
-                      <CardContent className="pt-0 space-y-2">
-                        {explanation.followUpQuestions.map((question, index) => (
-                          <Button
-                            key={index}
-                            variant="ghost"
-                            onClick={() => handleFollowUpQuestion(question)}
-                            className="w-full text-left justify-start h-auto p-3 hover:bg-green-50 text-sm"
-                          >
-                            <ChevronRight className="w-4 h-4 mr-2 text-green-600" />
-                            <span className="text-green-700">{question}</span>
-                          </Button>
-                        ))}
-                      </CardContent>
-                    </Card>
-                  )}
-
-                  {/* Visual Analogies */}
-                  {explanation.analogies && explanation.analogies.length > 0 && (
-                    <Card className="border-l-4 border-l-purple-500">
-                      <CardHeader className="pb-3">
-                        <CardTitle className="text-lg flex items-center space-x-2">
-                          <Eye className="w-5 h-5 text-purple-600" />
-                          <span>Visual Analogies</span>
-                        </CardTitle>
-                      </CardHeader>
-                      <CardContent className="pt-0 space-y-2">
-                        {explanation.analogies.map((analogy, index) => (
-                          <div key={index} className="p-3 bg-purple-50 rounded-lg border border-purple-200">
-                            <p className="text-purple-800 text-sm">{analogy}</p>
-                          </div>
-                        ))}
-                      </CardContent>
-                    </Card>
-                  )}
-
-                  {/* Examples */}
-                  {explanation.examples && explanation.examples.length > 0 && (
-                    <Card className="border-l-4 border-l-orange-500">
-                      <CardHeader className="pb-3">
-                        <CardTitle className="text-lg flex items-center space-x-2">
-                          <Target className="w-5 h-5 text-orange-600" />
-                          <span>Real Examples</span>
-                        </CardTitle>
-                      </CardHeader>
-                      <CardContent className="pt-0 space-y-2">
-                        {explanation.examples.map((example, index) => (
-                          <div key={index} className="p-3 bg-orange-50 rounded-lg border border-orange-200">
-                            <p className="text-orange-800 text-sm">{example}</p>
-                          </div>
-                        ))}
-                      </CardContent>
-                    </Card>
-                  )}
-                </div>
-
-                {/* Quick Actions */}
-                <div className="mt-8 p-4 bg-gradient-to-r from-gray-50 to-blue-50 rounded-xl border border-gray-200">
-                  <h4 className="font-semibold text-gray-900 mb-3 flex items-center space-x-2">
-                    <Compass className="w-4 h-4" />
-                    <span>Quick Actions</span>
-                  </h4>
-                  <div className="flex flex-wrap gap-3">
+            {/* Action Buttons */}
+            <div className="p-4 border-b bg-gray-50">
+              <div className="flex flex-wrap gap-2">
+                <Button
+                  variant="outline"
+                  onClick={() => setShowCustomQuestion(!showCustomQuestion)}
+                  className="flex items-center space-x-2"
+                >
+                  <MessageSquare className="w-4 h-4" />
+                  <span>Custom Question</span>
+                </Button>
+                
+                {explanation && (
+                  <>
                     <Button
                       variant="outline"
-                      onClick={() => {
-                        const searchUrl = `https://www.google.com/search?q=${encodeURIComponent(selectedText)}`
-                        window.open(searchUrl, '_blank')
-                      }}
+                      onClick={copyToClipboard}
                       className="flex items-center space-x-2"
                     >
-                      <Search className="w-4 h-4" />
-                      <span>Web Search</span>
+                      {copied ? <Check className="w-4 h-4" /> : <Copy className="w-4 h-4" />}
+                      <span>{copied ? 'Copied!' : 'Copy'}</span>
                     </Button>
                     
                     <Button
                       variant="outline"
-                      onClick={() => {
-                        const scholarUrl = `https://scholar.google.com/scholar?q=${encodeURIComponent(selectedText)}`
-                        window.open(scholarUrl, '_blank')
-                      }}
+                      onClick={saveExplanation}
                       className="flex items-center space-x-2"
                     >
-                      <GraduationCap className="w-4 h-4" />
-                      <span>Scholar Search</span>
+                      <Bookmark className="w-4 h-4" />
+                      <span>Save</span>
                     </Button>
-
+                    
                     <Button
                       variant="outline"
-                      onClick={() => generateAdvancedExplanation(`Provide a simpler explanation of: ${selectedText}`)}
+                      onClick={() => generateAdvancedExplanation()}
                       className="flex items-center space-x-2"
                     >
-                      <Lightbulb className="w-4 h-4" />
-                      <span>Simplify</span>
+                      <RefreshCw className="w-4 h-4" />
+                      <span>Regenerate</span>
                     </Button>
+                  </>
+                )}
+              </div>
+            </div>
 
-                    <Button
-                      variant="outline"
-                      onClick={() => generateAdvancedExplanation(`What are the practical applications of: ${selectedText}`)}
-                      className="flex items-center space-x-2"
-                    >
-                      <Target className="w-4 h-4" />
-                      <span>Applications</span>
-                    </Button>
+            {/* Loading State */}
+            {isLoading && (
+              <div className="p-12 text-center bg-white">
+                <div className="relative mx-auto mb-6 w-20 h-20">
+                  <div className="animate-spin rounded-full h-20 w-20 border-4 border-purple-200 border-t-purple-600"></div>
+                  <Brain className="w-8 h-8 absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 text-purple-600" />
+                </div>
+                <h3 className="text-xl font-semibold text-gray-900 mb-2">🧠 AI is thinking...</h3>
+                <p className="text-gray-700 text-lg mb-2">Generating {explanationType} explanation at {expertiseLevel} level</p>
+                <p className="text-sm text-gray-600">This may take 15-30 seconds for advanced processing</p>
+                <div className="mt-4 flex justify-center space-x-2">
+                  <Badge className={`${levelColors[expertiseLevel]} px-3 py-1`}>
+                    {expertiseLevel.charAt(0).toUpperCase() + expertiseLevel.slice(1)} Level
+                  </Badge>
+                  <Badge variant="outline" className="px-3 py-1">
+                    {typeIcons[explanationType]}
+                    <span className="ml-1">{explanationType.charAt(0).toUpperCase() + explanationType.slice(1)}</span>
+                  </Badge>
+                </div>
+              </div>
+            )}
+
+            {/* Error State */}
+            {error && (
+              <div className="p-12 text-center bg-white">
+                <Search className="w-20 h-20 text-red-500 mx-auto mb-6" />
+                <h3 className="text-xl font-bold text-red-700 mb-3">❌ Explanation Failed</h3>
+                <p className="text-red-600 mb-6 text-lg bg-red-50 p-3 rounded border border-red-200">{error}</p>
+                <Button 
+                  onClick={() => generateAdvancedExplanation()} 
+                  variant="outline"
+                  className="bg-red-50 border-red-300 text-red-700 hover:bg-red-100 px-6 py-2"
+                >
+                  🔄 Try Again
+                </Button>
+              </div>
+            )}
+
+            {/* Advanced Explanation Content */}
+            {explanation && !isLoading && !error && (
+              <div className="flex-1 overflow-y-auto bg-white">
+                <div className="p-6">
+                  {/* Main Explanation */}
+                  <div className="mb-8">
+                    <div className="flex items-center justify-between mb-4">
+                      <h3 className="text-2xl font-bold text-gray-900 flex items-center space-x-2">
+                        {typeIcons[explanationType]}
+                        <span>{explanationType.charAt(0).toUpperCase() + explanationType.slice(1)} Explanation</span>
+                      </h3>
+                      <div className="flex space-x-2">
+                        <Badge className={`${levelColors[expertiseLevel]} px-3 py-1`}>
+                          {expertiseLevel.charAt(0).toUpperCase() + expertiseLevel.slice(1)}
+                        </Badge>
+                        <Badge variant="outline" className="text-xs bg-purple-50 text-purple-700 border-purple-200">
+                          Powered by GPT-4
+                        </Badge>
+                      </div>
+                    </div>
+                    
+                    <div className="prose prose-lg max-w-none">
+                      <div className="whitespace-pre-wrap text-gray-900 leading-relaxed text-base font-normal bg-gradient-to-br from-purple-50 to-blue-50 p-6 rounded-xl border border-purple-200 shadow-sm">
+                        {explanation.content}
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Enhanced Features Grid */}
+                  <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                    {/* Related Concepts */}
+                    {explanation.relatedConcepts && explanation.relatedConcepts.length > 0 && (
+                      <Card className="border-l-4 border-l-blue-500">
+                        <CardHeader className="pb-3">
+                          <CardTitle className="text-lg flex items-center space-x-2">
+                            <Layers className="w-5 h-5 text-blue-600" />
+                            <span>Related Concepts</span>
+                          </CardTitle>
+                        </CardHeader>
+                        <CardContent className="pt-0">
+                          <div className="flex flex-wrap gap-2">
+                            {explanation.relatedConcepts.map((concept, index) => (
+                              <Badge key={index} variant="secondary" className="bg-blue-50 text-blue-700 hover:bg-blue-100 cursor-pointer">
+                                {concept}
+                              </Badge>
+                            ))}
+                          </div>
+                        </CardContent>
+                      </Card>
+                    )}
+
+                    {/* Follow-up Questions */}
+                    {explanation.followUpQuestions && explanation.followUpQuestions.length > 0 && (
+                      <Card className="border-l-4 border-l-green-500">
+                        <CardHeader className="pb-3">
+                          <CardTitle className="text-lg flex items-center space-x-2">
+                            <MessageSquare className="w-5 h-5 text-green-600" />
+                            <span>Explore Further</span>
+                          </CardTitle>
+                        </CardHeader>
+                        <CardContent className="pt-0 space-y-2">
+                          {explanation.followUpQuestions.map((question, index) => (
+                            <Button
+                              key={index}
+                              variant="ghost"
+                              onClick={() => handleFollowUpQuestion(question)}
+                              className="w-full text-left justify-start h-auto p-3 hover:bg-green-50 text-sm"
+                            >
+                              <ChevronRight className="w-4 h-4 mr-2 text-green-600" />
+                              <span className="text-green-700">{question}</span>
+                            </Button>
+                          ))}
+                        </CardContent>
+                      </Card>
+                    )}
+
+                    {/* Visual Analogies */}
+                    {explanation.analogies && explanation.analogies.length > 0 && (
+                      <Card className="border-l-4 border-l-purple-500">
+                        <CardHeader className="pb-3">
+                          <CardTitle className="text-lg flex items-center space-x-2">
+                            <Eye className="w-5 h-5 text-purple-600" />
+                            <span>Visual Analogies</span>
+                          </CardTitle>
+                        </CardHeader>
+                        <CardContent className="pt-0 space-y-2">
+                          {explanation.analogies.map((analogy, index) => (
+                            <div key={index} className="p-3 bg-purple-50 rounded-lg border border-purple-200">
+                              <p className="text-purple-800 text-sm">{analogy}</p>
+                            </div>
+                          ))}
+                        </CardContent>
+                      </Card>
+                    )}
+
+                    {/* Examples */}
+                    {explanation.examples && explanation.examples.length > 0 && (
+                      <Card className="border-l-4 border-l-orange-500">
+                        <CardHeader className="pb-3">
+                          <CardTitle className="text-lg flex items-center space-x-2">
+                            <Target className="w-5 h-5 text-orange-600" />
+                            <span>Real Examples</span>
+                          </CardTitle>
+                        </CardHeader>
+                        <CardContent className="pt-0 space-y-2">
+                          {explanation.examples.map((example, index) => (
+                            <div key={index} className="p-3 bg-orange-50 rounded-lg border border-orange-200">
+                              <p className="text-orange-800 text-sm">{example}</p>
+                            </div>
+                          ))}
+                        </CardContent>
+                      </Card>
+                    )}
+                  </div>
+
+                  {/* Quick Actions */}
+                  <div className="mt-8 p-4 bg-gradient-to-r from-gray-50 to-blue-50 rounded-xl border border-gray-200">
+                    <h4 className="font-semibold text-gray-900 mb-3 flex items-center space-x-2">
+                      <Compass className="w-4 h-4" />
+                      <span>Quick Actions</span>
+                    </h4>
+                    <div className="flex flex-wrap gap-3">
+                      <Button
+                        variant="outline"
+                        onClick={() => {
+                          const searchUrl = `https://www.google.com/search?q=${encodeURIComponent(selectedText)}`
+                          window.open(searchUrl, '_blank')
+                        }}
+                        className="flex items-center space-x-2"
+                      >
+                        <Search className="w-4 h-4" />
+                        <span>Web Search</span>
+                      </Button>
+                      
+                      <Button
+                        variant="outline"
+                        onClick={() => {
+                          const scholarUrl = `https://scholar.google.com/scholar?q=${encodeURIComponent(selectedText)}`
+                          window.open(scholarUrl, '_blank')
+                        }}
+                        className="flex items-center space-x-2"
+                      >
+                        <GraduationCap className="w-4 h-4" />
+                        <span>Scholar Search</span>
+                      </Button>
+
+                      <Button
+                        variant="outline"
+                        onClick={() => generateAdvancedExplanation(`Provide a simpler explanation of: ${selectedText}`)}
+                        className="flex items-center space-x-2"
+                      >
+                        <Lightbulb className="w-4 h-4" />
+                        <span>Simplify</span>
+                      </Button>
+
+                      <Button
+                        variant="outline"
+                        onClick={() => generateAdvancedExplanation(`What are the practical applications of: ${selectedText}`)}
+                        className="flex items-center space-x-2"
+                      >
+                        <Target className="w-4 h-4" />
+                        <span>Applications</span>
+                      </Button>
+                    </div>
                   </div>
                 </div>
               </div>
-            </div>
-          )}
+            )}
+          </div>
         </CardContent>
       </Card>
     </div>
