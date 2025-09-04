@@ -16,7 +16,7 @@ interface AISummaryPanelProps {
 const sectionMeta: Record<string, { label: string; icon: React.ReactNode; askMore?: boolean; color: string; gradient: string; description: string; confidence?: number }> = {
   // Research Paper Sections
   documentInfo: { 
-    label: '📄 Document Information', 
+    label: 'Document Information', 
     icon: <BookOpen className="w-5 h-5" />, 
     color: 'bg-blue-100', 
     gradient: 'from-blue-500 to-blue-600',
@@ -25,7 +25,7 @@ const sectionMeta: Record<string, { label: string; icon: React.ReactNode; askMor
   },
 
   motivation: { 
-    label: '💡 Research Motivation', 
+    label: 'Research Motivation', 
     icon: <Lightbulb className="w-5 h-5" />, 
     color: 'bg-yellow-100', 
     gradient: 'from-yellow-500 to-yellow-600',
@@ -34,7 +34,7 @@ const sectionMeta: Record<string, { label: string; icon: React.ReactNode; askMor
     confidence: 91
   },
   keyFindings: { 
-    label: '🎯 Key Findings', 
+    label: 'Key Findings', 
     icon: <Target className="w-5 h-5" />, 
     color: 'bg-green-100', 
     gradient: 'from-green-500 to-green-600',
@@ -43,7 +43,7 @@ const sectionMeta: Record<string, { label: string; icon: React.ReactNode; askMor
     confidence: 94
   },
   methods: { 
-    label: '🔬 Research Methods', 
+    label: 'Research Methods', 
     icon: <Microscope className="w-5 h-5" />, 
     color: 'bg-blue-100', 
     gradient: 'from-blue-500 to-blue-600',
@@ -52,7 +52,7 @@ const sectionMeta: Record<string, { label: string; icon: React.ReactNode; askMor
     confidence: 89
   },
   results: { 
-    label: '📊 Results & Data', 
+    label: 'Results & Data', 
     icon: <TrendingUp className="w-5 h-5" />, 
     color: 'bg-indigo-100', 
     gradient: 'from-indigo-500 to-indigo-600',
@@ -61,7 +61,7 @@ const sectionMeta: Record<string, { label: string; icon: React.ReactNode; askMor
     confidence: 91
   },
   limitations: { 
-    label: '⚠️ Limitations', 
+    label: 'Limitations', 
     icon: <AlertTriangle className="w-5 h-5" />, 
     color: 'bg-red-100', 
     gradient: 'from-red-500 to-red-600',
@@ -70,7 +70,7 @@ const sectionMeta: Record<string, { label: string; icon: React.ReactNode; askMor
     confidence: 87
   },
   futureWork: { 
-    label: '🔮 Future Work', 
+    label: 'Future Work', 
     icon: <ArrowRight className="w-5 h-5" />, 
     color: 'bg-purple-100', 
     gradient: 'from-purple-500 to-purple-600',
@@ -79,7 +79,7 @@ const sectionMeta: Record<string, { label: string; icon: React.ReactNode; askMor
     confidence: 86
   },
   applications: { 
-    label: '🚀 Applications & Impact', 
+    label: 'Applications & Impact', 
     icon: <Zap className="w-5 h-5" />, 
     color: 'bg-teal-100', 
     gradient: 'from-teal-500 to-teal-600',
@@ -89,7 +89,7 @@ const sectionMeta: Record<string, { label: string; icon: React.ReactNode; askMor
   
   // Non-Research Document Sections
   contentType: {
-    label: '📄 Document Type',
+    label: 'Document Type',
     icon: <FileText className="w-5 h-5" />,
     color: 'bg-orange-100',
     gradient: 'from-orange-500 to-orange-600',
@@ -97,7 +97,7 @@ const sectionMeta: Record<string, { label: string; icon: React.ReactNode; askMor
     confidence: 95
   },
   summary: {
-    label: '📋 Content Summary',
+    label: 'Content Summary',
     icon: <FileText className="w-5 h-5" />,
     color: 'bg-blue-100',
     gradient: 'from-blue-500 to-blue-600',
@@ -105,7 +105,7 @@ const sectionMeta: Record<string, { label: string; icon: React.ReactNode; askMor
     confidence: 90
   },
   keyPoints: {
-    label: '✅ Key Points',
+    label: 'Key Points',
     icon: <Target className="w-5 h-5" />,
     color: 'bg-green-100',
     gradient: 'from-green-500 to-green-600',
@@ -113,7 +113,7 @@ const sectionMeta: Record<string, { label: string; icon: React.ReactNode; askMor
     confidence: 88
   },
   structure: {
-    label: '📋 Document Structure',
+    label: 'Document Structure',
     icon: <BookOpen className="w-5 h-5" />,
     color: 'bg-purple-100',
     gradient: 'from-purple-500 to-purple-600',
@@ -121,7 +121,7 @@ const sectionMeta: Record<string, { label: string; icon: React.ReactNode; askMor
     confidence: 85
   },
   audience: {
-    label: '👥 Target Audience',
+    label: 'Target Audience',
     icon: <Users className="w-5 h-5" />,
     color: 'bg-cyan-100',
     gradient: 'from-cyan-500 to-cyan-600',
@@ -162,7 +162,7 @@ export default function AISummaryPanel({ summary, loading, open, onClose, onAskM
               <BookOpen className="w-2.5 h-2.5 text-gray-700" />
             </div>
             <div>
-              <h2 className="text-xs font-bold text-gray-900">🤖 AI Document Analysis</h2>
+              <h2 className="text-xs font-bold text-gray-900">AI Document Analysis</h2>
               <p className="text-gray-600 text-xs">Comprehensive Research Summary</p>
             </div>
           </div>
@@ -289,7 +289,7 @@ export default function AISummaryPanel({ summary, loading, open, onClose, onAskM
               const journal = summary.journal || 'Journal not available'
               const abstract = summary.abstract || 'Abstract not available'
               
-              value = `📄 **Title:** ${title}\n\n👥 **Authors:** ${authors}\n\n📅 **Year:** ${year}\n\n📚 **Journal/Conference:** ${journal}\n\n📋 **Abstract:** ${abstract}`
+              value = `**Title:** ${title}\n\n**Authors:** ${authors}\n\n**Year:** ${year}\n\n**Journal/Conference:** ${journal}\n\n**Abstract:** ${abstract}`
               isExpandable = true // Always expandable since it contains multiple pieces of info
             }
             
