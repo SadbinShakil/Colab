@@ -8,7 +8,7 @@ const inter = Inter({
 });
 
 export const metadata: Metadata = {
-  title: "PaperPal - Revolutionary AI-Powered Research Collaboration Platform",
+  title: "LitSense - Revolutionary AI-Powered Research Collaboration Platform",
   description: "Transform research collaboration with real-time annotations, AI-powered insights, expertise matching, and intelligent discussion facilitation. The future of academic research is here.",
 };
 

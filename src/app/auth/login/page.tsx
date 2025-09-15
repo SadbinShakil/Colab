@@ -96,7 +96,7 @@ export default function LoginPage() {
               <div className="w-12 h-12 bg-blue-600 rounded-2xl flex items-center justify-center shadow-xl group-hover:shadow-2xl group-hover:scale-110 transition-all duration-300">
                 <FileText className="w-6 h-6 text-white" />
               </div>
-              <span className="text-3xl font-bold text-gray-900">PaperPal</span>
+              <span className="text-3xl font-bold text-gray-900">LitSense</span>
             </Link>
             <div className="space-y-4">
               <h1 className="text-4xl font-bold text-gray-900 leading-tight">

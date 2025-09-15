@@ -323,46 +323,48 @@ export default function ChatSidebar({ documentId, currentUser, isOpen, onClose, 
       </div>
 
       {/* Clean Tab Navigation */}
-      <div className="flex border-b border-gray-100">
-        <Button
-          variant="ghost"
-          size="sm"
-          className={`flex-1 rounded-none border-b-2 transition-colors ${
-            activeTab === 'chat' 
-              ? 'border-blue-500 text-blue-600 bg-blue-50' 
-              : 'border-transparent text-gray-600 hover:text-gray-900 hover:bg-gray-50'
-          }`}
-          onClick={() => setActiveTab('chat')}
-        >
-          <MessageSquare className="h-4 w-4 mr-1" />
-          <span className="text-sm font-medium">Chat</span>
-        </Button>
-        <Button
-          variant="ghost"
-          size="sm"
-          className={`flex-1 rounded-none border-b-2 transition-colors ${
-            activeTab === 'ai' 
-              ? 'border-purple-500 text-purple-600 bg-purple-50' 
-              : 'border-transparent text-gray-600 hover:text-gray-900 hover:bg-gray-50'
-          }`}
-          onClick={() => setActiveTab('ai')}
-        >
-          <Brain className="h-4 w-4 mr-1" />
-          <span className="text-sm font-medium">AI</span>
-        </Button>
-        <Button
-          variant="ghost"
-          size="sm"
-          className={`flex-1 rounded-none border-b-2 transition-colors ${
-            activeTab === 'help' 
-              ? 'border-orange-500 text-orange-600 bg-orange-50' 
-              : 'border-transparent text-gray-600 hover:text-gray-900 hover:bg-gray-50'
-          }`}
-          onClick={() => setActiveTab('help')}
-        >
-          <HelpCircle className="h-4 w-4 mr-1" />
-          <span className="text-sm font-medium">Help</span>
-        </Button>
+      <div className="border-b border-gray-100 overflow-x-auto">
+        <div className="flex min-w-max">
+          <Button
+            variant="ghost"
+            size="sm"
+            className={`rounded-none border-b-2 transition-colors whitespace-nowrap ${
+              activeTab === 'chat' 
+                ? 'border-blue-500 text-blue-600 bg-blue-50' 
+                : 'border-transparent text-gray-600 hover:text-gray-900 hover:bg-gray-50'
+            }`}
+            onClick={() => setActiveTab('chat')}
+          >
+            <MessageSquare className="h-4 w-4 mr-1" />
+            <span className="text-sm font-medium">Chat</span>
+          </Button>
+          <Button
+            variant="ghost"
+            size="sm"
+            className={`rounded-none border-b-2 transition-colors whitespace-nowrap ${
+              activeTab === 'ai' 
+                ? 'border-purple-500 text-purple-600 bg-purple-50' 
+                : 'border-transparent text-gray-600 hover:text-gray-900 hover:bg-gray-50'
+            }`}
+            onClick={() => setActiveTab('ai')}
+          >
+            <Brain className="h-4 w-4 mr-1" />
+            <span className="text-sm font-medium">AI</span>
+          </Button>
+          <Button
+            variant="ghost"
+            size="sm"
+            className={`rounded-none border-b-2 transition-colors whitespace-nowrap ${
+              activeTab === 'help' 
+                ? 'border-orange-500 text-orange-600 bg-orange-50' 
+                : 'border-transparent text-gray-600 hover:text-gray-900 hover:bg-gray-50'
+            }`}
+            onClick={() => setActiveTab('help')}
+          >
+            <HelpCircle className="h-4 w-4 mr-1" />
+            <span className="text-sm font-medium">Help</span>
+          </Button>
+        </div>
       </div>
 
       {/* Content Area */}

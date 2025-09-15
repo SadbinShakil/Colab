@@ -182,7 +182,6 @@ export default function TextSelectionPopup({
 
         {/* Main actions */}
         <div className="p-2">
-          {console.log('🎯 Rendering main actions, showAnnotation:', showAnnotation, 'showHighlightColors:', showHighlightColors)}
           {!showAnnotation && !showHighlightColors ? (
             <div className="grid grid-cols-3 gap-1">
               {/* Copy */}
@@ -372,7 +371,6 @@ export default function TextSelectionPopup({
             </div>
           ) : (
             <div className="space-y-2 p-2">
-              {console.log('🎯 Rendering comment input section, showAnnotation:', true)}
               <textarea
                 value={annotationText}
                 onChange={(e) => setAnnotationText(e.target.value)}

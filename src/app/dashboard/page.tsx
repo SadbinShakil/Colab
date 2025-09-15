@@ -125,7 +125,7 @@ export default function DashboardPage() {
               <div className="w-8 h-8 bg-blue-600 rounded-xl flex items-center justify-center">
                 <FileText className="w-4 h-4 text-white" />
               </div>
-              <h1 className="text-xl font-bold text-gray-900">PaperPal</h1>
+              <h1 className="text-xl font-bold text-gray-900">LitSense</h1>
             </div>
 
             {/* Search */}

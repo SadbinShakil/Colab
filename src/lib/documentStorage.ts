@@ -14,12 +14,22 @@ export interface DocumentMetadata {
   collaborators: string[]
   uploadDate: string
   url: string
+  fullText?: string // Full extracted text content
+  summary?: {
+    fullText?: string
+    abstract?: string
+    title?: string
+    authors?: string
+    year?: string
+    extractedAt?: string
+  }
   enhancedMetadata?: {
     status: 'completed' | 'error' | 'failed'
     extractedTitle?: string
     extractedAuthors?: string
     extractedYear?: string
     extractedAbstract?: string
+    textLength?: number
     error?: string
   }
 }

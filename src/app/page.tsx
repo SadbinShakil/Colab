@@ -71,7 +71,7 @@ export default function HomePage() {
 
   const testimonials = [
     {
-      quote: "PaperPal has transformed how our research team collaborates. The AI insights are remarkably accurate.",
+      quote: "LitSense has transformed how our research team collaborates. The AI insights are remarkably accurate.",
       author: "Dr. Sarah Chen",
       role: "Lead Researcher",
       institution: "Stanford University",
@@ -97,7 +97,7 @@ export default function HomePage() {
                 <div className="w-8 h-8 bg-blue-600 rounded-xl flex items-center justify-center shadow-lg hover:bg-blue-700 transition-colors duration-300">
                   <FileText className="w-4 h-4 text-white" />
                 </div>
-                <span className="text-xl font-semibold text-gray-900">PaperPal</span>
+                <span className="text-xl font-semibold text-gray-900">LitSense</span>
               </Link>
               
               <nav className="hidden md:flex items-center space-x-8">
@@ -216,7 +216,7 @@ export default function HomePage() {
               Everything You Need for Academic Collaboration
             </h2>
             <p className="text-lg text-gray-600">
-              From individual research to team projects, PaperPal provides the tools 
+              From individual research to team projects, LitSense provides the tools 
               that modern academics need to work together effectively.
             </p>
           </div>
@@ -408,7 +408,7 @@ export default function HomePage() {
               Trusted by Leading Researchers
             </h2>
             <p className="text-lg text-gray-600">
-              See what academics and research teams are saying about PaperPal.
+              See what academics and research teams are saying about LitSense.
             </p>
           </div>
 
@@ -452,7 +452,7 @@ export default function HomePage() {
               Ready to Transform Your Research Workflow?
             </h2>
             <p className="text-xl text-blue-100 mb-10 leading-relaxed">
-              Join thousands of researchers who are already collaborating more effectively with PaperPal.
+              Join thousands of researchers who are already collaborating more effectively with LitSense.
             </p>
             
             <div className="flex flex-col sm:flex-row gap-4 justify-center">
@@ -488,7 +488,7 @@ export default function HomePage() {
                 <div className="w-10 h-10 bg-blue-600 rounded-2xl flex items-center justify-center shadow-lg">
                   <FileText className="w-6 h-6 text-white" />
                 </div>
-                <span className="text-2xl font-bold tracking-tight">PaperPal</span>
+                <span className="text-2xl font-bold tracking-tight">LitSense</span>
               </div>
               <p className="text-gray-600 leading-relaxed mb-6 max-w-xs">
                 Empowering researchers worldwide with collaborative tools for academic excellence.
@@ -557,7 +557,7 @@ export default function HomePage() {
             </button>
           </div>
           <div className="pt-8 text-center text-gray-500 text-sm">
-            &copy; 2024 PaperPal. All rights reserved. Built with <span role="img" aria-label="love">❤️</span> for researchers.
+            &copy; 2024 LitSense. All rights reserved. Built with <span role="img" aria-label="love">❤️</span> for researchers.
           </div>
         </div>
       </footer>

@@ -103,7 +103,15 @@ export default function DocumentViewer({ params }: { params: Promise<{ id: strin
   const [collaborativeSummary, setCollaborativeSummary] = useState<any>(null)
   const [showAddInsight, setShowAddInsight] = useState(false)
   
-
+  // Refs for auto-scrolling
+  const aiMessagesEndRef = useRef<HTMLDivElement>(null)
+  
+  // Auto-scroll to bottom when new AI messages are added (disabled to prevent layout issues)
+  // useEffect(() => {
+  //   if (aiMessagesEndRef.current) {
+  //     aiMessagesEndRef.current.scrollIntoView({ behavior: 'smooth' })
+  //   }
+  // }, [aiMessages])
   
   // Demo comments for realistic interface
   const [demoComments] = useState([
@@ -404,7 +412,7 @@ export default function DocumentViewer({ params }: { params: Promise<{ id: strin
   const handleAIQuestion = async () => {
     if (!aiQuestion.trim() || isAILoading) return
 
-    const question = aiQuestion
+    const question = aiQuestion.trim()
     setAiQuestion('')
     setIsAILoading(true)
     
@@ -416,55 +424,107 @@ export default function DocumentViewer({ params }: { params: Promise<{ id: strin
       timestamp: new Date().toISOString(),
       isLoading: true
     }
-    setAiMessages(prev => [...prev, newAIMessage])
+    
+    // Use functional update to prevent race conditions
+    setAiMessages(prev => {
+      try {
+        return [...prev, newAIMessage]
+      } catch (error) {
+        console.error('Error adding message:', error)
+        return prev
+      }
+    })
     
     try {
-      // Always send some documentContent (fallback to generic if not available)
-      const documentContent = document?.summary?.fullText || document?.abstract || document?.title || 'No document context provided.'
+      // Get document content for AI analysis - prioritize full text
+      const documentContent = document?.fullText || 
+                             document?.summary?.fullText || 
+                             document?.abstract || 
+                             document?.title || 
+                             'No document context provided.'
+      
+      console.log('🤖 AI Help Debug - Document Content:', {
+        hasFullText: !!document?.fullText,
+        hasSummaryFullText: !!document?.summary?.fullText,
+        hasAbstract: !!document?.abstract,
+        hasTitle: !!document?.title,
+        contentLength: documentContent?.length || 0,
+        contentPreview: documentContent?.substring(0, 200) || 'No content'
+      })
+      
+      // Call the real AI Help API
       const response = await fetch('/api/ai-help', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          documentId,
-          userId: currentUser?.id || 'anonymous',
-          userName: currentUser?.name || 'Anonymous',
           question: question,
-          documentUrl: document?.url,
-          documentContent
+          documentContent: documentContent,
+          documentTitle: document?.title || 'Research Document',
+          documentAuthors: document?.authors || 'Academic Authors',
+          documentUrl: document?.url || '',
+          userId: currentUser?.id || 'guest',
+          userName: currentUser?.name || 'Anonymous'
         })
       })
-      let data = null
-      try {
-        data = await response.json()
-      } catch (jsonErr) {
-        setAiMessages(prev => prev.map(msg => 
-          msg.id === newAIMessage.id 
-            ? { ...msg, answer: 'Sorry, the AI service is temporarily unavailable. Please try again later.', isLoading: false }
-            : msg
-        ))
-        setIsAILoading(false)
-        return
-      }
-      if (response.ok && data && data.success) {
-        setAiMessages(prev => prev.map(msg => 
-          msg.id === newAIMessage.id 
-            ? { ...msg, answer: data.response.answer, isLoading: false }
-            : msg
-        ))
+
+      const data = await response.json()
+      
+      if (data.success && data.response?.answer) {
+        // Update the message with the real AI response
+        setAiMessages(prev => {
+          try {
+            return prev.map(msg => 
+              msg.id === newAIMessage.id 
+                ? { ...msg, answer: data.response.answer, isLoading: false }
+                : msg
+            )
+          } catch (error) {
+            console.error('Error updating message:', error)
+            return prev
+          }
+        })
       } else {
-        setAiMessages(prev => prev.map(msg => 
-          msg.id === newAIMessage.id 
-            ? { ...msg, answer: `Error: ${data?.error || 'Failed to get AI response'}`, isLoading: false }
-            : msg
-        ))
+        // Fallback response if API fails
+        const fallbackResponse = `I apologize, but I'm having trouble accessing the AI service right now. However, I can see you're asking about: "${question}"
+
+Based on the document "${document?.title || 'this research paper'}", here are some general insights:
+
+• This appears to be a research paper
+• Your question: "${question}"
+• For detailed analysis, please try again in a moment
+
+Would you like to ask about a specific section or concept?`
+        
+        setAiMessages(prev => {
+          try {
+            return prev.map(msg => 
+              msg.id === newAIMessage.id 
+                ? { ...msg, answer: fallbackResponse, isLoading: false }
+                : msg
+            )
+          } catch (error) {
+            console.error('Error updating message:', error)
+            return prev
+          }
+        })
       }
+      
+      setIsAILoading(false)
+      
     } catch (error) {
       console.error('AI request failed:', error)
-      setAiMessages(prev => prev.map(msg => 
-        msg.id === newAIMessage.id 
-          ? { ...msg, answer: 'Sorry, there was an error connecting to the AI service. Please try again.', isLoading: false }
-          : msg
-      ))
+      setAiMessages(prev => {
+        try {
+          return prev.map(msg => 
+            msg.id === newAIMessage.id 
+              ? { ...msg, answer: 'Sorry, there was an error connecting to the AI service. Please try again.', isLoading: false }
+              : msg
+          )
+        } catch (error) {
+          console.error('Error updating message with error:', error)
+          return prev
+        }
+      })
     } finally {
       setIsAILoading(false)
     }
@@ -1099,7 +1159,7 @@ export default function DocumentViewer({ params }: { params: Promise<{ id: strin
 
         {/* Chat Sidebar */}
         {showChat && (
-          <div className="w-80 border-l border-gray-200 bg-background flex flex-col">
+          <div className="w-80 border-l border-gray-200 bg-background flex flex-col h-full">
             {/* Chat Header */}
             <div className="border-b border-gray-200 p-4">
               <div className="flex items-center justify-between mb-3">
@@ -1118,44 +1178,46 @@ export default function DocumentViewer({ params }: { params: Promise<{ id: strin
               </div>
               
                            {/* Tab Navigation */}
-             <div className="flex space-x-1 bg-gray-100 rounded-lg p-1">
-               <Button 
-                 variant={activeTab === 'chat' ? 'default' : 'ghost'} 
-                 size="sm" 
-                 className="flex-1 h-8"
-                 onClick={() => setActiveTab('chat')}
-               >
-                 <MessageCircle className="h-3 w-3 mr-1" />
-                 Chat
-               </Button>
-                                  <Button 
-                    variant={activeTab === 'ai' ? 'default' : 'ghost'} 
-                    size="sm" 
-                    className="flex-1 h-8"
-                    onClick={() => setActiveTab('ai')}
-                  >
-                    <Sparkles className="h-3 w-3 mr-1" />
-                    AI Help
-                  </Button>
-                  <Button 
-                    variant={activeTab === 'metadata' ? 'default' : 'ghost'} 
-                    size="sm" 
-                    className="flex-1 h-8"
-                    onClick={() => setActiveTab('metadata')}
-                  >
-                    <Brain className="h-3 w-3 mr-1" />
-                    Metadata
-                  </Button>
-                  <Button 
-                    variant={activeTab === 'annotations' ? 'default' : 'ghost'} 
-                    size="sm" 
-                    className="flex-1 h-8"
-                    onClick={() => setActiveTab('annotations')}
-                  >
-                    <MessageSquare className="h-3 w-3 mr-1" />
-                    Annotations
-                  </Button>
-                </div>
+             <div className="bg-gray-100 rounded-lg p-1 overflow-x-auto">
+               <div className="flex space-x-1 min-w-max">
+                 <Button 
+                   variant={activeTab === 'chat' ? 'default' : 'ghost'} 
+                   size="sm" 
+                   className="h-8 whitespace-nowrap"
+                   onClick={() => setActiveTab('chat')}
+                 >
+                   <MessageCircle className="h-3 w-3 mr-1" />
+                   Chat
+                 </Button>
+                 <Button 
+                   variant={activeTab === 'ai' ? 'default' : 'ghost'} 
+                   size="sm" 
+                   className="h-8 whitespace-nowrap"
+                   onClick={() => setActiveTab('ai')}
+                 >
+                   <Sparkles className="h-3 w-3 mr-1" />
+                   AI Help
+                 </Button>
+                 <Button 
+                   variant={activeTab === 'metadata' ? 'default' : 'ghost'} 
+                   size="sm" 
+                   className="h-8 whitespace-nowrap"
+                   onClick={() => setActiveTab('metadata')}
+                 >
+                   <Brain className="h-3 w-3 mr-1" />
+                   Metadata
+                 </Button>
+                 <Button 
+                   variant={activeTab === 'annotations' ? 'default' : 'ghost'} 
+                   size="sm" 
+                   className="h-8 whitespace-nowrap"
+                   onClick={() => setActiveTab('annotations')}
+                 >
+                   <MessageSquare className="h-3 w-3 mr-1" />
+                   Annotations
+                 </Button>
+               </div>
+             </div>
             </div>
 
             {/* Content Area */}
@@ -1163,7 +1225,7 @@ export default function DocumentViewer({ params }: { params: Promise<{ id: strin
               /* Chat Tab */
               <>
                 {/* Chat Messages */}
-                <div className="flex-1 overflow-y-auto p-4 space-y-4">
+                <div className="flex-1 overflow-y-auto p-4 space-y-4 pr-20 min-h-0 max-h-full">
                   {collaboration.chatMessages.map((msg: any) => (
                     <div key={msg.id} className="space-y-2">
                       <div className="flex items-start space-x-2">
@@ -1200,7 +1262,7 @@ export default function DocumentViewer({ params }: { params: Promise<{ id: strin
                 </div>
 
                 {/* Chat Input */}
-                <div className="border-t border-gray-200 p-4">
+                <div className="border-t border-gray-200 p-4 pr-20">
                   <div className="flex space-x-2">
                     <Input
                       placeholder="Type a message..."
@@ -1227,96 +1289,92 @@ export default function DocumentViewer({ params }: { params: Promise<{ id: strin
                 </div>
               </>
             ) : activeTab === 'ai' ? (
-              /* AI Help Tab */
-              <>
-                {/* AI Help Info */}
-                <div className="border-b border-gray-200 p-4 bg-gradient-to-r from-blue-50 to-purple-50">
-                  <div className="flex items-center space-x-2 mb-2">
-                    <Bot className="h-5 w-5 text-blue-600" />
-                    <h3 className="font-medium text-blue-800">AI Document Assistant</h3>
+              /* AI Help Tab - Simplified */
+              <div className="flex flex-col h-full min-h-0">
+                {/* AI Messages - Simplified with scrollable header */}
+                <div className="flex-1 overflow-y-auto pr-20 min-h-0" style={{ height: '400px' }}>
+                  {/* AI Help Info - Now scrollable */}
+                  <div className="border-b border-gray-200 p-3 bg-gradient-to-r from-blue-50 to-purple-50">
+                    <div className="flex items-center space-x-2 mb-1">
+                      <Bot className="h-4 w-4 text-blue-600" />
+                      <h3 className="font-medium text-blue-800 text-sm">Advanced AI Research Assistant</h3>
+                    </div>
+                    <p className="text-xs text-blue-700">
+                      I'm your intelligent research companion! I can analyze this paper in detail, answer general questions, help with research, or just chat. What would you like to know?
+                    </p>
                   </div>
-                  <p className="text-sm text-blue-700 mb-3">
-                    Ask me anything about this document. I can help explain concepts, summarize sections, 
-                    analyze methodology, and answer your questions.
-                  </p>
-                  <div className="space-y-2">
-                    <p className="text-xs text-blue-600 font-medium">💡 Try asking:</p>
-                    <ul className="text-xs text-blue-600 space-y-1">
-                      <li>• "What is the main research question?"</li>
-                      <li>• "Explain the methodology section"</li>
-                      <li>• "What are the key findings?"</li>
-                      <li>• "Summarize the conclusion"</li>
-                      <li>• "What does [term] mean?"</li>
-                    </ul>
-                  </div>
-                </div>
 
-                {/* AI Messages */}
-                <div className="flex-1 overflow-y-auto p-4 space-y-4">
-                  {aiMessages.map((msg) => (
-                    <div key={msg.id} className="space-y-3">
-                      {/* Question */}
-                      <div className="flex items-start space-x-2">
-                        <div className="w-8 h-8 rounded-full bg-gradient-to-br from-blue-500 to-teal-500 flex items-center justify-center text-sm text-white">
-                          👤
-                        </div>
-                        <div className="flex-1">
-                          <div className="flex items-center space-x-2 mb-1">
-                            <span className="font-medium text-sm">You</span>
-                            <span className="text-xs text-muted-foreground">
-                              {new Date(msg.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-                            </span>
-                          </div>
-                          <div className="bg-blue-50 border border-blue-200 rounded-lg p-3 text-sm">
-                            {msg.question}
-                          </div>
-                        </div>
-                      </div>
-
-                      {/* Answer */}
-                      <div className="flex items-start space-x-2">
-                        <div className="w-8 h-8 rounded-full bg-gradient-to-br from-purple-500 to-pink-500 flex items-center justify-center text-sm text-white">
-                          🤖
-                        </div>
-                        <div className="flex-1">
-                          <div className="flex items-center space-x-2 mb-1">
-                            <span className="font-medium text-sm">AI Assistant</span>
-                            <span className="text-xs bg-purple-100 text-purple-700 px-2 py-0.5 rounded-full">
-                              AI
-                            </span>
-                          </div>
-                          <div className="bg-gradient-to-r from-purple-50 to-pink-50 border border-purple-200 rounded-lg p-3 text-sm">
-                            {msg.isLoading ? (
-                              <div className="flex items-center space-x-2">
-                                <Loader2 className="h-4 w-4 animate-spin text-purple-600" />
-                                <span className="text-purple-700">Thinking...</span>
-                              </div>
-                            ) : (
-                              msg.answer
-                            )}
-                          </div>
+                  {/* Messages Container */}
+                  <div className="p-3 space-y-2">
+                  {aiMessages.length === 0 ? (
+                    <div className="text-center py-4">
+                      <div className="text-gray-400 mb-1">💡</div>
+                      <p className="text-xs text-gray-500">Start a conversation with AI</p>
+                      <div className="mt-2 space-y-1">
+                        <p className="text-xs text-blue-600 font-medium">Try asking:</p>
+                        <div className="text-xs text-blue-600 space-y-0.5">
+                          <div>• "What is the main research question?"</div>
+                          <div>• "Explain the methodology section"</div>
+                          <div>• "What are the key findings?"</div>
                         </div>
                       </div>
                     </div>
-                  ))}
+                  ) : (
+                    aiMessages.map((msg) => (
+                      <div key={msg.id} className="space-y-1">
+                        {/* Question */}
+                        <div className="flex items-start space-x-2">
+                          <div className="w-6 h-6 rounded-full bg-blue-500 flex items-center justify-center text-xs text-white">
+                            👤
+                          </div>
+                          <div className="flex-1">
+                            <div className="bg-blue-50 border border-blue-200 rounded-lg p-2 text-sm">
+                              {msg.question}
+                            </div>
+                          </div>
+                        </div>
+
+                        {/* Answer */}
+                        <div className="flex items-start space-x-2">
+                          <div className="w-6 h-6 rounded-full bg-purple-500 flex items-center justify-center text-xs text-white">
+                            🤖
+                          </div>
+                          <div className="flex-1">
+                            <div className="bg-purple-50 border border-purple-200 rounded-lg p-2 text-sm">
+                              {msg.isLoading ? (
+                                <div className="flex items-center space-x-2">
+                                  <Loader2 className="h-3 w-3 animate-spin text-purple-600" />
+                                  <span className="text-purple-700 text-xs">Thinking...</span>
+                                </div>
+                              ) : (
+                                <div className="text-sm">{msg.answer}</div>
+                              )}
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    ))
+                  )}
+                  <div ref={aiMessagesEndRef} />
+                  </div>
                 </div>
 
-                {/* AI Input */}
-                <div className="border-t border-gray-200 p-4">
+                {/* AI Input - Simplified */}
+                <div className="border-t border-gray-200 p-2 pr-20 bg-white">
                   <div className="flex space-x-2">
                     <Input
                       placeholder="Ask AI about this document..."
                       value={aiQuestion}
                       onChange={(e) => setAiQuestion(e.target.value)}
                       onKeyPress={handleKeyPress}
-                      className="flex-1 border-blue-300 focus:border-blue-500"
+                      className="flex-1"
                       disabled={isAILoading}
                     />
                     <Button 
                       size="sm" 
                       onClick={handleAIQuestion}
                       disabled={!aiQuestion.trim() || isAILoading}
-                      className="bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-700 hover:to-purple-700"
+                      className="bg-blue-600 hover:bg-blue-700"
                     >
                       {isAILoading ? (
                         <Loader2 className="h-4 w-4 animate-spin" />
@@ -1325,19 +1383,8 @@ export default function DocumentViewer({ params }: { params: Promise<{ id: strin
                       )}
                     </Button>
                   </div>
-                  <div className="flex items-center justify-between mt-2">
-                    <div className="flex space-x-1">
-                      <Button variant="ghost" size="sm" className="h-6 w-6 p-0">
-                        <Paperclip className="h-3 w-3" />
-                      </Button>
-                      <Button variant="ghost" size="sm" className="h-6 w-6 p-0">
-                        <Smile className="h-3 w-3" />
-                      </Button>
-                    </div>
-                    <span className="text-xs text-muted-foreground">Press Enter to ask AI</span>
-                  </div>
                 </div>
-              </>
+              </div>
                          ) : activeTab === 'annotations' ? (
                /* Annotations Tab */
                <div className="flex-1 overflow-y-auto p-4">
@@ -1402,7 +1449,7 @@ export default function DocumentViewer({ params }: { params: Promise<{ id: strin
                </div>
              ) : (
                /* Metadata Tab */
-               <div className="flex-1 overflow-y-auto p-4">
+               <div className="flex-1 overflow-y-auto p-4 pr-20">
                  <EnhancedMetadataDisplay 
                    documentId={documentId} 
                    filename={document?.filename || ''} 

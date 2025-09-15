@@ -472,8 +472,14 @@ export default function ApryseWebViewer({
   const maxActivityFailures = 10;
   const updateActivity = async (activity: 'viewing' | 'editing' | 'idle') => {
     if (activityFailureCount >= maxActivityFailures) return;
+    
+    // Skip activity updates if required data is missing
+    if (!documentId || !userId) {
+      return;
+    }
+    
     try {
-      await fetch('/api/socket', {
+      const response = await fetch('/api/socket', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -483,11 +489,17 @@ export default function ApryseWebViewer({
           activity
         })
       });
+      
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
+      }
+      
       activityFailureCount = 0;
     } catch (error) {
       activityFailureCount++;
-      if (typeof process !== 'undefined' && process.env && process.env.NODE_ENV === 'development') {
-        console.error('Error updating activity:', error);
+      // Only log in development and limit console spam
+      if (typeof process !== 'undefined' && process.env && process.env.NODE_ENV === 'development' && activityFailureCount <= 3) {
+        console.warn(`Activity update failed (attempt ${activityFailureCount}):`, error);
       }
     }
   }
@@ -745,47 +757,64 @@ export default function ApryseWebViewer({
       }
     }
 
-    // Enhanced comment handling system
+    // Enhanced comment handling system using Apryse's annotation events
     const handleAnnotationInteraction = (event: any) => {
-      const target = event.target;
+      console.log('🎯 Annotation interaction event:', event);
       
-      // Check if clicked element is an annotation
-      if (target && (
-        target.classList.contains('annotation') ||
-        target.classList.contains('highlight') ||
-        target.closest('.annotation') ||
-        target.closest('.highlight')
-      )) {
-        event.preventDefault();
-        event.stopPropagation();
+      // Check if this is an annotation click event from Apryse
+      if (event.type === 'annotationSelected' || event.type === 'annotationClicked') {
+        const annotation = event.detail?.annotation || event.annotation;
+        console.log('🎯 Annotation clicked:', annotation);
         
-        // Get annotation ID
-        const annotationId = target.getAttribute('data-annotation-id') || 
-                           target.closest('.annotation')?.getAttribute('data-annotation-id') ||
-                           target.closest('.highlight')?.getAttribute('data-annotation-id');
-        
-        if (annotationId && webViewerInstance && webViewerInstance.Core) {
+        if (annotation && webViewerInstance && webViewerInstance.Core) {
           try {
             const { annotationManager } = webViewerInstance.Core;
-            const annotation = annotationManager.getAnnotationById(annotationId);
             
-            if (annotation) {
-              // Try to show comments using WebViewer's built-in method
-              if (typeof annotationManager.showAnnotationComments === 'function') {
-                annotationManager.showAnnotationComments(annotation);
-              } else if (typeof annotationManager.showComments === 'function') {
-                annotationManager.showComments(annotation);
-              } else {
-                // Fallback: manually trigger comment panel
-                console.log('Opening comment panel for annotation:', annotationId);
-                // You can implement custom comment UI here
-                showCustomCommentPanel(annotation);
+            // Show the text selection popup for highlights
+            if (annotation.Subject === 'Highlight' || annotation.Subject === 'highlight') {
+              // Get highlighted text
+              let highlightedText = '';
+              try {
+                if (annotation.Contents) {
+                  highlightedText = annotation.Contents;
+                } else {
+                  // Try to get text from quads
+                  const { documentViewer } = webViewerInstance.Core;
+                  if (annotation.Quads && annotation.Quads.length > 0) {
+                    // Select the annotation area to get text
+                    documentViewer.select(annotation.Quads);
+                    const selectedText = documentViewer.getSelectedText();
+                    if (selectedText) {
+                      highlightedText = selectedText;
+                    }
+                  }
+                }
+              } catch (error) {
+                console.log('Error getting highlighted text:', error);
               }
+              
+              if (highlightedText.trim()) {
+                console.log('🎯 Showing popup for highlighted text:', highlightedText);
+                setSelectedText(highlightedText);
+                setSelectionPosition({ x: event.detail?.x || 100, y: event.detail?.y || 100 });
+                setShowTextSelectionPopup(true);
+              }
+            }
+            
+            // Try to show comments using WebViewer's built-in method
+            if (typeof annotationManager.showAnnotationComments === 'function') {
+              annotationManager.showAnnotationComments(annotation);
+            } else if (typeof annotationManager.showComments === 'function') {
+              annotationManager.showComments(annotation);
+            } else {
+              // Fallback: manually trigger comment panel
+              console.log('Opening comment panel for annotation:', annotation.Id);
+              showCustomCommentPanel(annotation);
             }
           } catch (error) {
             console.error('Error handling annotation interaction:', error);
             // Fallback to custom comment panel
-            showCustomCommentPanel({ Id: annotationId });
+            showCustomCommentPanel(annotation);
           }
         }
       }
@@ -883,13 +912,120 @@ export default function ApryseWebViewer({
       }, 100);
     };
 
-    // Add event listeners for annotation interactions
-    document.addEventListener('click', handleAnnotationInteraction);
-    document.addEventListener('dblclick', handleAnnotationInteraction);
+    // Add event listeners for annotation interactions using Apryse events
+    if (webViewerInstance && webViewerInstance.Core) {
+      const { documentViewer, annotationManager } = webViewerInstance.Core;
+      
+      // Listen for annotation selection events
+      documentViewer.addEventListener('annotationSelected', handleAnnotationInteraction);
+      documentViewer.addEventListener('annotationClicked', handleAnnotationInteraction);
+      
+      // Also listen for annotation manager events
+      annotationManager.addEventListener('annotationSelected', handleAnnotationInteraction);
+      annotationManager.addEventListener('annotationClicked', handleAnnotationInteraction);
+      
+      console.log('✅ Apryse annotation event listeners added');
+    }
+    
+    // Fallback: generic click events for non-Apryse annotations
+    const handleGenericClick = (event: any) => {
+      const target = event.target;
+      
+      // Check if clicked on an Apryse highlight element
+      if (target && (
+        target.classList.contains('Annotation') ||
+        target.classList.contains('Highlight') ||
+        target.closest('.Annotation') ||
+        target.closest('.Highlight') ||
+        target.closest('[data-element="annotation"]') ||
+        target.closest('[data-element="highlight"]')
+      )) {
+        console.log('🎯 Generic click on annotation element:', target);
+        
+        // Try to find the annotation ID
+        let annotationId = target.getAttribute('data-annotation-id') || 
+                          target.closest('[data-annotation-id]')?.getAttribute('data-annotation-id');
+        
+        // If no ID found, try to get from Apryse's internal structure
+        if (!annotationId && webViewerInstance && webViewerInstance.Core) {
+          try {
+            const { annotationManager } = webViewerInstance.Core;
+            const annotations = annotationManager.getAnnotationsList();
+            
+            // Find annotation by checking if click is within its bounds
+            for (const annotation of annotations) {
+              if (annotation.Subject === 'Highlight' || annotation.Subject === 'highlight') {
+                // This is a simplified check - in practice, you'd check if click is within annotation bounds
+                annotationId = annotation.Id;
+                break;
+              }
+            }
+          } catch (error) {
+            console.log('Error finding annotation ID:', error);
+          }
+        }
+        
+        if (annotationId && webViewerInstance && webViewerInstance.Core) {
+          try {
+            const { annotationManager } = webViewerInstance.Core;
+            const annotation = annotationManager.getAnnotationById(annotationId);
+            
+            if (annotation) {
+              console.log('🎯 Found annotation for generic click:', annotation);
+              
+              // Show popup for highlights
+              if (annotation.Subject === 'Highlight' || annotation.Subject === 'highlight') {
+                let highlightedText = '';
+                try {
+                  if (annotation.Contents) {
+                    highlightedText = annotation.Contents;
+                  } else {
+                    const { documentViewer } = webViewerInstance.Core;
+                    if (annotation.Quads && annotation.Quads.length > 0) {
+                      documentViewer.select(annotation.Quads);
+                      const selectedText = documentViewer.getSelectedText();
+                      if (selectedText) {
+                        highlightedText = selectedText;
+                      }
+                    }
+                  }
+                } catch (error) {
+                  console.log('Error getting highlighted text:', error);
+                }
+                
+                if (highlightedText.trim()) {
+                  console.log('🎯 Showing popup for highlighted text via generic click:', highlightedText);
+                  setSelectedText(highlightedText);
+                  setSelectionPosition({ x: event.clientX, y: event.clientY });
+                  setShowTextSelectionPopup(true);
+                }
+              }
+            }
+          } catch (error) {
+            console.error('Error handling generic annotation click:', error);
+          }
+        }
+      }
+    };
+    
+    document.addEventListener('click', handleGenericClick);
+    document.addEventListener('dblclick', handleGenericClick);
 
     return () => {
-      document.removeEventListener('click', handleAnnotationInteraction);
-      document.removeEventListener('dblclick', handleAnnotationInteraction);
+      // Remove Apryse event listeners
+      if (webViewerInstance && webViewerInstance.Core) {
+        const { documentViewer, annotationManager } = webViewerInstance.Core;
+        documentViewer.removeEventListener('annotationSelected', handleAnnotationInteraction);
+        documentViewer.removeEventListener('annotationClicked', handleAnnotationInteraction);
+        annotationManager.removeEventListener('annotationSelected', handleAnnotationInteraction);
+        annotationManager.removeEventListener('annotationClicked', handleAnnotationInteraction);
+        console.log('✅ Apryse annotation event listeners removed');
+      }
+      
+      // Remove fallback event listeners
+      document.removeEventListener('click', handleGenericClick);
+      document.removeEventListener('dblclick', handleGenericClick);
+      
       // Clean up global function
       delete (window as any).saveComment;
     };
@@ -1391,7 +1527,7 @@ export default function ApryseWebViewer({
           // Method 1: Apryse text selection event
           try {
             documentViewer.addEventListener('textSelectionChanged', (quads: any, text: string, pageNumber: number) => {
-              console.log('🎯 Apryse text selection event:', { text, pageNumber });
+              console.log('🎯 Apryse text selection event:', { text, pageNumber, quads });
               if (text && text.trim()) {
                 captureSelectedText(text, pageNumber);
                 
@@ -1399,17 +1535,43 @@ export default function ApryseWebViewer({
                 const trimmedText = text.trim();
                 if (trimmedText.length > 0) {
                   // Use current mouse position for popup
+                  console.log('🎯 Setting popup state:', { 
+                    selectedText: trimmedText, 
+                    position: { x: mousePosition.x, y: mousePosition.y },
+                    showPopup: true 
+                  });
                   setSelectedText(trimmedText);
                   setSelectionPosition({ x: mousePosition.x, y: mousePosition.y });
                   setShowTextSelectionPopup(true);
                   console.log('🎯 Text selection popup shown for:', trimmedText);
                 }
+              } else {
+                console.log('🎯 Text selection event but no text:', text);
               }
             });
             console.log('✅ Apryse text selection listener added');
           } catch (error) {
             console.log('❌ Error adding Apryse listener:', error);
           }
+
+          // Method 2: Fallback - Document selection events
+          const handleDocumentSelection = () => {
+            const selection = window.getSelection();
+            if (selection && selection.toString().trim()) {
+              const selectedText = selection.toString().trim();
+              console.log('🎯 Document selection fallback:', selectedText);
+              if (selectedText.length > 0) {
+                setSelectedText(selectedText);
+                setSelectionPosition({ x: mousePosition.x, y: mousePosition.y });
+                setShowTextSelectionPopup(true);
+                console.log('🎯 Text selection popup shown via fallback:', selectedText);
+              }
+            }
+          };
+
+          // Add fallback selection listener
+          document.addEventListener('mouseup', handleDocumentSelection);
+          console.log('✅ Document selection fallback listener added');
           
           // Add page change tracking for contextual AI
           try {
@@ -3051,7 +3213,10 @@ export default function ApryseWebViewer({
         <TextSelectionPopup
           selectedText={selectedText}
           position={selectionPosition}
-          onClose={() => setShowTextSelectionPopup(false)}
+          onClose={() => {
+            console.log('🎯 Closing text selection popup');
+            setShowTextSelectionPopup(false);
+          }}
           onHighlight={(color) => {
             // Add highlight annotation using WebViewer
             if (webViewerInstance && webViewerInstance.Core) {

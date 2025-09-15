@@ -202,7 +202,7 @@ async function fetchCrossrefMetadata(doi?: string, title?: string): Promise<any>
   try {
     if (doi) {
       const response = await fetch(`https://api.crossref.org/works/${doi}`, {
-        headers: { 'User-Agent': 'PaperPal/1.0 (mailto:support@paperpal.com)' }
+        headers: { 'User-Agent': 'LitSense/1.0 (mailto:support@litsense.com)' }
       })
       
       if (response.ok) {
@@ -217,7 +217,7 @@ async function fetchCrossrefMetadata(doi?: string, title?: string): Promise<any>
       })
       
       const response = await fetch(`https://api.crossref.org/works?${params}`, {
-        headers: { 'User-Agent': 'PaperPal/1.0 (mailto:support@paperpal.com)' }
+        headers: { 'User-Agent': 'LitSense/1.0 (mailto:support@litsense.com)' }
       })
       
       if (response.ok) {
