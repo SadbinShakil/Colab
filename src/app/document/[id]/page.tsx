@@ -1562,6 +1562,15 @@ Would you like to ask about a specific section or concept?`
           documentId={documentId}
           documentTitle={document?.title || 'Attention Is All You Need'}
           summary={collaborativeSummary}
+          onNavigateToPage={(pageNumber, position) => {
+            // Close the modal first
+            setShowDetailedInsights(false)
+            // Navigate to the specific page and position
+            // This would typically involve scrolling the PDF viewer to the specific page
+            console.log(`Navigating to page ${pageNumber}`, position)
+            // You can add PDF viewer navigation logic here
+            toast.success(`Navigating to page ${pageNumber}`)
+          }}
         />
       )}
 
@@ -1611,7 +1620,15 @@ Would you like to ask about a specific section or concept?`
             <div className="flex-1 overflow-y-auto p-6">
               <LiveActivityFeed 
                 documentId={documentId} 
-                isVisible={true} 
+                isVisible={true}
+                onNavigateToPage={(pageNumber, position) => {
+                  // Close the modal first
+                  setShowLiveActivity(false)
+                  // Navigate to the specific page and position
+                  console.log(`Navigating to page ${pageNumber}`, position)
+                  // You can add PDF viewer navigation logic here
+                  toast.success(`Navigating to page ${pageNumber}`)
+                }}
               />
             </div>
 

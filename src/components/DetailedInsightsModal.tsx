@@ -25,7 +25,9 @@ import {
   Filter,
   Calendar,
   User,
-  Tag
+  Tag,
+  ExternalLink,
+  MapPin
 } from 'lucide-react'
 import { CollaborativeSummary, ReadingInsight } from '@/lib/collaborativeInsights'
 
@@ -35,6 +37,7 @@ interface DetailedInsightsModalProps {
   documentId: string
   documentTitle: string
   summary: CollaborativeSummary
+  onNavigateToPage?: (pageNumber: number, position?: { x: number; y: number }) => void
 }
 
 export default function DetailedInsightsModal({
@@ -42,13 +45,20 @@ export default function DetailedInsightsModal({
   onClose,
   documentId,
   documentTitle,
-  summary
+  summary,
+  onNavigateToPage
 }: DetailedInsightsModalProps) {
   const [searchTerm, setSearchTerm] = useState('')
   const [selectedType, setSelectedType] = useState<string>('all')
   const [sortBy, setSortBy] = useState<'date' | 'likes' | 'replies'>('likes')
 
   if (!isOpen) return null
+
+  const handleNavigateToInsight = (insight: ReadingInsight) => {
+    if (onNavigateToPage && insight.pageNumber) {
+      onNavigateToPage(insight.pageNumber, insight.position)
+    }
+  }
 
   // Mock detailed insights data - in real app this would come from API
   const detailedInsights: ReadingInsight[] = [
@@ -482,19 +492,34 @@ export default function DetailedInsightsModal({
                         )}
 
                         {/* Engagement */}
-                        <div className="flex items-center space-x-4 text-sm text-gray-600">
-                          <span className="flex items-center space-x-1">
-                            <ThumbsUp className="w-4 h-4" />
-                            <span>{insight.likes} likes</span>
-                          </span>
-                          <span className="flex items-center space-x-1">
-                            <Reply className="w-4 h-4" />
-                            <span>{insight.replies.length} replies</span>
-                          </span>
-                          <span className="flex items-center space-x-1">
-                            <Calendar className="w-4 h-4" />
-                            <span>2 days ago</span>
-                          </span>
+                        <div className="flex items-center justify-between">
+                          <div className="flex items-center space-x-4 text-sm text-gray-600">
+                            <span className="flex items-center space-x-1">
+                              <ThumbsUp className="w-4 h-4" />
+                              <span>{insight.likes} likes</span>
+                            </span>
+                            <span className="flex items-center space-x-1">
+                              <Reply className="w-4 h-4" />
+                              <span>{insight.replies.length} replies</span>
+                            </span>
+                            <span className="flex items-center space-x-1">
+                              <Calendar className="w-4 h-4" />
+                              <span>2 days ago</span>
+                            </span>
+                          </div>
+                          
+                          {/* Navigation Button */}
+                          {onNavigateToPage && insight.pageNumber && (
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              onClick={() => handleNavigateToInsight(insight)}
+                              className="text-blue-600 border-blue-200 hover:bg-blue-50 hover:border-blue-300"
+                            >
+                              <MapPin className="w-4 h-4 mr-1" />
+                              Go to Page {insight.pageNumber}
+                            </Button>
+                          )}
                         </div>
                       </div>
                     </div>

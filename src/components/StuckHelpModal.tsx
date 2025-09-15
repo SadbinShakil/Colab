@@ -63,6 +63,7 @@ interface StuckHelpModalProps {
   documentTitle: string
   onResponseSubmit: (response: string, type: 'human' | 'ai') => Promise<void>
   onMarkResolved: (stuckHelpId: string) => Promise<void>
+  onNavigateToPage?: (pageNumber: number, position?: { x: number; y: number }) => void
 }
 
 export default function StuckHelpModal({
@@ -72,7 +73,8 @@ export default function StuckHelpModal({
   documentId,
   documentTitle,
   onResponseSubmit,
-  onMarkResolved
+  onMarkResolved,
+  onNavigateToPage
 }: StuckHelpModalProps) {
   const [responseText, setResponseText] = useState('')
   const [isSubmitting, setIsSubmitting] = useState(false)
@@ -283,10 +285,23 @@ export default function StuckHelpModal({
                       <Badge variant="outline" className="text-xs">
                         {stuckHelp.section}
                       </Badge>
-                      <span className="text-xs text-gray-500 flex items-center space-x-1">
-                        <BookOpen className="w-3 h-3" />
-                        <span>Page {stuckHelp.page}</span>
-                      </span>
+                      <div className="flex items-center space-x-2">
+                        <span className="text-xs text-gray-500 flex items-center space-x-1">
+                          <BookOpen className="w-3 h-3" />
+                          <span>Page {stuckHelp.page}</span>
+                        </span>
+                        {onNavigateToPage && (
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => onNavigateToPage(stuckHelp.page, stuckHelp.position)}
+                            className="text-blue-600 hover:text-blue-700 hover:bg-blue-50 p-1 h-6"
+                            title="Go to this page"
+                          >
+                            <ExternalLink className="w-3 h-3" />
+                          </Button>
+                        )}
+                      </div>
                     </div>
                     <p className="text-gray-800 leading-relaxed mb-4">{stuckHelp.description}</p>
                     <div className="flex items-center space-x-4 text-sm text-gray-600">

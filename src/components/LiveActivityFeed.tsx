@@ -36,9 +36,10 @@ interface ActivityItem {
 interface LiveActivityFeedProps {
   documentId: string
   isVisible: boolean
+  onNavigateToPage?: (pageNumber: number, position?: { x: number; y: number }) => void
 }
 
-export default function LiveActivityFeed({ documentId, isVisible }: LiveActivityFeedProps) {
+export default function LiveActivityFeed({ documentId, isVisible, onNavigateToPage }: LiveActivityFeedProps) {
   const [activities, setActivities] = useState<ActivityItem[]>([])
   const [isLive, setIsLive] = useState(true)
 
@@ -441,11 +442,24 @@ export default function LiveActivityFeed({ documentId, isVisible }: LiveActivity
                   <Badge variant="outline" className="text-xs">
                     {activity.userRole}
                   </Badge>
-                  {activity.page && (
+                {activity.page && (
+                  <div className="flex items-center space-x-2">
                     <Badge variant="secondary" className="text-xs">
                       Page {activity.page}
                     </Badge>
-                  )}
+                    {onNavigateToPage && (
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => onNavigateToPage(activity.page!, activity.position)}
+                        className="text-blue-600 hover:text-blue-700 hover:bg-blue-50 p-1 h-6"
+                        title="Go to this page"
+                      >
+                        <ExternalLink className="w-3 h-3" />
+                      </Button>
+                    )}
+                  </div>
+                )}
                 </div>
                 <p className="text-sm text-gray-800 mb-1">
                   <span className="font-medium">{activity.action}</span>{' '}
