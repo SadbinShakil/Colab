@@ -26,6 +26,7 @@ import { checkOtherReaders } from '@/lib/collaborativeInsights'
 import CollaborativeInsightsModal from '@/components/CollaborativeInsightsModal'
 import DetailedInsightsModal from '@/components/DetailedInsightsModal'
 import AddInsightModal from '@/components/AddInsightModal'
+import LiveActivityFeed from '@/components/LiveActivityFeed'
 
 
 interface Annotation {
@@ -83,6 +84,7 @@ export default function DocumentViewer({ params }: { params: Promise<{ id: strin
   const [chatMessage, setChatMessage] = useState('')
   const [isAILoading, setIsAILoading] = useState(false)
   const [activeTab, setActiveTab] = useState<'chat' | 'ai' | 'metadata' | 'annotations'>('chat')
+  const [showLiveActivity, setShowLiveActivity] = useState(false)
   const [aiQuestion, setAiQuestion] = useState('')
   const [aiMessages, setAiMessages] = useState<AIMessage[]>([])
 
@@ -1139,6 +1141,15 @@ Would you like to ask about a specific section or concept?`
           >
             <Bookmark className="h-4 w-4" />
           </Button>
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={() => setShowLiveActivity(true)}
+            className="w-10 h-10 p-0 text-orange-600 hover:text-orange-700 hover:bg-orange-50"
+            title="Live Activity Feed"
+          >
+            <Users className="h-4 w-4" />
+          </Button>
         </div>
 
         {/* PDF Viewer */}
@@ -1571,7 +1582,56 @@ Would you like to ask about a specific section or concept?`
         />
       )}
 
+      {/* Live Activity Modal */}
+      {showLiveActivity && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-lg shadow-xl max-w-4xl w-full max-h-[90vh] flex flex-col">
+            {/* Header */}
+            <div className="flex items-center justify-between p-6 border-b">
+              <div className="flex items-center space-x-3">
+                <div className="p-2 bg-gradient-to-r from-orange-600 to-red-600 rounded-lg">
+                  <Users className="h-6 w-6 text-white" />
+                </div>
+                <div>
+                  <h2 className="text-xl font-bold text-gray-900">Live Activity Feed</h2>
+                  <p className="text-sm text-gray-600">Real-time collaboration on {document?.title || 'this document'}</p>
+                </div>
+              </div>
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => setShowLiveActivity(false)}
+                className="text-gray-500 hover:text-gray-700"
+              >
+                <X className="h-5 w-5" />
+              </Button>
+            </div>
 
+            {/* Content */}
+            <div className="flex-1 overflow-y-auto p-6">
+              <LiveActivityFeed 
+                documentId={documentId} 
+                isVisible={true} 
+              />
+            </div>
+
+            {/* Footer */}
+            <div className="p-6 border-t bg-gray-50 rounded-b-lg">
+              <div className="flex items-center justify-between">
+                <p className="text-sm text-gray-600">
+                  See what other researchers are working on in real-time
+                </p>
+                <Button
+                  onClick={() => setShowLiveActivity(false)}
+                  className="bg-gradient-to-r from-orange-600 to-red-600 text-white"
+                >
+                  Close
+                </Button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
 
     </div>
   )

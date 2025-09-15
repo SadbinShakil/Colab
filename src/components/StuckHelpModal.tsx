@@ -78,6 +78,87 @@ export default function StuckHelpModal({
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [showAIResponse, setShowAIResponse] = useState(false)
   const [aiResponse, setAiResponse] = useState('')
+  
+  // Hard-coded collaborative responses for video demonstration - more realistic and diverse
+  const demoResponses: StuckHelpResponse[] = [
+    {
+      id: 'response-1',
+      stuckHelpId: stuckHelp?.id || '',
+      userId: 'user-1',
+      userName: 'Anonymous User',
+      content: "I had the same confusion when I first read this paper! The key insight is that the multi-head attention allows the model to focus on different types of relationships simultaneously. Think of it like having 8 different 'experts' each looking at the same text but paying attention to different aspects - some focus on syntax, others on semantics, etc.",
+      type: 'human',
+      isHelpful: true,
+      likes: 12,
+      createdAt: new Date(Date.now() - 2 * 60 * 60 * 1000).toISOString() // 2 hours ago
+    },
+    {
+      id: 'response-2',
+      stuckHelpId: stuckHelp?.id || '',
+      userId: 'ai-assistant',
+      userName: 'AI Assistant',
+      content: "Great question! Let me break down the multi-head attention mechanism step by step:\n\n1. **Single Head**: Each attention head computes attention weights between all positions\n2. **Multiple Heads**: 8 parallel heads each learn different attention patterns\n3. **Concatenation**: All head outputs are combined and projected\n4. **Why 8 heads?**: Empirically found to work well - allows specialization\n\nThink of it as having 8 different 'perspectives' on the same input, each learning to focus on different types of relationships (local vs global, syntactic vs semantic, etc.).",
+      type: 'ai',
+      isHelpful: true,
+      likes: 18,
+      createdAt: new Date(Date.now() - 1 * 60 * 60 * 1000).toISOString() // 1 hour ago
+    },
+    {
+      id: 'response-3',
+      stuckHelpId: stuckHelp?.id || '',
+      userId: 'user-2',
+      userName: 'Alex M.',
+      content: "Actually, I think there might be a small error in the previous explanation. The parallelizability is great, but it's not just about speed - it's about learning different types of patterns. Each head can specialize in different linguistic phenomena. I learned this in my NLP course last semester.",
+      type: 'human',
+      isHelpful: true,
+      likes: 5,
+      createdAt: new Date(Date.now() - 45 * 60 * 1000).toISOString() // 45 minutes ago
+    },
+    {
+      id: 'response-4',
+      stuckHelpId: stuckHelp?.id || '',
+      userId: 'ai-assistant',
+      userName: 'AI Assistant',
+      content: "Alex makes a good point! I should clarify: while parallelizability is important, the main benefit is indeed the specialization. Each head learns to focus on different linguistic patterns. However, I'd add that the computational efficiency (O(n²) vs O(n) for RNNs) is also significant for longer sequences. Thanks for the correction!",
+      type: 'ai',
+      isHelpful: true,
+      likes: 22,
+      createdAt: new Date(Date.now() - 30 * 60 * 1000).toISOString() // 30 minutes ago
+    },
+    {
+      id: 'response-5',
+      stuckHelpId: stuckHelp?.id || '',
+      userId: 'user-3',
+      userName: 'Sarah K.',
+      content: "If you're still confused, I recommend looking at the attention visualization in Figure 2. It shows how different heads learn to focus on different linguistic phenomena. Head 1 might learn subject-verb relationships, while Head 3 focuses on pronoun resolution. This is what makes the model so powerful!",
+      type: 'human',
+      isHelpful: true,
+      likes: 15,
+      createdAt: new Date(Date.now() - 20 * 60 * 1000).toISOString() // 20 minutes ago
+    },
+    {
+      id: 'response-6',
+      stuckHelpId: stuckHelp?.id || '',
+      userId: 'user-4',
+      userName: 'Anonymous User',
+      content: "I'm still confused about the math. Can someone explain the attention formula in simpler terms? The Q, K, V matrices are confusing me.",
+      type: 'human',
+      isHelpful: false,
+      likes: 2,
+      createdAt: new Date(Date.now() - 15 * 60 * 1000).toISOString() // 15 minutes ago
+    },
+    {
+      id: 'response-7',
+      stuckHelpId: stuckHelp?.id || '',
+      userId: 'ai-assistant',
+      userName: 'AI Assistant',
+      content: "Great question! Let me explain Q, K, V in simple terms:\n\n- **Q (Query)**: \"What am I looking for?\" - represents the current position\n- **K (Key)**: \"What information is available?\" - represents all positions\n- **V (Value)**: \"What's the actual content?\" - the information to retrieve\n\nThe attention mechanism asks: \"For this query, which keys are most relevant, and what values should I pay attention to?\" It's like a smart search through the input sequence!",
+      type: 'ai',
+      isHelpful: true,
+      likes: 25,
+      createdAt: new Date(Date.now() - 10 * 60 * 1000).toISOString() // 10 minutes ago
+    }
+  ]
 
   useEffect(() => {
     if (isOpen) {
@@ -257,10 +338,9 @@ export default function StuckHelpModal({
             )}
 
             {/* Responses */}
-            {stuckHelp.responses && stuckHelp.responses.length > 0 && (
-              <div className="space-y-4">
-                <h3 className="text-lg font-semibold text-gray-900">Community Responses</h3>
-                {stuckHelp.responses.map((response) => (
+            <div className="space-y-4">
+              <h3 className="text-lg font-semibold text-gray-900">Community Responses</h3>
+              {(stuckHelp.responses && stuckHelp.responses.length > 0 ? stuckHelp.responses : demoResponses).map((response) => (
                   <Card key={response.id} className={response.type === 'ai' ? 'bg-blue-50 border-blue-200' : 'bg-gray-50 border-gray-200'}>
                     <CardContent className="p-4">
                       <div className="flex items-start space-x-3">

@@ -77,6 +77,30 @@ export default function DetailedInsightsModal({
           isPublic: true,
           likes: 5,
           replies: []
+        },
+        { 
+          id: "reply-2", 
+          userId: "ai-assistant", 
+          userName: "AI Assistant", 
+          content: "Great discussion! I can help clarify the attention visualization. Each head learns to focus on different linguistic patterns:\n\n• **Head 1-2**: Local dependencies (adjacent words)\n• **Head 3-4**: Syntactic relationships (subject-verb)\n• **Head 5-6**: Semantic relationships (meaning)\n• **Head 7-8**: Long-range dependencies\n\nThis is why the model can understand complex sentence structures that RNNs struggle with!", 
+          timestamp: new Date().toISOString(),
+          documentId: "attention-is-all-you-need",
+          type: "insight",
+          isPublic: true,
+          likes: 12,
+          replies: []
+        },
+        { 
+          id: "reply-3", 
+          userId: "user-4", 
+          userName: "Dr. Maria Santos", 
+          content: "The AI's explanation is spot on! I've been working with attention visualizations for 3 years now, and the patterns are incredibly consistent. Head 2 almost always focuses on determiner-noun relationships, while Head 6 specializes in verb-object connections. It's like each head becomes an expert in a specific linguistic task.", 
+          timestamp: new Date().toISOString(),
+          documentId: "attention-is-all-you-need",
+          type: "insight",
+          isPublic: true,
+          likes: 8,
+          replies: []
         }
       ],
       parentId: undefined,
@@ -135,6 +159,54 @@ export default function DetailedInsightsModal({
           type: "insight",
           isPublic: true,
           likes: 4,
+          replies: []
+        },
+        { 
+          id: "reply-4", 
+          userId: "ai-assistant", 
+          userName: "AI Assistant", 
+          content: "Excellent discussion! You're all highlighting the key innovations that made this paper revolutionary:\n\n• **Multi-head attention**: Parallel processing of different relationship types\n• **Residual connections**: Enables deep networks without gradient vanishing\n• **Layer normalization**: Stabilizes training\n• **Positional encoding**: Captures sequence order without recurrence\n\nThis combination created the foundation for modern LLMs like GPT, BERT, and T5. The paper's impact extends far beyond NLP - we see these concepts in computer vision (ViT), speech (Whisper), and even protein folding (AlphaFold2)!", 
+          timestamp: new Date().toISOString(),
+          documentId: "attention-is-all-you-need",
+          type: "insight",
+          isPublic: true,
+          likes: 22,
+          replies: []
+        },
+        { 
+          id: "reply-5", 
+          userId: "user-6", 
+          userName: "Anonymous User", 
+          content: "I'm still confused about the computational complexity. The paper says O(n²) but I thought attention was supposed to be more efficient than RNNs?", 
+          timestamp: new Date().toISOString(),
+          documentId: "attention-is-all-you-need",
+          type: "insight",
+          isPublic: true,
+          likes: 3,
+          replies: []
+        },
+        { 
+          id: "reply-6", 
+          userId: "ai-assistant", 
+          userName: "AI Assistant", 
+          content: "Great question! The O(n²) complexity refers to the attention computation itself (comparing every position to every other position). However, the key advantage is parallelizability:\n\n• **RNNs**: O(n) sequential steps (can't parallelize)\n• **Transformers**: O(n²) but fully parallelizable\n\nFor long sequences, the parallelization benefit often outweighs the quadratic cost. That's why Transformers can process much longer sequences than RNNs in practice!", 
+          timestamp: new Date().toISOString(),
+          documentId: "attention-is-all-you-need",
+          type: "insight",
+          isPublic: true,
+          likes: 18,
+          replies: []
+        },
+        { 
+          id: "reply-7", 
+          userId: "user-7", 
+          userName: "Sarah M.", 
+          content: "Thanks AI! That really clarifies it. I was getting confused about the complexity vs efficiency trade-off. The parallelization aspect makes total sense now.", 
+          timestamp: new Date().toISOString(),
+          documentId: "attention-is-all-you-need",
+          type: "insight",
+          isPublic: true,
+          likes: 8,
           replies: []
         }
       ],
