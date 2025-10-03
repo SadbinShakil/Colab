@@ -16,6 +16,18 @@ const nextConfig = {
     // Handle file extensions for PDF.js
     config.resolve.extensions.push('.mjs')
 
+    // Firebase polyfills for Next.js
+    if (!isServer) {
+      config.resolve.fallback = {
+        ...config.resolve.fallback,
+        "crypto": false,
+        "stream": false,
+        "util": false,
+        "buffer": false,
+        "process": false,
+      }
+    }
+
     return config
   },
   // Handle static file serving

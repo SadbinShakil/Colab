@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useRef, useEffect } from 'react'
-import { useRouter } from 'next/navigation'
+import { useRouter, useSearchParams } from 'next/navigation'
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
@@ -75,6 +75,7 @@ interface Document {
 
 export default function DocumentViewer({ params }: { params: Promise<{ id: string }> }) {
   const router = useRouter()
+  const searchParams = useSearchParams()
   const [currentPage, setCurrentPage] = useState(1)
   const [totalPages] = useState(15)
   const [zoomLevel, setZoomLevel] = useState(100)
@@ -98,6 +99,29 @@ export default function DocumentViewer({ params }: { params: Promise<{ id: strin
   const [summaryLoading, setSummaryLoading] = useState(false)
   const [showExtractedText, setShowExtractedText] = useState(false)
   const [extractedText, setExtractedText] = useState('')
+  
+  // URL state parameters
+  const [urlState, setUrlState] = useState({
+    page: 1,
+    zoom: 1.0,
+    fitMode: 'FitWidth',
+    rotation: 0,
+    scrollX: 0,
+    scrollY: 0
+  })
+  
+  // Read URL parameters on component mount
+  useEffect(() => {
+    const page = parseInt(searchParams.get('page') || '1')
+    const zoom = parseFloat(searchParams.get('zoom') || '1.0')
+    const fitMode = searchParams.get('fitMode') || 'FitWidth'
+    const rotation = parseInt(searchParams.get('rotation') || '0')
+    const scrollX = parseFloat(searchParams.get('scrollX') || '0')
+    const scrollY = parseFloat(searchParams.get('scrollY') || '0')
+    
+    setUrlState({ page, zoom, fitMode, rotation, scrollX, scrollY })
+    console.log('🔄 Document page loaded with URL state:', { page, zoom, fitMode, rotation, scrollX, scrollY })
+  }, [searchParams])
   
   // Collaborative insights state
   const [showCollaborativeInsights, setShowCollaborativeInsights] = useState(false)
@@ -392,7 +416,7 @@ export default function DocumentViewer({ params }: { params: Promise<{ id: strin
     setChatMessage('')
 
     try {
-      await fetch('/api/socket', {
+      const response = await fetch('/api/socket', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -406,6 +430,10 @@ export default function DocumentViewer({ params }: { params: Promise<{ id: strin
           }
         })
       })
+      
+      if (!response.ok) {
+        console.error('Failed to send message:', response.status, response.statusText)
+      }
     } catch (error) {
       console.error('Failed to send message:', error)
     }
@@ -468,6 +496,11 @@ export default function DocumentViewer({ params }: { params: Promise<{ id: strin
           userName: currentUser?.name || 'Anonymous'
         })
       })
+
+      if (!response.ok) {
+        console.error('AI Help API error:', response.status, response.statusText)
+        throw new Error(`HTTP ${response.status}: ${response.statusText}`)
+      }
 
       const data = await response.json()
       
@@ -1018,9 +1051,9 @@ Would you like to ask about a specific section or concept?`
                 <div className="flex items-center space-x-1">
                   <div className="flex -space-x-1">
                     {collaboration.activeUsers.slice(0, 3).map((user, index) => (
-                      <div key={user.userId} className="relative">
+                      <div key={user.userId || index} className="relative">
                         <div className="w-6 h-6 rounded-full bg-gradient-to-br from-blue-500 to-purple-500 flex items-center justify-center text-white text-xs">
-                          {user.userName.charAt(0).toUpperCase()}
+                          {(user.userName || 'A').charAt(0).toUpperCase()}
                         </div>
                         <div className="absolute -bottom-0.5 -right-0.5 w-2 h-2 rounded-full border border-white bg-green-500" />
                       </div>
@@ -1162,8 +1195,12 @@ Would you like to ask about a specific section or concept?`
               userName={currentUser?.name || 'Anonymous'}
               userId={currentUser?.id || 'guest'}
               onHighlightAdd={collaboration.addHighlight}
-              collaborationHighlights={collaboration.highlights}
-              extractedText={extractedText} // Pass extracted text to prerequisite helper
+              // onAnnotationAdd={collaboration.addAnnotation} // DISABLED - using Firestore instead
+              onBroadcastAnnotationChange={collaboration.broadcastAnnotationChange}
+              onSyncAnnotations={collaboration.syncAnnotations}
+              realtimeAnnotations={[]} // DISABLED - using Firestore instead
+              annotationSubscriberCount={collaboration.annotationSubscriberCount}
+              extractedText={extractedText}
             />
           </div>
         </div>
