@@ -1,0 +1,44 @@
+[33mcommit 11dd64031d75a8a1e9c577e45d6feccf8d369061[m[33m ([m[1;36mHEAD[m[33m -> [m[1;32mmain[m[33m, [m[1;31morigin/main[m[33m, [m[1;31morigin/HEAD[m[33m)[m
+Author: Sakil Sarker <100945766@oncampus.local>
+Date:   Fri Oct 3 14:15:46 2025 -0400
+
+    feat: Implement real-time annotation collaboration with Firestore
+    
+    - Add Firestore-based real-time annotation synchronization
+    - Implement XFDF export/import for cross-browser compatibility
+    - Add annotation persistence after page refresh
+    - Disable legacy real-time annotation system
+    - Use Apryse annotation IDs as Firestore document IDs
+    - Add bulletproof listener that ignores local writes
+    - Configure Notes panel to show all users' annotations
+    - Add Firebase polyfills for Next.js compatibility
+    
+    Key features:
+    - Real-time highlights broadcast between users instantly
+    - Annotations persist after page reload
+    - Proper echo loop prevention
+    - XFDF-based annotation storage for reliability
+
+[1mdiff --git a/next.config.js b/next.config.js[m
+[1mindex cd05621..0cf5ba1 100644[m
+[1m--- a/next.config.js[m
+[1m+++ b/next.config.js[m
+[36m@@ -16,6 +16,18 @@[m [mconst nextConfig = {[m
+     // Handle file extensions for PDF.js[m
+     config.resolve.extensions.push('.mjs')[m
+ [m
+[32m+[m[32m    // Firebase polyfills for Next.js[m
+[32m+[m[32m    if (!isServer) {[m
+[32m+[m[32m      config.resolve.fallback = {[m
+[32m+[m[32m        ...config.resolve.fallback,[m
+[32m+[m[32m        "crypto": false,[m
+[32m+[m[32m        "stream": false,[m
+[32m+[m[32m        "util": false,[m
+[32m+[m[32m        "buffer": false,[m
+[32m+[m[32m        "process": false,[m
+[32m+[m[32m      }[m
+[32m+[m[32m    }[m
+[32m+[m
+     return config[m
+   },[m
+   // Handle static file serving[m

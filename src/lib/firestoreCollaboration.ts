@@ -66,6 +66,7 @@ export interface FirestoreAnnotation {
   xfdf: string            // XFDF data for the annotation
   userId: string
   userName: string
+  clientId: string        // Unique client tab identifier
   deleted?: boolean       // Soft delete flag
   createdAt: any // firebase.firestore.Timestamp
   updatedAt: any // firebase.firestore.Timestamp
@@ -78,6 +79,7 @@ export interface FSUpsertPayload {
   deleted?: boolean
   userId: string
   userName: string
+  clientId: string           // Unique client tab identifier
 }
 
 export interface FirestoreCollaborationCallbacks {
@@ -127,6 +129,8 @@ class FirestoreCollaborationService {
     callbacks: FirestoreCollaborationCallbacks
   ): Promise<void> {
     if (!this.isInitialized) {
+      console.error('❌ FirestoreCollaborationService: setupRealtimeListeners called but service not initialized')
+      console.error('❌ Call firestoreCollaboration.initialize() first')
       throw new Error('Service not initialized. Call initialize() first.')
     }
 
@@ -165,6 +169,12 @@ class FirestoreCollaborationService {
           continue
         }
 
+        // Skip changes from the same user (echo prevention at service level)
+        if (d.userId === auth?.currentUser?.uid) {
+          console.log('⚠️ Skipping change from same user (echo prevention)')
+          continue
+        }
+
         try {
           // Handle deleted annotations
           if (d.deleted || ch.type === 'removed') {
@@ -196,6 +206,8 @@ class FirestoreCollaborationService {
    */
   async upsertAnnotation(p: FSUpsertPayload): Promise<void> {
     if (!this.isInitialized) {
+      console.error('❌ FirestoreCollaborationService: upsertAnnotation called but service not initialized')
+      console.error('❌ Call firestoreCollaboration.initialize() first')
       throw new Error('Service not initialized. Call initialize() first.')
     }
 
@@ -217,6 +229,7 @@ class FirestoreCollaborationService {
         deleted: !!p.deleted,
         userId: p.userId,
         userName: p.userName,
+        clientId: p.clientId,
         updatedAt: firebase?.firestore?.FieldValue?.serverTimestamp() || new Date(),
         createdAt: firebase?.firestore?.FieldValue?.serverTimestamp() || new Date(),
       }, { merge: true })
@@ -233,6 +246,8 @@ class FirestoreCollaborationService {
    */
   async deleteByApryseId(apryseId: string): Promise<void> {
     if (!this.isInitialized) {
+      console.error('❌ FirestoreCollaborationService: deleteByApryseId called but service not initialized')
+      console.error('❌ Call firestoreCollaboration.initialize() first')
       throw new Error('Service not initialized. Call initialize() first.')
     }
 
@@ -263,6 +278,8 @@ class FirestoreCollaborationService {
    */
   async getAnnotations(documentId: string): Promise<FirestoreAnnotation[]> {
     if (!this.isInitialized) {
+      console.error('❌ FirestoreCollaborationService: getAnnotations called but service not initialized')
+      console.error('❌ Call firestoreCollaboration.initialize() first')
       throw new Error('Service not initialized. Call initialize() first.')
     }
 

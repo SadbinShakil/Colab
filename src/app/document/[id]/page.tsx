@@ -593,7 +593,16 @@ Would you like to ask about a specific section or concept?`
           
           window.addEventListener('text-extraction-response', handleResponse as EventListener)
           
-          const timeout = setTimeout(() => {
+          let timeout: NodeJS.Timeout
+          
+          // Clear timeout when response is received
+          const originalHandleResponse = handleResponse
+          const wrappedHandleResponse = (event: CustomEvent) => {
+            if (timeout) clearTimeout(timeout)
+            originalHandleResponse(event)
+          }
+          
+          timeout = setTimeout(() => {
             reject(new Error('Text extraction timeout'))
             window.removeEventListener('text-extraction-response', handleResponse as EventListener)
           }, 10000)
@@ -602,13 +611,6 @@ Would you like to ask about a specific section or concept?`
             detail: { requestId }
           })
           window.dispatchEvent(extractionEvent)
-          
-          // Clear timeout when response is received
-          const originalHandleResponse = handleResponse
-          const wrappedHandleResponse = (event: CustomEvent) => {
-            clearTimeout(timeout)
-            originalHandleResponse(event)
-          }
           
           window.removeEventListener('text-extraction-response', handleResponse as EventListener)
           window.addEventListener('text-extraction-response', wrappedHandleResponse as EventListener)
@@ -689,7 +691,16 @@ Would you like to ask about a specific section or concept?`
           
           window.addEventListener('text-extraction-response', handleResponse as EventListener)
           
-          const timeout = setTimeout(() => {
+          let timeout: NodeJS.Timeout
+          
+          // Clear timeout when response is received
+          const originalHandleResponse = handleResponse
+          const wrappedHandleResponse = (event: CustomEvent) => {
+            if (timeout) clearTimeout(timeout)
+            originalHandleResponse(event)
+          }
+          
+          timeout = setTimeout(() => {
             reject(new Error('Text extraction timeout'))
             window.removeEventListener('text-extraction-response', handleResponse as EventListener)
           }, 10000)
@@ -699,13 +710,6 @@ Would you like to ask about a specific section or concept?`
           })
           window.dispatchEvent(extractionEvent)
           
-          // Clear timeout when response is received
-          const originalHandleResponse = handleResponse
-          const wrappedHandleResponse = (event: CustomEvent) => {
-            clearTimeout(timeout)
-            originalHandleResponse(event)
-          }
-          
           window.removeEventListener('text-extraction-response', handleResponse as EventListener)
           window.addEventListener('text-extraction-response', wrappedHandleResponse as EventListener)
         })
@@ -714,8 +718,15 @@ Would you like to ask about a specific section or concept?`
         console.log('[AI SUMMARY] Successfully extracted text for initial summary generation')
       } catch (error) {
         console.log('[AI SUMMARY] Could not extract text from WebViewer:', error)
-        // Fallback to empty text
+        // Show user-friendly error message
+        const errorMessage = error instanceof Error ? error.message : 'Unknown error occurred'
+        console.error('[AI SUMMARY] Text extraction failed:', errorMessage)
+        
+        // Fallback to empty text but show user notification
         documentText = ''
+        
+        // You could add a toast notification here if you have a toast system
+        // toast.error('Unable to extract text from document. Please ensure the document is fully loaded and try again.')
       }
     }
     
@@ -1529,6 +1540,8 @@ Would you like to ask about a specific section or concept?`
         open={showSummary}
         onClose={() => setShowSummary(false)}
         onAskMore={handleAskMore}
+        documentContent={extractedText}
+        onGoToPage={(page) => setCurrentPage(page)}
       />
 
       {/* Contextual Help Popup */}

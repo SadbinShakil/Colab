@@ -1,6 +1,13 @@
 // src/app/api/socket/route.ts
 import { NextResponse } from "next/server"
 
+// In-memory storage for demo (in real app, use database)
+const chatMessages: { [documentId: string]: any[] } = {}
+const typingUsers: { [documentId: string]: Set<string> } = {}
+const activeUsers: { [documentId: string]: Set<string> } = {}
+const realtimeAnnotations: { [documentId: string]: any[] } = {}
+const annotationSubscribers: { [documentId: string]: Set<string> } = {}
+
 export async function POST(req: Request) {
   let body: any = {}
 
@@ -47,6 +54,244 @@ export async function POST(req: Request) {
             { status: 400 }
           )
         }
+
+      case 'join-document':
+        // Handle user joining document
+        const { documentId: joinDocId, userId: joinUserId, userName: joinUserName } = body
+        if (joinDocId && joinUserId) {
+          if (!activeUsers[joinDocId]) {
+            activeUsers[joinDocId] = new Set()
+          }
+          const safeUserName = joinUserName || 'Anonymous'
+          activeUsers[joinDocId].add(safeUserName)
+          console.log(`👤 User ${safeUserName} joined document ${joinDocId}`)
+          return NextResponse.json({
+            success: true,
+            message: "Joined document",
+            activeUsers: Array.from(activeUsers[joinDocId] || [])
+          })
+        }
+        return NextResponse.json({ success: false, error: "Missing required fields" }, { status: 400 })
+
+      case 'leave-document':
+        // Handle user leaving document
+        const { documentId: leaveDocId, userId: leaveUserId, userName: leaveUserName } = body
+        if (leaveDocId && leaveUserId) {
+          if (activeUsers[leaveDocId]) {
+            activeUsers[leaveDocId].delete(leaveUserName || 'Anonymous')
+          }
+          console.log(`👋 User ${leaveUserName || 'Anonymous'} left document ${leaveDocId}`)
+          return NextResponse.json({
+            success: true,
+            message: "Left document",
+            activeUsers: Array.from(activeUsers[leaveDocId] || [])
+          })
+        }
+        return NextResponse.json({ success: false, error: "Missing required fields" }, { status: 400 })
+
+      case 'get-messages':
+        // Handle getting messages
+        const { documentId: getMsgDocId } = body
+        if (getMsgDocId) {
+          return NextResponse.json({
+            success: true,
+            messages: chatMessages[getMsgDocId] || [],
+            activeUsers: Array.from(activeUsers[getMsgDocId] || []),
+            typingUsers: Array.from(typingUsers[getMsgDocId] || [])
+          })
+        }
+        return NextResponse.json({ success: false, error: "Missing document ID" }, { status: 400 })
+
+      case 'send-message':
+        // Handle sending messages
+        const { 
+          documentId: sendMsgDocId, 
+          userId: sendMsgUserId, 
+          userName: sendMsgUserName, 
+          messageData 
+        } = body
+        if (sendMsgDocId && sendMsgUserId && messageData) {
+          const message = {
+            id: `msg_${Date.now()}_${sendMsgUserId}`,
+            documentId: sendMsgDocId,
+            userId: sendMsgUserId,
+            userName: sendMsgUserName || 'Anonymous',
+            content: messageData.content,
+            type: messageData.type || 'TEXT',
+            recipientId: messageData.recipientId,
+            timestamp: new Date().toISOString()
+          }
+          
+          // Store message
+          if (!chatMessages[sendMsgDocId]) {
+            chatMessages[sendMsgDocId] = []
+          }
+          chatMessages[sendMsgDocId].push(message)
+          
+          console.log(`💬 Message sent by ${sendMsgUserName || 'Anonymous'} in document ${sendMsgDocId}`)
+          return NextResponse.json({
+            success: true,
+            message: "Message sent",
+            data: message
+          })
+        }
+        return NextResponse.json({ success: false, error: "Missing required fields" }, { status: 400 })
+
+      case 'get-active-users':
+        // Handle getting active users
+        const { documentId: getUsersDocId } = body
+        if (getUsersDocId) {
+          const users = Array.from(activeUsers[getUsersDocId] || []).map((userName, index) => ({
+            userId: userName || `user_${index}`,
+            userName: userName || 'Anonymous',
+            documentId: getUsersDocId
+          }))
+          return NextResponse.json({
+            success: true,
+            activeUsers: users
+          })
+        }
+        return NextResponse.json({ success: false, error: "Missing document ID" }, { status: 400 })
+
+      case 'get-highlights':
+        // Handle getting highlights (empty for now)
+        const { documentId: getHighlightsDocId } = body
+        if (getHighlightsDocId) {
+          return NextResponse.json({
+            success: true,
+            highlights: []
+          })
+        }
+        return NextResponse.json({ success: false, error: "Missing document ID" }, { status: 400 })
+
+      case 'add-highlight':
+        // Handle adding highlights (empty for now)
+        const { documentId: addHighlightDocId, highlightData } = body
+        if (addHighlightDocId && highlightData) {
+          const highlight = {
+            id: `highlight_${Date.now()}`,
+            ...highlightData,
+            timestamp: new Date().toISOString()
+          }
+          console.log(`🎨 Highlight added in document ${addHighlightDocId}`)
+          return NextResponse.json({
+            success: true,
+            highlight
+          })
+        }
+        return NextResponse.json({ success: false, error: "Missing required fields" }, { status: 400 })
+
+      case 'annotation-changed':
+        // Handle real-time annotation changes
+        const { 
+          documentId: annotationDocId, 
+          userId: annotationUserId, 
+          userName: annotationUserName,
+          annotationData,
+          annotationAction 
+        } = body
+        if (annotationDocId && annotationUserId && annotationData) {
+          const annotationEvent = {
+            id: `annotation_${Date.now()}_${annotationUserId}`,
+            documentId: annotationDocId,
+            userId: annotationUserId,
+            userName: annotationUserName || 'Anonymous',
+            action: annotationAction || 'add', // add, update, delete
+            annotationData,
+            timestamp: new Date().toISOString()
+          }
+          
+          // Store annotation event
+          if (!realtimeAnnotations[annotationDocId]) {
+            realtimeAnnotations[annotationDocId] = []
+          }
+          realtimeAnnotations[annotationDocId].push(annotationEvent)
+          
+          // Keep only last 100 events per document to prevent memory issues
+          if (realtimeAnnotations[annotationDocId].length > 100) {
+            realtimeAnnotations[annotationDocId] = realtimeAnnotations[annotationDocId].slice(-100)
+          }
+          
+          console.log(`💾 Stored annotation event for ${annotationDocId}:`, {
+            totalEvents: realtimeAnnotations[annotationDocId].length,
+            eventId: annotationEvent.id,
+            userId: annotationEvent.userId,
+            action: annotationEvent.action
+          })
+          
+          console.log(`📝 Annotation ${annotationAction} by ${annotationUserName || 'Anonymous'} in document ${annotationDocId}`)
+          return NextResponse.json({
+            success: true,
+            message: "Annotation change broadcasted",
+            data: annotationEvent
+          })
+        }
+        return NextResponse.json({ success: false, error: "Missing required fields" }, { status: 400 })
+
+      case 'get-realtime-annotations':
+        // Handle getting real-time annotations
+        const { documentId: getAnnotationsDocId, userId: getAnnotationsUserId } = body
+        if (getAnnotationsDocId) {
+          // Add user to subscribers
+          if (!annotationSubscribers[getAnnotationsDocId]) {
+            annotationSubscribers[getAnnotationsDocId] = new Set()
+          }
+          annotationSubscribers[getAnnotationsDocId].add(getAnnotationsUserId || 'anonymous')
+          
+          // Return recent annotation events (last 50)
+          const allAnnotations = realtimeAnnotations[getAnnotationsDocId] || []
+          const recentAnnotations = allAnnotations
+            .slice(-50)
+            .filter(annotation => annotation.userId !== getAnnotationsUserId) // Don't send user's own annotations back
+          
+          console.log(`🔍 Real-time annotations for ${getAnnotationsUserId}:`, {
+            total: allAnnotations.length,
+            filtered: recentAnnotations.length,
+            allUserIds: allAnnotations.map(a => a.userId),
+            requestingUserId: getAnnotationsUserId
+          })
+          
+          return NextResponse.json({
+            success: true,
+            annotations: recentAnnotations,
+            subscriberCount: annotationSubscribers[getAnnotationsDocId]?.size || 0
+          })
+        }
+        return NextResponse.json({ success: false, error: "Missing document ID" }, { status: 400 })
+
+      case 'sync-annotations':
+        // Handle annotation synchronization (for initial load)
+        const { 
+          documentId: syncDocId, 
+          userId: syncUserId, 
+          xfdfData,
+          version 
+        } = body
+        if (syncDocId && syncUserId && xfdfData) {
+          const syncEvent = {
+            id: `sync_${Date.now()}_${syncUserId}`,
+            documentId: syncDocId,
+            userId: syncUserId,
+            action: 'sync',
+            xfdfData,
+            version: version || 1,
+            timestamp: new Date().toISOString()
+          }
+          
+          // Store sync event
+          if (!realtimeAnnotations[syncDocId]) {
+            realtimeAnnotations[syncDocId] = []
+          }
+          realtimeAnnotations[syncDocId].push(syncEvent)
+          
+          console.log(`🔄 Annotation sync by user ${syncUserId} in document ${syncDocId}`)
+          return NextResponse.json({
+            success: true,
+            message: "Annotations synchronized",
+            data: syncEvent
+          })
+        }
+        return NextResponse.json({ success: false, error: "Missing required fields" }, { status: 400 })
       
       default:
         return NextResponse.json({

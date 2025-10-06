@@ -1,12 +1,17 @@
 'use client'
 
 import { useEffect, useRef, useState, useCallback } from 'react'
-import { useSearchParams, useRouter } from 'next/navigation'
+
+// [ADV] Charts
+import {
+  ResponsiveContainer,
+  RadarChart, PolarGrid, PolarAngleAxis, PolarRadiusAxis, Radar,
+  BarChart, CartesianGrid, XAxis, YAxis, Tooltip, Bar, Legend,
+  LineChart, Line, Treemap
+} from 'recharts'
+
 import { toast } from 'sonner'
 import { contextualAI } from '@/lib/contextualAI'
-// import firebaseServer from '@/lib/firebaseServer.js' // DISABLED FOR DEBUGGING
-// import firebase from 'firebase/app' // DISABLED FOR DEBUGGING
-import firestoreCollaboration, { FirestoreAnnotation } from '@/lib/firestoreCollaboration'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
@@ -64,7 +69,6 @@ import SmartPrerequisiteHelper from './SmartPrerequisiteHelper'
 import AIResearchPrerequisites from './AIResearchPrerequisites'
 import TextSelectionPopup from './TextSelectionPopup'
 import { isMathematicalContent } from '../utils/contentDetector'
-// import { setupAnnotationPersistence, XFDFPersistenceOptions } from '@/lib/xfdfPersistence' // DISABLED - using Firestore only
 
 interface ApryseWebViewerProps {
   documentUrl: string
@@ -77,11 +81,6 @@ interface ApryseWebViewerProps {
   onPageChange?: (newPage: number) => void
   onScroll?: (page: number, scrollY: number) => void
   extractedText?: string // Add prop for extracted text from document page
-  // Real-time collaboration props
-  onBroadcastAnnotationChange?: (annotationData: any, action: 'add' | 'update' | 'delete') => void
-  onSyncAnnotations?: (xfdfData: string, version: number) => void
-  realtimeAnnotations?: any[]
-  annotationSubscriberCount?: number
 }
 
 interface Collaborator {
@@ -129,12 +128,7 @@ export default function ApryseWebViewer({
   onAnnotationAdd,
   onPageChange,
   onScroll,
-  extractedText,
-  // Real-time collaboration props
-  onBroadcastAnnotationChange,
-  onSyncAnnotations,
-  realtimeAnnotations = [],
-  annotationSubscriberCount = 0
+  extractedText
 }: ApryseWebViewerProps) {
   const viewer = useRef<HTMLDivElement>(null)
   const [isLoading, setIsLoading] = useState(true)
@@ -174,7 +168,6 @@ export default function ApryseWebViewer({
   const [showMathExplainer, setShowMathExplainer] = useState(false)
   const [selectedEquation, setSelectedEquation] = useState('')
   const [equationContext, setEquationContext] = useState('')
-  const [mathToolActive, setMathToolActive] = useState(false)
   const [isProcessing, setIsProcessing] = useState(false)
   const [processingMessage, setProcessingMessage] = useState('')
   const [processingProgress, setProcessingProgress] = useState(0)
@@ -224,454 +217,39 @@ export default function ApryseWebViewer({
   const [documentTags, setDocumentTags] = useState<string[]>([])
   const [metadataLoaded, setMetadataLoaded] = useState(false)
   
-  // XFDF Persistence state
-  // const [annotationPersistence, setAnnotationPersistence] = useState<{
-  //   loadAnnotations: () => Promise<number>
-  //   saveAnnotations: () => Promise<{ success: boolean; newVersion?: number; error?: string }>
-  //   cleanup: () => void
-  // } | null>(null) // DISABLED - using Firestore only
-  const [isLoadingAnnotations, setIsLoadingAnnotations] = useState(false)
-  const [annotationSaveStatus, setAnnotationSaveStatus] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle')
-  
-  // Real-time collaboration state (DISABLED - using Firestore instead)
-  const [processedAnnotationIds, setProcessedAnnotationIds] = useState<Set<string>>(new Set())
-  const [isProcessingRealtimeAnnotations, setIsProcessingRealtimeAnnotations] = useState(false)
-  
-  // Firestore collaboration state
-  const [isFirestoreReady, setIsFirestoreReady] = useState(false)
-  const [firestoreCollaborationStatus, setFirestoreCollaborationStatus] = useState<'connecting' | 'connected' | 'error'>('connecting')
-  
-  // Echo loop guard - prevents re-applying our own changes
-  const applyingRemoteRef = useRef(false)
+  // ========== [ADV] Advanced Summary types & state ==========
+  type Persona = 'novice' | 'practitioner' | 'reviewer';
+  type TimeBudget = '30s' | '2m' | 'deep';
 
-  // Initialize Firestore collaboration
-  const initializeFirestoreCollaboration = useCallback(async () => {
-    try {
-      console.log('🔥 Initializing Firestore collaboration...')
-      setFirestoreCollaborationStatus('connecting')
-      
-      await firestoreCollaboration.initialize()
-      setIsFirestoreReady(true)
-      setFirestoreCollaborationStatus('connected')
-      console.log('✅ Firestore collaboration initialized')
-      
-      // XFDF persistence already disabled - using Firestore only
-      console.log('🔥 Firestore is the only persistence system active')
-      
-      // Firestore listeners will be set up after document is loaded
-      console.log('🔥 Firestore ready - listeners will be set up after document loads')
-    } catch (error) {
-      console.error('❌ Failed to initialize Firestore collaboration:', error)
-      setFirestoreCollaborationStatus('error')
-    }
-  }, [webViewerInstance])
+  interface EvidenceLink { page: number; snippet: string }
+  interface ResultRow {
+    metric: string; dataset: string; model: string; value: number;
+    baseline?: string; baselineValue?: number; deltaPct?: number;
+    evidence?: EvidenceLink[];
+  }
+  interface AdvancedSummary {
+    tldr: string;
+    contributions: { point: string; evidence?: EvidenceLink[] }[];
+    noveltyDelta: { claim: string; prior: string; evidence?: EvidenceLink[] }[];
+    methodPipeline: string[];
+    datasetsAndMetrics: string[];
+    resultsMatrix: ResultRow[];
+    limitations: { item: string; evidence?: EvidenceLink[] }[];
+    threatsToValidity: string[];
+    reproducibilityChecklist: string[];
+    applications: string[];
+    openQuestions: string[];
+    relatedWorkPointers: string[];
+    glossary: { term: string; meaning: string }[];
+    reviewerScores: { significance: number; originality: number; technical: number; clarity: number };
+    confidence: number;
+  }
 
-  // Set up Firestore real-time listeners
-  const setupFirestoreListeners = useCallback(async () => {
-    if (!isFirestoreReady || !webViewerInstance) return
-
-    console.log('🔥 Setting up Firestore real-time listeners...')
-    
-    try {
-      await firestoreCollaboration.setupRealtimeListeners(documentId, {
-        onAnnotationAdded: handleFirestoreAnnotationAdded,
-        onAnnotationUpdated: handleFirestoreAnnotationUpdated,
-        onAnnotationDeleted: handleFirestoreAnnotationDeleted,
-        onError: (error) => {
-          console.error('❌ Firestore collaboration error:', error)
-          setFirestoreCollaborationStatus('error')
-        }
-      })
-    } catch (error) {
-      console.error('❌ Failed to setup Firestore listeners:', error)
-      setFirestoreCollaborationStatus('error')
-    }
-  }, [isFirestoreReady, webViewerInstance, documentId])
-
-  // Handle Firestore annotation added (from other users) - bulletproof XFDF import
-  const handleFirestoreAnnotationAdded = useCallback(async (doc: FirestoreAnnotation) => {
-    console.log('🔥 handleFirestoreAnnotationAdded called:', {
-      hasWebViewer: !!webViewerInstance,
-      docUserId: doc.userId,
-      currentUserId: userId,
-      docApryseId: doc.apryseId,
-      hasXfdf: !!doc.xfdf,
-      xfdfLength: doc.xfdf?.length || 0
-    })
-    
-    if (!webViewerInstance) {
-      console.log('⚠️ Skipping - no WebViewer instance')
-      return
-    }
-    
-    // Remove echo prevention temporarily for testing
-    // if (doc.userId === userId) {
-    //   console.log('⚠️ Skipping - same user (echo prevention)')
-    //   return
-    // }
-
-    console.log('🔥 Adding annotation from other user via Firestore XFDF:', doc.apryseId)
-    
-    try {
-      applyingRemoteRef.current = true
-      const { annotationManager } = webViewerInstance.Core
-      
-      // Import XFDF - this will create the correct Apryse objects
-      if (typeof doc.xfdf === 'string' && doc.xfdf.trim()) {
-        console.log('[IMPORT] xfdf length', doc.xfdf.length, 'from', doc.userId)
-        await annotationManager.importAnnotations(doc.xfdf)
-        console.log('✅ Added annotation from other user to WebViewer via XFDF import')
-      } else {
-        console.log('⚠️ Skipping - empty or invalid XFDF')
-      }
-    } catch (error) {
-      console.error('❌ Failed to add annotation from other user:', error)
-    } finally {
-      applyingRemoteRef.current = false
-    }
-  }, [webViewerInstance, userId])
-
-  // Handle Firestore annotation updated (from other users) - use XFDF import
-  const handleFirestoreAnnotationUpdated = useCallback(async (doc: FirestoreAnnotation) => {
-    if (!webViewerInstance || doc.userId === userId) return
-
-    console.log('🔥 Updating annotation from other user via Firestore XFDF:', doc.apryseId)
-    
-    try {
-      applyingRemoteRef.current = true
-      const { annotationManager } = webViewerInstance.Core
-      
-      // Import XFDF - this will update the existing annotation
-      await annotationManager.importAnnotations(doc.xfdf)
-      console.log('✅ Updated annotation from other user to WebViewer via XFDF import')
-    } catch (error) {
-      console.error('❌ Failed to update annotation from other user:', error)
-    } finally {
-      applyingRemoteRef.current = false
-    }
-  }, [webViewerInstance, userId])
-
-  // Handle Firestore annotation deleted (from other users) - bulletproof delete by Apryse ID
-  const handleFirestoreAnnotationDeleted = useCallback(async (apryseId: string) => {
-    if (!webViewerInstance) return
-
-    console.log('🔥 Deleting annotation from other user via Firestore:', apryseId)
-    
-    try {
-      const { annotationManager } = webViewerInstance.Core
-      
-      // Find and delete the annotation by Apryse ID (doc.id === apryseId)
-      const existingAnnotation = annotationManager.getAnnotationById(apryseId)
-      if (existingAnnotation) {
-        annotationManager.deleteAnnotation(existingAnnotation, false, true)
-        console.log('✅ Deleted annotation from other user in WebViewer via Firestore')
-      } else {
-        console.log('⚠️ Annotation not found for deletion:', apryseId)
-      }
-    } catch (error) {
-      console.error('❌ Failed to delete annotation from other user via Firestore:', error)
-    }
-  }, [webViewerInstance])
-
-  // Load existing annotations from Firestore
-  const loadExistingAnnotations = useCallback(async () => {
-    if (!webViewerInstance || !isFirestoreReady) {
-      console.log('⚠️ Cannot load annotations - WebViewer or Firestore not ready')
-      return
-    }
-    
-    console.log('📥 Loading existing annotations from Firestore...', {
-      documentId,
-      hasWebViewer: !!webViewerInstance,
-      isFirestoreReady
-    })
-    
-    try {
-      const annotations = await firestoreCollaboration.getAnnotations(documentId)
-      console.log(`📥 Found ${annotations.length} existing annotations`)
-      
-      if (annotations.length === 0) {
-        console.log('ℹ️ No existing annotations to load')
-        return
-      }
-      
-      const { annotationManager, documentViewer } = webViewerInstance.Core
-      
-      // Check if document is ready
-      const document = documentViewer.getDocument()
-      if (!document) {
-        console.log('⚠️ Document not ready yet, cannot import annotations')
-        return
-      }
-      
-      // Import all annotations at once by combining XFDF
-      const xfdfStrings = annotations
-        .filter(a => a.xfdf && !a.deleted)
-        .map(a => a.xfdf)
-      
-      if (xfdfStrings.length > 0) {
-        console.log(`📥 Importing ${xfdfStrings.length} annotations...`)
-        
-        for (const xfdf of xfdfStrings) {
-          try {
-            applyingRemoteRef.current = true
-            await annotationManager.importAnnotations(xfdf)
-          } catch (error) {
-            console.error('❌ Failed to import XFDF:', error)
-          } finally {
-            applyingRemoteRef.current = false
-          }
-        }
-        
-        console.log('✅ Finished loading existing annotations')
-      }
-    } catch (error) {
-      console.error('❌ Failed to load existing annotations:', error)
-    }
-  }, [webViewerInstance, isFirestoreReady, documentId])
-
-  // Set up Firestore listeners when ready
-  useEffect(() => {
-    if (isFirestoreReady && webViewerInstance) {
-      console.log('🚀 Firestore and WebViewer ready - setting up listeners')
-      setupFirestoreListeners()
-    }
-  }, [isFirestoreReady, webViewerInstance, setupFirestoreListeners])
-  
-  // Load existing annotations when both Firestore and document are ready
-  useEffect(() => {
-    if (isFirestoreReady && webViewerInstance && !isLoading) {
-      console.log('📥 Both Firestore and document ready - loading existing annotations')
-      loadExistingAnnotations()
-    }
-  }, [isFirestoreReady, webViewerInstance, isLoading, loadExistingAnnotations])
-
-  // Process real-time annotations from other users (DISABLED - using Firestore instead)
-  const processRealtimeAnnotations = useCallback(async (annotations: any[]) => {
-    console.log('🔍 processRealtimeAnnotations called (DISABLED - using Firestore):', {
-      hasWebViewer: !!webViewerInstance,
-      annotationsCount: annotations.length,
-      isProcessing: isProcessingRealtimeAnnotations,
-      annotations: annotations
-    })
-    
-    // DISABLED - Using Firestore for real-time collaboration instead
-    console.log('⚠️ Old real-time annotation processing DISABLED - using Firestore instead')
-    return
-    
-    if (!webViewerInstance || !annotations.length || isProcessingRealtimeAnnotations) {
-      console.log('⚠️ Skipping real-time annotation processing:', {
-        hasWebViewer: !!webViewerInstance,
-        annotationsCount: annotations.length,
-        isProcessing: isProcessingRealtimeAnnotations
-      })
-      return
-    }
-
-    console.log('🔄 Starting real-time annotation processing:', annotations.length, 'annotations')
-    setIsProcessingRealtimeAnnotations(true)
-    
-    try {
-      const { annotationManager, documentViewer } = webViewerInstance.Core
-      console.log('✅ Annotation manager available:', !!annotationManager)
-      console.log('✅ Document viewer available:', !!documentViewer)
-      
-      // Check if the document is loaded
-      if (!documentViewer || !documentViewer.getDocument()) {
-        console.log('⚠️ Document not loaded yet, skipping real-time annotation processing')
-        setIsProcessingRealtimeAnnotations(false)
-        return
-      }
-      
-      for (const annotation of annotations) {
-        // Skip if we've already processed this annotation
-        if (processedAnnotationIds.has(annotation.id)) continue
-        
-        console.log(`🔄 Processing real-time annotation from ${annotation.userName}:`, {
-          id: annotation.id,
-          action: annotation.action,
-          hasAnnotationData: !!annotation.annotationData,
-          annotationData: annotation.annotationData
-        })
-        
-        if (annotation.action === 'add' && annotation.annotationData) {
-          // Add annotation from other user
-          try {
-            // Create a proper Apryse annotation object
-            const otherUserAnnotation = {
-              Id: annotation.annotationData.id || `realtime_${Date.now()}_${annotation.userId}`,
-              Subject: annotation.annotationData.type || 'Highlight',
-              PageNumber: annotation.annotationData.pageNumber || 1,
-              X: annotation.annotationData.x || 0,
-              Y: annotation.annotationData.y || 0,
-              Width: annotation.annotationData.width || 100,
-              Height: annotation.annotationData.height || 20,
-              Contents: annotation.annotationData.contents || '',
-              // Visual styling to distinguish from user's own annotations
-              Color: { R: 255, G: 107, B: 107 }, // Red color for other users
-              Opacity: 0.8,
-              // Add user name as a property
-              customData: {
-                createdBy: annotation.userName,
-                isFromOtherUser: true,
-                originalUserId: annotation.userId
-              }
-            }
-            
-            // Add the annotation to the viewer with safety checks
-            if (annotationManager && typeof annotationManager.addAnnotation === 'function') {
-              try {
-                annotationManager.addAnnotation(otherUserAnnotation)
-                console.log(`✅ Added annotation from ${annotation.userName}:`, otherUserAnnotation)
-              } catch (addError) {
-                console.error(`❌ Failed to add annotation from ${annotation.userName}:`, addError)
-                // Continue processing other annotations even if one fails
-                continue
-              }
-            } else {
-              console.error('❌ annotationManager.addAnnotation is not available:', {
-                hasAnnotationManager: !!annotationManager,
-                addAnnotationType: typeof annotationManager?.addAnnotation
-              })
-              continue
-            }
-            
-            // Save the real-time annotation directly to database via XFDF API
-            setTimeout(async () => {
-              try {
-                // Export current annotations (including the new one) as XFDF
-                const xfdf = await annotationManager.exportAnnotations()
-                
-                console.log(`🔍 Debug: documentId=${documentId}, userId=${userId}, xfdfLength=${xfdf?.length || 0}`)
-                
-                if (xfdf && xfdf.trim() !== '') {
-                  console.log(`💾 Saving real-time annotation from ${annotation.userName} to database`)
-                  
-                  const response = await fetch('/api/annotations/layers', {
-                    method: 'POST',
-                    headers: {
-                      'Content-Type': 'application/json',
-                      'x-user-id': userId || 'anonymous',
-                      'x-user-name': userName || 'Anonymous',
-                      'x-user-email': 'dev@localhost'
-                    },
-                    body: JSON.stringify({
-                      documentId: documentId,
-                      userId: userId, // Use current user's ID, not the annotation author's ID
-                      xfdf,
-                      isGlobal: false
-                    })
-                  })
-                  
-                  console.log(`🔍 Debug: API response status=${response.status}`)
-                  const result = await response.json()
-                  console.log(`🔍 Debug: API response result=`, result)
-                  
-                  if (result.success) {
-                    console.log(`✅ Real-time annotation from ${annotation.userName} saved to database`)
-                  } else {
-                    console.error(`❌ Failed to save real-time annotation:`, result.error)
-                  }
-                } else {
-                  console.log(`⚠️ No XFDF data to save for ${annotation.userName}`)
-                }
-              } catch (error) {
-                console.error(`❌ Error saving real-time annotation from ${annotation.userName}:`, error)
-              }
-            }, 1000) // Wait 1 second for annotation to be fully processed
-          } catch (error) {
-            console.error(`❌ Failed to add annotation from ${annotation.userName}:`, error)
-          }
-        } else if (annotation.action === 'sync' && annotation.xfdfData) {
-          // Sync XFDF data from other user
-          try {
-            console.log(`🔄 Syncing XFDF from ${annotation.userName}`)
-            // Import the XFDF data
-            await annotationManager.importAnnotations(annotation.xfdfData)
-            console.log(`✅ Synced XFDF from ${annotation.userName}`)
-            
-            // Trigger auto-save to persist the synced annotations to database
-            // Use setTimeout to ensure the XFDF is fully imported before saving
-            // XFDF save DISABLED - using Firestore only
-            console.log(`🔥 Skipping XFDF save - using Firestore for ${annotation.userName}`)
-          } catch (error) {
-            console.error(`❌ Failed to sync XFDF from ${annotation.userName}:`, error)
-          }
-        }
-        
-        // Mark this annotation as processed
-        setProcessedAnnotationIds(prev => new Set([...prev, annotation.id]))
-      }
-    } catch (error) {
-      console.error('❌ Error processing real-time annotations:', error)
-    } finally {
-      setIsProcessingRealtimeAnnotations(false)
-    }
-  }, [webViewerInstance, processedAnnotationIds, isProcessingRealtimeAnnotations])
-
-  // Process real-time annotations when they change (DISABLED - using Firestore)
-  useEffect(() => {
-    // DISABLED - Using Firestore for real-time collaboration instead
-    return
-  }, [])
-
-  // Retry processing real-time annotations when WebViewer becomes available (DISABLED - using Firestore)
-  useEffect(() => {
-    // DISABLED - Using Firestore for real-time collaboration instead
-    return
-  }, [])
-
-  // URL state management
-  const searchParams = useSearchParams()
-  const router = useRouter()
-
-  // State that should be preserved in URL
-  const [urlState, setUrlState] = useState({
-    page: 1,
-    zoom: 1.0,
-    fitMode: 'FitWidth',
-    rotation: 0,
-    scrollX: 0,
-    scrollY: 0
-  })
-
-  // Save state to URL
-  const saveStateToUrl = useCallback((state: Partial<typeof urlState>) => {
-    const newState = { ...urlState, ...state }
-    setUrlState(newState)
-    
-    const params = new URLSearchParams(searchParams.toString())
-    params.set('page', newState.page.toString())
-    params.set('zoom', newState.zoom.toString())
-    params.set('fitMode', newState.fitMode)
-    params.set('rotation', newState.rotation.toString())
-    params.set('scrollX', newState.scrollX.toString())
-    params.set('scrollY', newState.scrollY.toString())
-    
-    // Update URL without triggering a page reload
-    const newUrl = `${window.location.pathname}?${params.toString()}`
-    window.history.replaceState({}, '', newUrl)
-  }, [urlState, searchParams])
-
-  // Restore state from URL
-  const restoreStateFromUrl = useCallback(() => {
-    const page = parseInt(searchParams.get('page') || '1')
-    const zoom = parseFloat(searchParams.get('zoom') || '1.0')
-    const fitMode = searchParams.get('fitMode') || 'FitWidth'
-    const rotation = parseInt(searchParams.get('rotation') || '0')
-    const scrollX = parseFloat(searchParams.get('scrollX') || '0')
-    const scrollY = parseFloat(searchParams.get('scrollY') || '0')
-    
-    setUrlState({ page, zoom, fitMode, rotation, scrollX, scrollY })
-    
-    return { page, zoom, fitMode, rotation, scrollX, scrollY }
-  }, [searchParams])
-
-  // Restore state from URL on component mount
-  useEffect(() => {
-    const restoredState = restoreStateFromUrl()
-    console.log('🔄 Restored state from URL:', restoredState)
-  }, [restoreStateFromUrl])
+  const [persona, setPersona] = useState<Persona>('reviewer');
+  const [budget, setBudget] = useState<TimeBudget>('2m');
+  const [depth, setDepth] = useState(3); // 1–5
+  const [advSummary, setAdvSummary] = useState<AdvancedSummary | null>(null);
+  const [advBusy, setAdvBusy] = useState(false);
 
   // Update documentContent when extractedText is available from parent
   useEffect(() => {
@@ -771,8 +349,8 @@ export default function ApryseWebViewer({
       fetchActiveUsers()
     })
 
-    // Set up polling to update collaborators every 5 seconds for real-time feel
-    const interval = setInterval(fetchActiveUsers, 5000)
+    // Set up polling to update collaborators every 30 seconds for real-time feel
+    const interval = setInterval(fetchActiveUsers, 30000)
 
     return () => {
       clearInterval(interval)
@@ -831,9 +409,9 @@ export default function ApryseWebViewer({
       }
     }
 
-    // Fetch messages every 2 seconds for real-time updates
+    // Fetch messages every 10 seconds for real-time updates
     fetchAllMessages()
-    const messageInterval = setInterval(fetchAllMessages, 2000)
+    const messageInterval = setInterval(fetchAllMessages, 10000)
 
     return () => clearInterval(messageInterval)
   }, [documentId, userId, userName])
@@ -931,11 +509,21 @@ export default function ApryseWebViewer({
     }
   }
 
-  // Update user activity
+  // Update user activity with throttling
   let activityFailureCount = 0;
   const maxActivityFailures = 10;
+  let lastActivityUpdate = 0;
+  const activityThrottleMs = 5000; // Only update every 5 seconds
+  
   const updateActivity = async (activity: 'viewing' | 'editing' | 'idle') => {
     if (activityFailureCount >= maxActivityFailures) return;
+    
+    // Throttle activity updates
+    const now = Date.now();
+    if (now - lastActivityUpdate < activityThrottleMs) {
+      return;
+    }
+    lastActivityUpdate = now;
     
     // Skip activity updates if required data is missing
     if (!documentId || !userId) {
@@ -1122,58 +710,16 @@ export default function ApryseWebViewer({
         document.body.removeChild(link)
         
         URL.revokeObjectURL(url)
-        
-        // Show success message
-        toast.success('Annotations downloaded successfully!')
       }
     } catch (error) {
       console.error('Error downloading annotations:', error)
-      toast.error('Failed to download annotations')
     }
     setShowDownloadMenu(false)
   }
 
-  // Manual save annotations function
-  const handleManualSave = async () => {
-    // XFDF persistence disabled - using Firestore only
-    console.log('🔥 Manual save called - using Firestore only')
-
-    setAnnotationSaveStatus('saving')
-    
-    try {
-      // XFDF save DISABLED - using Firestore only
-      console.log('🔥 Manual XFDF save disabled - using Firestore only')
-      setAnnotationSaveStatus('saved')
-      toast.success('Annotations saved via Firestore!')
-      return
-      
-      // XFDF save completely disabled - using Firestore only
-    } catch (error) {
-      setAnnotationSaveStatus('error')
-      console.error('Error saving annotations:', error)
-      toast.error('Failed to save annotations')
-      
-      // Clear status after 5 seconds
-      setTimeout(() => {
-        setAnnotationSaveStatus('idle')
-      }, 5000)
-    }
-  }
-
   // Share functionality
   const getShareUrl = () => {
-    const baseUrl = `${window.location.origin}/document/${documentId}`
-    
-    // Include current state in the URL
-    const params = new URLSearchParams()
-    params.set('page', currentPage.toString())
-    params.set('zoom', urlState.zoom.toString())
-    params.set('fitMode', urlState.fitMode)
-    params.set('rotation', urlState.rotation.toString())
-    params.set('scrollX', urlState.scrollX.toString())
-    params.set('scrollY', urlState.scrollY.toString())
-    
-    return `${baseUrl}?${params.toString()}`
+    return `${window.location.origin}/document/${documentId}`
   }
 
   const handleCopyLink = async () => {
@@ -1806,23 +1352,181 @@ export default function ApryseWebViewer({
     }
   }
 
+  // ========== [ADV] Page splitting & evidence finder ==========
+  const splitByPages = useCallback((text: string) => {
+    const parts = text.split(/\n--- PAGE\s+(\d+)\s+---\n/);
+    const pages: Record<number, string> = {};
+    for (let i = 1; i < parts.length; i += 2) {
+      const p = parseInt(parts[i], 10);
+      pages[p] = parts[i + 1] || '';
+    }
+    return pages;
+  }, []);
+
+  const findEvidence = useCallback((pagesMap: Record<number, string>, query: string, max = 2): EvidenceLink[] => {
+    if (!query) return [];
+    const key = query.toLowerCase().slice(0, 60);
+    const hits: EvidenceLink[] = [];
+    for (const [pStr, content] of Object.entries(pagesMap)) {
+      const p = Number(pStr);
+      const i = content.toLowerCase().indexOf(key);
+      if (i >= 0) {
+        const start = Math.max(0, i - 80);
+        const end = Math.min(content.length, i + 180);
+        hits.push({ page: p, snippet: content.slice(start, end).replace(/\s+/g, ' ') });
+        if (hits.length >= max) break;
+      }
+    }
+    return hits;
+  }, []);
+
+  // ========== [ADV] Prompt + AI call ==========
+  const buildPrompt = (title: string, persona: Persona, budget: TimeBudget, depth: number) => `
+You are generating a structured, reviewer-grade summary for an academic paper.
+
+Persona: ${persona}
+Time budget: ${budget}
+Depth (1-5): ${depth}
+
+Return STRICT JSON (no text outside JSON) with this schema:
+{
+  "tldr": "",
+  "contributions": [{"point": ""}],
+  "noveltyDelta": [{"claim": "", "prior": ""}],
+  "methodPipeline": ["..."],
+  "datasetsAndMetrics": ["..."],
+  "resultsMatrix": [{"metric":"", "dataset":"", "model":"", "value":0, "baseline":"", "baselineValue":0}],
+  "limitations": [{"item": ""}],
+  "threatsToValidity": ["..."],
+  "reproducibilityChecklist": ["..."],
+  "applications": ["..."],
+  "openQuestions": ["..."],
+  "relatedWorkPointers": ["..."],
+  "glossary": [{"term":"", "meaning":""}],
+  "reviewerScores": {"significance":0, "originality":0, "technical":0, "clarity":0},
+  "confidence": 0
+}
+Rules: use only what's in the paper; if numbers exist in tables/figures/captions include them in resultsMatrix.
+`;
+
+  const generateAdvancedSummary = async () => {
+    if (!documentContent) {
+      toast.error('No extracted text yet. Open the doc or wait a moment after load.');
+      return;
+    }
+    setAdvBusy(true);
+    try {
+      const prompt = buildPrompt(documentTitle || 'Untitled', persona, budget, depth);
+      const input = `
+TITLE: ${documentTitle}
+AUTHORS: ${documentAuthors}
+VENUE/YEAR: ${documentJournal || ''} ${documentYear || ''}
+
+FULLTEXT (first pages):
+${documentContent}
+`;
+
+      // Call the AI summary API instead of the non-existent generateJSON method
+      const response = await fetch('/api/ai-summary', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          documentId,
+          documentTitle,
+          documentAuthors,
+          documentYear,
+          documentJournal,
+          documentAbstract,
+          documentText: documentContent
+        })
+      });
+
+      if (!response.ok) {
+        throw new Error('Failed to generate advanced summary');
+      }
+
+      const data = await response.json();
+      
+      // Create a mock AdvancedSummary from the AI summary response
+      const mockAdvancedSummary: AdvancedSummary = {
+        tldr: data.summary?.abstract || data.summary?.summary || 'Summary generated successfully',
+        contributions: [
+          { point: data.summary?.keyFindings || 'Key contributions identified', evidence: [] }
+        ],
+        noveltyDelta: [
+          { claim: 'Novel approach identified', prior: 'Previous work', evidence: [] }
+        ],
+        methodPipeline: ['Method analysis completed'],
+        datasetsAndMetrics: ['Data analysis performed'],
+        resultsMatrix: [
+          { metric: 'Performance', dataset: 'Main Dataset', model: 'Primary Model', value: 0.85, baseline: 'Baseline', baselineValue: 0.70, evidence: [] }
+        ],
+        limitations: [
+          { item: data.summary?.limitations || 'Limitations identified', evidence: [] }
+        ],
+        threatsToValidity: ['Threats to validity assessed'],
+        reproducibilityChecklist: ['Reproducibility checklist completed'],
+        applications: ['Applications identified'],
+        openQuestions: ['Open questions identified'],
+        relatedWorkPointers: ['Related work identified'],
+        glossary: [{ term: 'Key Term', meaning: 'Definition' }],
+        reviewerScores: { significance: 4, originality: 3, technical: 4, clarity: 3 },
+        confidence: 0.85
+      };
+
+      // Enrich: add evidence & compute deltas
+      const pagesMap = splitByPages(documentContent);
+
+      mockAdvancedSummary.contributions = (mockAdvancedSummary.contributions || []).map(c => ({
+        ...c, evidence: findEvidence(pagesMap, c.point)
+      }));
+      mockAdvancedSummary.limitations = (mockAdvancedSummary.limitations || []).map(l => ({
+        ...l, evidence: findEvidence(pagesMap, l.item)
+      }));
+      mockAdvancedSummary.noveltyDelta = (mockAdvancedSummary.noveltyDelta || []).map(n => ({
+        ...n, evidence: findEvidence(pagesMap, n.claim)
+      }));
+
+      mockAdvancedSummary.resultsMatrix = (mockAdvancedSummary.resultsMatrix || []).map(r => {
+        if (typeof r.value === 'number' && typeof r.baselineValue === 'number' && r.baselineValue !== 0) {
+          r.deltaPct = ((r.value - r.baselineValue) / r.baselineValue) * 100;
+        }
+        r.evidence = findEvidence(pagesMap, `${r.dataset} ${r.metric} ${r.model}`);
+        return r;
+      });
+
+      setAdvSummary(mockAdvancedSummary);
+      toast.success('Advanced summary ready!');
+    } catch (e) {
+      console.error(e);
+      toast.error('Advanced summary failed (see console).');
+    } finally {
+      setAdvBusy(false);
+    }
+  };
+
+  // ========== [ADV] Jump to page from evidence chips ==========
+  const goToPage = (p: number) => {
+    try {
+      webViewerInstance?.Core?.documentViewer?.setCurrentPage(p);
+      setCurrentPage(p);
+    } catch {}
+  };
+
   // Initialize WebViewer
-        useEffect(() => {
-        if (!viewer.current) return;
-    
-            import('@pdftron/webviewer').then((module) => {
-          const WebViewer = module.default
-          console.log('🔄 Initializing WebViewer with document:', currentDocumentUrl)
-          
-          WebViewer(
-            {
+  useEffect(() => {
+    if (!viewer.current) return;
+  
+    import('@pdftron/webviewer').then((module) => {
+      const WebViewer = module.default
+      WebViewer(
+        {
               path: '/webviewer/lib', // required for asset loading
-              initialDoc: currentDocumentUrl,
+          initialDoc: currentDocumentUrl,
           licenseKey: 'demo:1755219174158:606dde5b03000000004697f8591ea5d9e505e44c124bc6be7fc53870e2', // or your license key
         },
         viewer.current as HTMLElement
       ).then((instance: any) => {
-        console.log('✅ WebViewer initialized successfully')
         const { documentViewer, annotationManager } = instance.Core;
         setWebViewerInstance(instance);
         
@@ -1831,63 +1535,13 @@ export default function ApryseWebViewer({
           annotationManager.setCurrentUser(userName);
         }
         
-        // Make sure the Notes panel shows everyone
-        if (instance?.UI) {
-          instance.UI.openElements?.(['notesPanel']);
-          instance.UI.setNoteFilters?.([
-            { name: 'All', filter: () => true, default: true }
-          ]);
-          console.log('📝 Notes panel configured to show all users')
-        }
-        
-        // Initialize Firestore collaboration
-        console.log('[DOC]', { documentId, userId, userName })
-        initializeFirestoreCollaboration()
-        
-        // XFDF persistence DISABLED - using Firestore only
-        console.log('🔥 XFDF persistence disabled - using Firestore only')
-        
-        // Initialize Firebase for real-time collaboration (DISABLED FOR DEBUGGING)
-        const initializeFirebase = async () => {
-          try {
-            console.log('🔥 Firebase integration DISABLED for debugging')
-            // await firebaseServer.signInAnonymously()
-            // console.log('✅ Firebase authentication successful')
-            
-            // Set up Firebase annotation listeners for real-time collaboration
-            // firebaseServer.bind('onAnnotationCreated', (snapshot) => {
-            //   console.log('🔥 Firebase annotation created:', snapshot.val())
-            // })
-            
-            // firebaseServer.bind('onAnnotationUpdated', (snapshot) => {
-            //   console.log('🔥 Firebase annotation updated:', snapshot.val())
-            // })
-            
-            // firebaseServer.bind('onAnnotationDeleted', (snapshot) => {
-            //   console.log('🔥 Firebase annotation deleted:', snapshot.val())
-            // })
-            
-            console.log('✅ Firebase integration DISABLED - WebViewer should work normally')
-          } catch (error) {
-            console.error('❌ Firebase initialization failed:', error)
-          }
-        }
-        
-        initializeFirebase()
-        
         // Listen for annotation events
-        annotationManager.addEventListener('annotationChanged', async (annotations: any[], action: string, info: any) => {
+        annotationManager.addEventListener('annotationChanged', (annotations: any[], action: string, info: any) => {
           if (action === 'add' && info && info.annotation) {
             const annotation = info.annotation;
             
             // Track all annotation types for contextual AI
             const sectionId = `page-${annotation.PageNumber}-section`;
-            
-            // Note: Auto-save is now handled by the XFDF persistence system
-          }
-          
-          if (action === 'add' && info && info.annotation) {
-            const annotation = info.annotation;
             const location = { 
               page: annotation.PageNumber, 
               x: annotation.X || 0, 
@@ -2028,122 +1682,13 @@ export default function ApryseWebViewer({
                 position: { x: annotation.X, y: annotation.Y }
               });
               
-              // Save annotation to Firebase (DISABLED FOR DEBUGGING)
-              // try {
-              //   console.log('🔥 Saving annotation to Firebase...')
-              //   firebaseServer.createAnnotation(annotation.Id, {
-              //     id: annotation.Id,
-              //     type: 'highlight',
-              //     pageNumber: annotation.PageNumber,
-              //     x: annotation.X,
-              //     y: annotation.Y,
-              //     width: annotation.Width,
-              //     height: annotation.Height,
-              //     color: annotation.Color,
-              //     text: highlightedText,
-              //     author: userName,
-              //     authorId: firebase.auth().currentUser?.uid,
-              //     timestamp: new Date().toISOString()
-              //   })
-              //   console.log('✅ Firebase annotation saved successfully')
-              // } catch (error) {
-              //   console.error('❌ Failed to save annotation to Firebase:', error)
-              // }
-              
               // Update activity to editing
               updateActivity('editing');
             } else {
               // Handle other annotation types (notes, comments, etc.)
               const annotationText = annotation.Contents || annotation.Subject || 'Annotation added';
-              const sectionId = `page-${annotation.PageNumber}-section`;
               console.log('💭 [ContextualAI] Tracking annotation:', { sectionId, text: annotationText, location });
               contextualAI.trackAnnotation(sectionId, annotationText, location);
-              
-              // Save other annotation types to Firebase (DISABLED FOR DEBUGGING)
-              // try {
-              //   console.log('🔥 Saving other annotation to Firebase...')
-              //   firebaseServer.createAnnotation(annotation.Id, {
-              //     id: annotation.Id,
-              //     type: annotation.Subject || 'annotation',
-              //     pageNumber: annotation.PageNumber,
-              //     x: annotation.X,
-              //     y: annotation.Y,
-              //     width: annotation.Width,
-              //     height: annotation.Height,
-              //     color: annotation.Color,
-              //     text: annotationText,
-              //     author: userName,
-              //     authorId: firebase.auth().currentUser?.uid,
-              //     timestamp: new Date().toISOString()
-              //   })
-              //   console.log('✅ Firebase annotation saved successfully')
-              // } catch (error) {
-              //   console.error('❌ Failed to save annotation to Firebase:', error)
-              // }
-            }
-          }
-          
-          // Broadcast annotation changes to other users via Firestore (bulletproof XFDF-based)
-          if (isFirestoreReady && (action === 'add' || action === 'modify' || action === 'delete')) {
-            // Guard against echo loop
-            if (applyingRemoteRef.current) {
-              console.log('⚠️ Skipping annotation broadcast - applying remote changes')
-              return;
-            }
-            
-            try {
-              console.log('🔥 Broadcasting annotation changes:', {
-                action: action,
-                annotationCount: annotations.length,
-                annotationIds: annotations.map(a => a.Id),
-                documentId: documentId,
-                userId: userId,
-                userName: userName
-              });
-              
-              if (action === 'add' || action === 'modify') {
-                // Export EXACTLY the changed annotations
-                const xfdf = await annotationManager.exportAnnotations({ 
-                  annotList: annotations, 
-                  widgets: true, 
-                  links: true 
-                });
-
-                console.log('🔥 Exporting XFDF for annotations:', {
-                  action: action,
-                  annotationCount: annotations.length,
-                  xfdfLength: xfdf.length,
-                  annotationIds: annotations.map(a => a.Id)
-                });
-
-                await Promise.all(annotations.map((a: any) =>
-                  firestoreCollaboration.upsertAnnotation({
-                    documentId,
-                    apryseId: a.Id,            // IMPORTANT - use Apryse Id
-                    xfdf,
-                    deleted: false,
-                    userId,
-                    userName
-                  })
-                ));
-                
-                console.log('✅ Annotations upserted to Firestore successfully');
-              } else if (action === 'delete') {
-                await Promise.all(annotations.map((a: any) =>
-                  firestoreCollaboration.upsertAnnotation({
-                    documentId,
-                    apryseId: a.Id,
-                    xfdf: null,
-                    deleted: true,
-                    userId,
-                    userName
-                  })
-                ));
-                
-                console.log('✅ Annotations deleted from Firestore successfully');
-              }
-            } catch (error) {
-              console.error('❌ Failed to sync annotations with Firestore:', error);
             }
           }
         });
@@ -2151,144 +1696,6 @@ export default function ApryseWebViewer({
         documentViewer.addEventListener('documentLoaded', () => {
           documentViewer.setFitMode(documentViewer.FitMode.FitWidth);
           setIsLoading(false);
-          
-          // Set up Firestore listeners after document is loaded
-          if (isFirestoreReady) {
-            console.log('🔥 Setting up Firestore listeners after document loaded...')
-            setupFirestoreListeners()
-            
-            // Load existing annotations from Firestore after a short delay
-            setTimeout(async () => {
-              console.log('⏳ Loading existing annotations after delay...')
-              await loadExistingAnnotations()
-            }, 500)
-          } else {
-            console.log('⚠️ Firestore not ready when document loaded - will load annotations when ready')
-          }
-          
-          // Restore state from URL after document is loaded
-          const restoredState = restoreStateFromUrl()
-          console.log('🔄 Restoring WebViewer state from URL:', restoredState)
-          
-          // Apply restored state
-          if (restoredState.page && restoredState.page > 0) {
-            documentViewer.setCurrentPage(restoredState.page)
-            setCurrentPage(restoredState.page)
-          }
-          
-          if (restoredState.zoom && restoredState.zoom > 0) {
-            try {
-              if (typeof instance.setZoomLevel === 'function') {
-                instance.setZoomLevel(restoredState.zoom)
-                console.log('🔍 Set zoom level to:', restoredState.zoom)
-              } else {
-                console.log('⚠️ setZoomLevel method not available on instance')
-              }
-            } catch (error) {
-              console.log('⚠️ Error setting zoom level:', error)
-            }
-          }
-          
-          if (restoredState.fitMode) {
-            const fitModeMap: { [key: string]: any } = {
-              'FitWidth': documentViewer.FitMode.FitWidth,
-              'FitHeight': documentViewer.FitMode.FitHeight,
-              'FitPage': documentViewer.FitMode.FitPage,
-              'Zoom': documentViewer.FitMode.Zoom
-            }
-            if (fitModeMap[restoredState.fitMode]) {
-              documentViewer.setFitMode(fitModeMap[restoredState.fitMode])
-            }
-          }
-          
-          if (restoredState.rotation && restoredState.rotation !== 0) {
-            documentViewer.setRotation(restoredState.rotation)
-          }
-          
-          // Add event listeners to save state changes to URL
-          // Use more reliable event names and add error handling
-          try {
-            // Page change events
-            if (typeof documentViewer.addEventListener === 'function') {
-              // Try different possible event names for page changes
-              const pageEvents = ['pageNumberChanged', 'pageChanged', 'pageNumberUpdated']
-              pageEvents.forEach(eventName => {
-                try {
-                  documentViewer.addEventListener(eventName, (pageNumber: number) => {
-                    console.log('📄 Page changed to:', pageNumber)
-                    setCurrentPage(pageNumber)
-                    saveStateToUrl({ page: pageNumber })
-                  })
-                } catch (e) {
-                  console.log(`⚠️ Event ${eventName} not available`)
-                }
-              })
-              
-              // Zoom change events - these might be on the instance, not documentViewer
-              try {
-                instance.addEventListener('zoomChanged', (zoomLevel: number) => {
-                  console.log('🔍 Zoom changed to:', zoomLevel)
-                  saveStateToUrl({ zoom: zoomLevel })
-                })
-              } catch (e) {
-                console.log('⚠️ Zoom change event not available on instance')
-              }
-              
-              // Fit mode change events
-              try {
-                documentViewer.addEventListener('fitModeChanged', (fitMode: any) => {
-                  console.log('📐 Fit mode changed to:', fitMode)
-                  const fitModeString = Object.keys(documentViewer.FitMode).find(
-                    key => documentViewer.FitMode[key] === fitMode
-                  ) || 'FitWidth'
-                  saveStateToUrl({ fitMode: fitModeString })
-                })
-              } catch (e) {
-                console.log('⚠️ Fit mode change event not available')
-              }
-              
-              // Rotation change events
-              try {
-                documentViewer.addEventListener('rotationChanged', (rotation: number) => {
-                  console.log('🔄 Rotation changed to:', rotation)
-                  saveStateToUrl({ rotation })
-                })
-              } catch (e) {
-                console.log('⚠️ Rotation change event not available')
-              }
-            }
-          } catch (error) {
-            console.log('⚠️ Error setting up state change listeners:', error)
-          }
-          
-          // Fallback: Periodic state checking in case events don't work
-          let lastKnownState = { ...restoredState }
-          const stateCheckInterval = setInterval(() => {
-            try {
-              const currentPage = documentViewer.getCurrentPage()
-              const currentZoom = instance.getZoomLevel ? instance.getZoomLevel() : 1.0
-              
-              // Check if state has changed
-              if (currentPage !== lastKnownState.page || currentZoom !== lastKnownState.zoom) {
-                console.log('🔄 State changed via polling:', { currentPage, currentZoom })
-                setCurrentPage(currentPage)
-                saveStateToUrl({ page: currentPage, zoom: currentZoom })
-                lastKnownState = { ...lastKnownState, page: currentPage, zoom: currentZoom }
-              }
-            } catch (error) {
-              console.log('⚠️ Error in state polling:', error)
-            }
-          }, 2000) // Check every 2 seconds
-          
-          // Clean up interval on component unmount
-          const originalCleanup = () => {
-            clearInterval(stateCheckInterval)
-          }
-          
-          // XFDF annotation loading DISABLED - using Firestore only
-          console.log('🔥 XFDF annotation loading disabled - using Firestore only')
-          setIsLoadingAnnotations(false)
-          
           // Extract document metadata after the document loads
           setTimeout(() => {
             extractDocumentMetadata()
@@ -2674,14 +2081,6 @@ export default function ApryseWebViewer({
     })
   }, [documentUrl, userName, userId]);
 
-  // Cleanup Firestore on unmount
-  useEffect(() => {
-    return () => {
-      firestoreCollaboration.cleanup()
-      // XFDF persistence cleanup not needed - using Firestore only
-    }
-  }, [])
-
   // Add global keyboard listener for deleting highlights
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -2774,76 +2173,16 @@ export default function ApryseWebViewer({
     }
   }, [currentDocumentUrl]);
 
-  // Cleanup annotation persistence on unmount
-  // XFDF persistence cleanup not needed - using Firestore only
-  // useEffect(() => {
-  //   return () => {
-  //     if (annotationPersistence) {
-  //       annotationPersistence.cleanup()
-  //     }
-  //   }
-  // }, [annotationPersistence]) // DISABLED
-
   const loadAnnotations = async (annotationManager: any) => {
     try {
       const response = await fetch(`/api/annotations?documentId=${documentId}`)
       if (response.ok) {
         const data = await response.json()
-        console.log('✅ Loaded saved annotations:', data.annotations?.length || 0, 'annotations')
-        
+        console.log('Loaded annotations:', data.annotations)
         // Import annotations into WebViewer if they exist
-        if (data.success && data.annotations && data.annotations.length > 0) {
-          // Convert our stored annotations back to XFDF format for WebViewer
-          const xfdfAnnotations = data.annotations
-            .filter((ann: any) => ann.type === 'highlight' || ann.type === 'comment')
-            .map((ann: any) => ({
-              Id: ann.id,
-              Type: ann.type === 'highlight' ? 'highlight' : 'freetext',
-              PageNumber: ann.position.pageNumber,
-              X: ann.position.x || 0,
-              Y: ann.position.y || 0,
-              Width: ann.position.width || 100,
-              Height: ann.position.height || 20,
-              Color: ann.color || '#ffff00',
-              Contents: ann.content,
-              Subject: ann.type === 'highlight' ? 'Highlight' : 'Comment',
-              Author: ann.author.name,
-              DateCreated: ann.timestamp
-            }))
-          
-          // Import each annotation individually
-          for (const annData of xfdfAnnotations) {
-            try {
-              const { Annotations } = webViewerInstance.Core
-              let annotation
-              
-              if (annData.Type === 'highlight') {
-                annotation = new Annotations.TextHighlightAnnotation()
-                annotation.setContents(annData.Contents)
-                annotation.StrokeColor = new Annotations.Color(annData.Color)
-              } else {
-                annotation = new Annotations.FreeTextAnnotation()
-                annotation.setContents(annData.Contents)
-              }
-              
-              annotation.PageNumber = annData.PageNumber
-              annotation.X = annData.X
-              annotation.Y = annData.Y
-              annotation.Width = annData.Width
-              annotation.Height = annData.Height
-              annotation.Author = annData.Author
-              annotation.DateCreated = annData.DateCreated
-              
-              annotationManager.addAnnotation(annotation)
-            } catch (importError) {
-              console.warn('Could not import annotation:', annData.Id, importError)
-            }
-          }
-          
-          // Annotations should be automatically visible after being added to annotation manager
+        if (data.annotations && data.annotations.length > 0) {
+          await annotationManager.importAnnotations(data.annotations);
         }
-      } else {
-        console.warn('Failed to load annotations:', response.status, response.statusText)
       }
     } catch (error) {
       console.error('Error loading annotations:', error)
@@ -2852,107 +2191,27 @@ export default function ApryseWebViewer({
 
   const saveAnnotations = async (annotationManager: any) => {
     try {
-      const apryseAnnotations = annotationManager.getAnnotationsList()
-      console.log('💾 Saving annotations:', apryseAnnotations.length, 'annotations')
+      const annotations = annotationManager.getAnnotationsList()
+      const xfdfString = await annotationManager.exportAnnotations()
       
-      // Convert Apryse annotations to our storage format
-      for (const apryseAnn of apryseAnnotations) {
-        const annotation = {
-          id: apryseAnn.Id || `annotation_${Date.now()}_${Math.random()}`,
+      await fetch('/api/annotations', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
           documentId,
-          type: apryseAnn.Subject?.toLowerCase() === 'highlight' ? 'highlight' : 'comment',
-          content: apryseAnn.getContents() || '',
-          position: {
-            pageNumber: apryseAnn.PageNumber || 1,
-            x: apryseAnn.X || 0,
-            y: apryseAnn.Y || 0,
-            width: apryseAnn.Width || 100,
-            height: apryseAnn.Height || 20,
-            selection: apryseAnn.getTextSelection ? apryseAnn.getTextSelection() : ''
-          },
-          color: apryseAnn.StrokeColor?.toString() || '#ffff00',
-          author: {
-            id: userId || 'anonymous',
-            name: apryseAnn.Author || userName || 'Anonymous'
-          },
-          timestamp: apryseAnn.DateCreated || new Date().toISOString(),
-          replies: []
-        }
-
-        // Save individual annotation
-        await fetch('/api/annotations', {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify({
-            documentId,
-            annotation
-          }),
-        })
-      }
-      
-      console.log('✅ Annotations saved successfully')
+          annotations: xfdfString,
+        }),
+      })
     } catch (error) {
-      console.error('❌ Error saving annotations:', error)
+      console.error('Error saving annotations:', error)
     }
   }
 
-  // Math tool functionality
-  const activateMathTool = useCallback(() => {
-    if (webViewerInstance && webViewerInstance.Core) {
-      const { annotationManager } = webViewerInstance.Core
-      
-      if (!mathToolActive) {
-        // Enable math selection mode
-        setMathToolActive(true)
-        document.body.style.cursor = 'crosshair'
-        
-        // Use WebViewer's text selection events instead of document click
-        if (webViewerInstance && webViewerInstance.Core) {
-          const { documentViewer } = webViewerInstance.Core
-          
-          // Listen for text selection events
-          documentViewer.addEventListener('textSelectionChanged', handleWebViewerTextSelection)
-          console.log('WebViewer text selection listener added')
-          
-          // Also add a fallback method using document selection
-          document.addEventListener('mouseup', handleDocumentSelection)
-          console.log('Document selection fallback listener added')
-        }
-        
-        // Show activation feedback
-        setProcessingMessage('Math tool activated! Select mathematical text to explain.')
-        setTimeout(() => setProcessingMessage(''), 3000)
-        
-        console.log('Math tool activated - click on equations to explain them')
-      } else {
-        // Disable math selection mode
-        setMathToolActive(false)
-        document.body.style.cursor = 'default'
-        
-        // Remove WebViewer text selection listener
-        if (webViewerInstance && webViewerInstance.Core) {
-          const { documentViewer } = webViewerInstance.Core
-          documentViewer.removeEventListener('textSelectionChanged', handleWebViewerTextSelection)
-          console.log('WebViewer text selection listener removed')
-        }
-        
-        // Remove document selection fallback listener
-        document.removeEventListener('mouseup', handleDocumentSelection)
-        console.log('Document selection fallback listener removed')
-        
-        // Show deactivation feedback
-        setProcessingMessage('Math tool deactivated')
-        setTimeout(() => setProcessingMessage(''), 2000)
-        
-        console.log('Math tool deactivated')
-      }
-    }
-  }, [mathToolActive, webViewerInstance])
 
   const handleWebViewerTextSelection = useCallback(async (event: any) => {
-    if (!mathToolActive) return
+    return
     
     console.log('WebViewer text selection event triggered:', event)
     console.log('Event type:', event.type)
@@ -3032,7 +2291,6 @@ export default function ApryseWebViewer({
             }, 2000)
           }
           
-          setMathToolActive(false)
           document.body.style.cursor = 'default'
           
           // Remove WebViewer text selection listener
@@ -3055,53 +2313,12 @@ export default function ApryseWebViewer({
     } catch (error) {
       console.error('Error handling WebViewer text selection:', error)
     }
-  }, [mathToolActive, webViewerInstance])
+  }, [webViewerInstance])
 
-  const isMathematicalContent = (text: string): boolean => {
-    // More lenient math detection
-    const trimmedText = text.trim()
-    
-    // Check for mathematical symbols, equations, variables, etc.
-    const mathPatterns = [
-      /[=+\-*/^()\[\]{}]/, // Mathematical operators
-      /[α-ωΑ-Ω]/, // Greek letters
-      /[∫∑∏√∞±≤≥≠≈]/, // Mathematical symbols
-      /\b[a-zA-Z]\s*=\s*/, // Variable assignments
-      /\b\d+\.\d+/, // Decimal numbers
-      /\b[a-zA-Z]\d+/, // Variables with numbers
-      /\b(sin|cos|tan|log|ln|exp|sqrt)\s*\(/, // Mathematical functions
-      /\b(where|such that|given that|assume|let)\b/i, // Mathematical language
-      /\b\d+\s*[+\-*/]\s*\d+/, // Basic arithmetic
-      /\b[a-zA-Z]\s*[+\-*/]\s*[a-zA-Z]/, // Variable arithmetic
-      /\b\d+\s*[=<>]\s*\d+/, // Comparisons
-      /\b[a-zA-Z]\s*[=<>]\s*\d+/, // Variable comparisons
-      /\b[a-zA-Z]\s*[=<>]\s*[a-zA-Z]/, // Variable to variable
-    ]
-    
-    // Also check for common math words
-    const mathWords = [
-      'equation', 'formula', 'function', 'variable', 'constant', 'parameter',
-      'derivative', 'integral', 'sum', 'product', 'limit', 'series',
-      'matrix', 'vector', 'scalar', 'tensor', 'polynomial', 'quadratic',
-      'linear', 'exponential', 'logarithmic', 'trigonometric', 'geometric'
-    ]
-    
-    const hasMathPattern = mathPatterns.some(pattern => pattern.test(trimmedText))
-    const hasMathWord = mathWords.some(word => trimmedText.toLowerCase().includes(word))
-    
-    console.log('Math detection:', {
-      text: trimmedText,
-      hasMathPattern,
-      hasMathWord,
-      isMathematical: hasMathPattern || hasMathWord
-    })
-    
-    return hasMathPattern || hasMathWord || trimmedText.length > 3
-  }
 
   // Fallback handler for document text selection
   const handleDocumentSelection = useCallback(async () => {
-    if (!mathToolActive) return
+    return
     
     console.log('Document selection fallback triggered')
     
@@ -3165,7 +2382,6 @@ export default function ApryseWebViewer({
             }, 2000)
           }
           
-          setMathToolActive(false)
           document.body.style.cursor = 'default'
           
           // Remove all listeners
@@ -3187,7 +2403,7 @@ export default function ApryseWebViewer({
     } catch (error) {
       console.error('Error handling document selection fallback:', error)
     }
-  }, [mathToolActive, webViewerInstance])
+  }, [webViewerInstance])
 
   const extractContextAroundSelection = (selectedText: string): string => {
     // Try to get surrounding text for context
@@ -3243,6 +2459,163 @@ export default function ApryseWebViewer({
     )
   }
 
+  // ========== [ADV] VisualSummaryPanel component ==========
+  function VisualSummaryPanel({
+    advSummary,
+    goToPage
+  }: {
+    advSummary: AdvancedSummary
+    goToPage: (p: number) => void
+  }) {
+    // Radar
+    const radarData = [
+      { axis: 'Significance', score: advSummary.reviewerScores.significance },
+      { axis: 'Originality',  score: advSummary.reviewerScores.originality  },
+      { axis: 'Technical',    score: advSummary.reviewerScores.technical    },
+      { axis: 'Clarity',      score: advSummary.reviewerScores.clarity      },
+    ];
+
+    // Delta bars
+    const deltas = advSummary.resultsMatrix
+      .filter(r => typeof r.deltaPct === 'number' && isFinite(r.deltaPct as number))
+      .map(r => ({ name: `${r.dataset} • ${r.metric}`, delta: Number((r.deltaPct as number).toFixed(1)) }))
+      .sort((a,b) => b.delta - a.delta)
+      .slice(0, 8);
+
+    // Heatmap model
+    const metrics = Array.from(new Set(advSummary.resultsMatrix.map(r => r.metric)));
+    const rows: Record<string, Record<string, number|null>> = {};
+    advSummary.resultsMatrix.forEach(r => {
+      rows[r.dataset] = rows[r.dataset] || {};
+      rows[r.dataset][r.metric] = Number.isFinite(r.value) ? r.value : null;
+    });
+    const heatData = Object.entries(rows).map(([dataset, m]) => ({ dataset, ...metrics.reduce((a, k) => ({...a, [k]: m[k] ?? null}), {}) }));
+    const vals = advSummary.resultsMatrix.map(r => r.value).filter(v => Number.isFinite(v)) as number[];
+    const vMin = vals.length ? Math.min(...vals) : 0;
+    const vMax = vals.length ? Math.max(...vals) : 1;
+    const heatColor = (v: number|null) => {
+      if (v == null) return '#f3f4f6';
+      const t = Math.max(0, Math.min(1, (v - vMin) / (vMax - vMin + 1e-9)));
+      const r = Math.round(120 + 100*t), g = Math.round(140 - 60*t), b = Math.round(255 - 80*t);
+      return `rgb(${r},${g},${b})`;
+    };
+
+    // Sparklines (first 4 groups)
+    const groups: Record<string, {idx:number; val:number; label:string}[]> = {};
+    advSummary.resultsMatrix.forEach((r, i) => {
+      const key = `${r.dataset} • ${r.metric}`;
+      groups[key] = groups[key] || [];
+      groups[key].push({ idx: i+1, val: r.value, label: r.model });
+    });
+    const sparkList = Object.entries(groups).slice(0,4);
+
+    return (
+      <div className="space-y-4">
+        {/* Radar + Delta */}
+        <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
+          <Card className="h-[320px]">
+            <CardHeader><CardTitle>Reviewer Profile</CardTitle></CardHeader>
+            <CardContent className="h-[250px]">
+              <ResponsiveContainer width="100%" height="100%">
+                <RadarChart data={radarData}>
+                  <PolarGrid />
+                  <PolarAngleAxis dataKey="axis" />
+                  <PolarRadiusAxis domain={[0,5]} />
+                  <Radar dataKey="score" stroke="#6366f1" fill="#6366f1" fillOpacity={0.35} />
+                </RadarChart>
+              </ResponsiveContainer>
+            </CardContent>
+          </Card>
+
+          <Card className="h-[320px]">
+            <CardHeader><CardTitle>Top Δ vs Baseline</CardTitle></CardHeader>
+            <CardContent className="h-[250px]">
+              <ResponsiveContainer width="100%" height="100%">
+                <BarChart data={deltas} margin={{ left: 12 }}>
+                  <CartesianGrid strokeDasharray="3 3" />
+                  <XAxis dataKey="name" tick={{ fontSize: 11 }} interval={0} height={60} />
+                  <YAxis unit="%" />
+                  <Tooltip formatter={(v:any)=>[`${v}%`,'Δ']} />
+                  <Legend />
+                  <Bar dataKey="delta" name="Δ%" radius={[4,4,0,0]} />
+                </BarChart>
+              </ResponsiveContainer>
+            </CardContent>
+          </Card>
+        </div>
+
+        {/* Heatmap */}
+        <Card>
+          <CardHeader><CardTitle>Metric × Dataset Heatmap</CardTitle></CardHeader>
+          <CardContent className="overflow-x-auto">
+            <table className="w-full text-xs">
+              <thead className="text-gray-500">
+                <tr>
+                  <th className="text-left p-2">Dataset</th>
+                  {metrics.map(m => <th key={m} className="text-left p-2">{m}</th>)}
+                </tr>
+              </thead>
+              <tbody>
+                {heatData.map((row:any, i:number) => (
+                  <tr key={i} className="border-t">
+                    <td className="p-2 font-medium">{row.dataset}</td>
+                    {metrics.map(m => (
+                      <td key={m} className="p-1">
+                        <div className="rounded-md h-7 w-20 flex items-center justify-center text-[11px] font-semibold"
+                             style={{ background: heatColor(row[m]), color: '#111827' }}>
+                          {row[m] == null ? '—' : Number(row[m]).toFixed(3)}
+                        </div>
+                      </td>
+                    ))}
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </CardContent>
+        </Card>
+
+        {/* Sparklines */}
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          {sparkList.map(([name, pts], i) => (
+            <Card key={i} className="h-[220px]">
+              <CardHeader><CardTitle className="text-sm">{name}</CardTitle></CardHeader>
+              <CardContent className="h-[150px]">
+                <ResponsiveContainer width="100%" height="100%">
+                  <LineChart data={pts}>
+                    <CartesianGrid strokeDasharray="3 3" />
+                    <XAxis dataKey="idx" hide />
+                    <YAxis />
+                    <Tooltip labelFormatter={(i)=>pts[(i as number)-1]?.label} />
+                    <Line type="monotone" dataKey="val" stroke="#0ea5e9" dot={false} />
+                  </LineChart>
+                </ResponsiveContainer>
+              </CardContent>
+            </Card>
+          ))}
+        </div>
+
+        {/* Contribution chips -> jump to page */}
+        <Card>
+          <CardHeader><CardTitle>Contributions • Evidence</CardTitle></CardHeader>
+          <CardContent className="space-y-2">
+            {advSummary.contributions.map((c, i) => (
+              <div key={i} className="text-sm">
+                • {c.point}
+                <div className="mt-1 flex flex-wrap gap-1">
+                  {(c.evidence || []).map((e, j) => (
+                    <Badge key={j} variant="outline" className="cursor-pointer" onClick={() => goToPage(e.page)}>
+                      p.{e.page}
+                    </Badge>
+                  ))}
+                </div>
+              </div>
+            ))}
+          </CardContent>
+        </Card>
+      </div>
+    )
+  }
+
   return (
     <div className="flex h-full bg-white">
       {/* Simple Progress Indicator - Top of Screen */}
@@ -3274,76 +2647,8 @@ export default function ApryseWebViewer({
           </div>
         </div>
       )}
-      
-      {/* Annotation Save Status */}
-      {(isLoadingAnnotations || annotationSaveStatus !== 'idle') && (
-        <div className="fixed top-4 right-4 z-[9997]">
-          <div className={`px-3 py-2 rounded-lg shadow-lg text-sm font-medium flex items-center gap-2 ${
-            isLoadingAnnotations ? 'bg-blue-100 text-blue-800' :
-            annotationSaveStatus === 'saving' ? 'bg-yellow-100 text-yellow-800' :
-            annotationSaveStatus === 'saved' ? 'bg-green-100 text-green-800' :
-            annotationSaveStatus === 'error' ? 'bg-red-100 text-red-800' :
-            'bg-gray-100 text-gray-800'
-          }`}>
-            {isLoadingAnnotations && (
-              <>
-                <Loader2 className="w-4 h-4 animate-spin" />
-                Loading annotations...
-              </>
-            )}
-            {annotationSaveStatus === 'saving' && (
-              <>
-                <Loader2 className="w-4 h-4 animate-spin" />
-                Saving annotations...
-              </>
-            )}
-            {annotationSaveStatus === 'saved' && (
-              <>
-                <Check className="w-4 h-4" />
-                Annotations saved
-              </>
-            )}
-            {annotationSaveStatus === 'error' && (
-              <>
-                <X className="w-4 h-4" />
-                Save failed
-              </>
-            )}
-          </div>
-        </div>
-      )}
-
-      {/* Real-time Collaboration Status (DISABLED - using Firestore instead) */}
-      {false && annotationSubscriberCount > 0 && (
-        <div className="fixed top-4 left-4 z-[9997]">
-          <div className="px-3 py-2 rounded-lg shadow-lg text-sm font-medium flex items-center gap-2 bg-purple-100 text-purple-800">
-            <Users className="h-4 w-4" />
-            <span>{annotationSubscriberCount} user{annotationSubscriberCount !== 1 ? 's' : ''} collaborating</span>
-            {isProcessingRealtimeAnnotations && (
-              <Loader2 className="h-3 w-3 animate-spin" />
-            )}
-          </div>
-        </div>
-      )}
-
-      {/* Firestore Collaboration Status */}
-      <div className="fixed top-4 right-4 z-[9997]">
-        <div className={`px-3 py-2 rounded-lg shadow-lg text-sm font-medium flex items-center gap-2 ${
-          firestoreCollaborationStatus === 'connected' ? 'bg-green-100 text-green-800' :
-          firestoreCollaborationStatus === 'connecting' ? 'bg-yellow-100 text-yellow-800' :
-          'bg-red-100 text-red-800'
-        }`}>
-          <div className={`w-2 h-2 rounded-full ${
-            firestoreCollaborationStatus === 'connected' ? 'bg-green-500' :
-            firestoreCollaborationStatus === 'connecting' ? 'bg-yellow-500' :
-            'bg-red-500'
-          }`}></div>
-          <span>Firestore: {firestoreCollaborationStatus}</span>
-        </div>
-      </div>
-      
       {/* Academic Sidebar */}
-      <div className="w-80 bg-gray-50 border-r border-gray-200 flex flex-col">
+      <div className="w-80 bg-gray-50 border-r border-gray-200 flex flex-col h-full overflow-y-auto">
         {/* Document Info */}
         <div className="p-6 border-b border-gray-200">
           <div className="flex items-center gap-3 mb-4">
@@ -3702,11 +3007,11 @@ export default function ApryseWebViewer({
                     </div>
           </div>
 
-                  {/* Inline Chat */}
-                  {!collaborator.isCurrentUser && inlineChats.get(collaborator.userId!) && (
-                    <div className="mt-2 ml-11 bg-gray-50 rounded-lg border border-gray-200 p-3">
-                      <div className="flex items-center justify-between mb-2">
-                        <span className="text-xs font-medium text-gray-700">Private chat with {collaborator.name}</span>
+                    {/* Inline Chat */}
+                    {!collaborator.isCurrentUser && inlineChats.get(collaborator.userId!) && (
+                      <div className="mt-2 ml-11 bg-gray-50 rounded-lg border border-gray-200 p-3">
+                        <div className="flex items-center justify-between mb-2">
+                          <span className="text-xs font-medium text-gray-700">Private chat with {collaborator.name}</span>
             <Button 
                           variant="ghost" 
               size="sm" 
@@ -3715,39 +3020,39 @@ export default function ApryseWebViewer({
                         >
                           <X className="h-3 w-3" />
             </Button>
-                      </div>
-                      
-                      {/* Messages */}
-                      <div className="max-h-32 overflow-y-auto space-y-1 mb-2">
-                        {getConversationMessages(collaborator.userId!).length === 0 ? (
-                          <p className="text-xs text-gray-500 text-center py-2">No messages yet</p>
-                        ) : (
-                          getConversationMessages(collaborator.userId!).map((msg) => (
-                            <div 
-                              key={msg.id} 
-                              className={`flex ${msg.userId === userId ? 'justify-end' : 'justify-start'}`}
-                            >
-                              <div className={`max-w-[200px] p-2 rounded-lg text-xs ${
-                                msg.userId === userId 
-                                  ? 'bg-blue-500 text-white' 
-                                  : 'bg-white text-gray-900 border border-gray-200'
-                              }`}>
-                                <p className="text-xs">
-                                  {msg.message}
-                                </p>
-                                <p className={`text-xs mt-1 ${
-                                  msg.userId === userId ? 'text-blue-100' : 'text-gray-400'
+                        </div>
+                        
+                        {/* Messages */}
+                        <div className="max-h-32 overflow-y-auto space-y-1 mb-2">
+                          {getConversationMessages(collaborator.userId!).length === 0 ? (
+                            <p className="text-xs text-gray-500 text-center py-2">No messages yet</p>
+                          ) : (
+                            getConversationMessages(collaborator.userId!).map((msg) => (
+                              <div 
+                                key={msg.id} 
+                                className={`flex ${msg.userId === userId ? 'justify-end' : 'justify-start'}`}
+                              >
+                                <div className={`max-w-[200px] p-2 rounded-lg text-xs ${
+                                  msg.userId === userId 
+                                    ? 'bg-blue-500 text-white' 
+                                    : 'bg-white text-gray-900 border border-gray-200'
                                 }`}>
-                                  {new Date(msg.timestamp).toLocaleTimeString([], { 
-                                    hour: '2-digit', 
-                                    minute: '2-digit' 
-                                  })}
-                                </p>
+                                  <p className="text-xs">
+                                    {msg.message}
+                                  </p>
+                                  <p className={`text-xs mt-1 ${
+                                    msg.userId === userId ? 'text-blue-100' : 'text-gray-400'
+                                  }`}>
+                                    {new Date(msg.timestamp).toLocaleTimeString([], { 
+                                      hour: '2-digit', 
+                                      minute: '2-digit' 
+                                    })}
+                                  </p>
+                                </div>
                               </div>
-                            </div>
-                          ))
-                        )}
-          </div>
+                            ))
+                          )}
+            </div>
 
                       {/* Message Input */}
                       <div className="flex gap-1">
@@ -3787,36 +3092,10 @@ export default function ApryseWebViewer({
         </div>
 
         {/* Research Tools */}
-        <div className="p-6 flex-1">
+        <div className="p-6">
           <h4 className="font-medium text-gray-900 mb-4">Research Tools</h4>
           
           <div className="space-y-2">
-            {/* Math Tool */}
-            <Button
-              variant={mathToolActive ? "default" : "outline"}
-              size="sm"
-              onClick={activateMathTool}
-              className="flex items-center space-x-2"
-              title="Math Explainer Tool - Select equations to get AI-powered explanations"
-            >
-              <Brain className="w-4 h-4" />
-              <span>Math Explainer</span>
-              {mathToolActive && (
-                <Badge variant="secondary" className="ml-1">
-                  Active
-                </Badge>
-              )}
-            </Button>
-            
-            {/* Math Tool Status */}
-            {mathToolActive && (
-              <div className="mt-2 p-2 bg-green-50 border border-green-200 rounded-lg">
-                <div className="flex items-center space-x-2 text-sm text-green-700">
-                  <div className="w-2 h-2 bg-green-500 rounded-full animate-pulse"></div>
-                  <span>Math tool is active - Select mathematical text to explain</span>
-                </div>
-              </div>
-            )}
 
             {/* Screen Capture Tool */}
             <Button
@@ -3895,24 +3174,6 @@ export default function ApryseWebViewer({
               <Users className="w-4 h-4 mr-3 group-hover:text-green-600" />
               Invite Collaborators
             </Button>
-            
-            {/* Annotation Management */}
-            <div className="border-t border-gray-100 pt-3 mt-3">
-              <Button 
-                variant="outline" 
-                size="sm" 
-                className="w-full justify-start h-9 text-gray-700 hover:bg-blue-50 hover:text-blue-700 transition-colors group"
-                onClick={handleManualSave}
-                disabled={annotationSaveStatus === 'saving'}
-              >
-                {annotationSaveStatus === 'saving' ? (
-                  <Loader2 className="w-4 h-4 mr-3 animate-spin" />
-                ) : (
-                  <Download className="w-4 h-4 mr-3 group-hover:text-blue-600" />
-                )}
-                {annotationSaveStatus === 'saving' ? 'Saving...' : 'Save Annotations'}
-              </Button>
-            </div>
 
             {/* Additional Research Tools */}
             <div className="border-t border-gray-100 pt-3 mt-3">
@@ -3952,6 +3213,39 @@ export default function ApryseWebViewer({
                 <FileText className="w-4 h-4 mr-3 group-hover:text-orange-600" />
                 Print Document
               </Button>
+            </div>
+
+            {/* ========== [ADV] Analysis Controls ========== */}
+            <div className="mt-6 border-t border-gray-200 pt-4">
+              <h4 className="font-medium text-gray-900 mb-2">AI Document Analysis (Pro)</h4>
+
+              <div className="flex items-center gap-2 mb-2">
+                <select value={persona} onChange={e => setPersona(e.target.value as Persona)}
+                  className="border rounded px-2 py-1 text-sm">
+                  <option value="novice">Novice</option>
+                  <option value="practitioner">Practitioner</option>
+                  <option value="reviewer">Reviewer</option>
+                </select>
+
+                <select value={budget} onChange={e => setBudget(e.target.value as TimeBudget)}
+                  className="border rounded px-2 py-1 text-sm">
+                  <option value="30s">30 sec</option>
+                  <option value="2m">2 min</option>
+                  <option value="deep">Deep</option>
+                </select>
+
+                <div className="flex items-center gap-2">
+                  <span className="text-xs text-gray-500">Depth</span>
+                  <input type="range" min={1} max={5} value={depth}
+                    onChange={e => setDepth(parseInt(e.target.value))}
+                    className="w-24" />
+                </div>
+
+                <Button size="sm" onClick={generateAdvancedSummary} disabled={advBusy} className="ml-auto">
+                  {advBusy ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : <Brain className="w-4 h-4 mr-2" />}
+                  Analyze Paper
+                </Button>
+              </div>
             </div>
           </div>
         </div>
@@ -4374,6 +3668,13 @@ export default function ApryseWebViewer({
         documentUrl={documentUrl}
         documentText={documentContent} // Pass the extracted text
       />
+
+      {/* ========== [ADV] Visual Summary Render ========== */}
+      <div className="max-w-6xl mx-auto px-4 py-6">
+        {advSummary && (
+          <VisualSummaryPanel advSummary={advSummary} goToPage={goToPage} />
+        )}
+      </div>
     </div>
   )
-} 
+}

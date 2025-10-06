@@ -23,6 +23,33 @@ export default function JoinDocumentPage() {
   const searchParams = useSearchParams()
   const documentId = searchParams.get('id')
   const [documentTitle, setDocumentTitle] = useState('Research Document')
+  
+  // Extract state parameters from URL
+  const stateParams = {
+    page: searchParams.get('page'),
+    zoom: searchParams.get('zoom'),
+    fitMode: searchParams.get('fitMode'),
+    rotation: searchParams.get('rotation'),
+    scrollX: searchParams.get('scrollX'),
+    scrollY: searchParams.get('scrollY')
+  }
+  
+  // Create document URL with state parameters
+  const getDocumentUrlWithState = () => {
+    if (!documentId) return `/document/${documentId}`
+    
+    const params = new URLSearchParams()
+    
+    // Add state parameters if they exist
+    Object.entries(stateParams).forEach(([key, value]) => {
+      if (value) {
+        params.set(key, value)
+      }
+    })
+    
+    const queryString = params.toString()
+    return queryString ? `/document/${documentId}?${queryString}` : `/document/${documentId}`
+  }
 
   useEffect(() => {
     // Try to get document title if documentId is available
@@ -85,6 +112,11 @@ export default function JoinDocumentPage() {
               <div className="inline-flex items-center space-x-2 bg-blue-100 rounded-full px-4 py-2">
                 <Share2 className="w-4 h-4 text-blue-600" />
                 <span className="text-sm font-medium text-blue-600">Shared Document</span>
+                {Object.values(stateParams).some(param => param) && (
+                  <span className="text-xs bg-green-100 text-green-700 px-2 py-1 rounded-full">
+                    With State
+                  </span>
+                )}
               </div>
               <h1 className="text-4xl font-bold text-gray-900 leading-tight">
                 Join the Discussion on
@@ -157,7 +189,7 @@ export default function JoinDocumentPage() {
               </CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
-              <Link href={`/auth/signup?redirect=/document/${documentId}`}>
+              <Link href={`/auth/signup?redirect=${encodeURIComponent(getDocumentUrlWithState())}`}>
                 <Button className="w-full bg-blue-600 hover:bg-blue-700 text-white h-12 text-lg font-semibold shadow-lg hover:shadow-xl transition-all duration-300">
                   <Sparkles className="w-5 h-5 mr-2" />
                   Create Free Account
@@ -174,7 +206,7 @@ export default function JoinDocumentPage() {
                 </div>
               </div>
 
-              <Link href={`/auth/login?redirect=/document/${documentId}`}>
+              <Link href={`/auth/login?redirect=${encodeURIComponent(getDocumentUrlWithState())}`}>
                 <Button variant="outline" className="w-full h-12 text-lg font-semibold border-2 border-gray-300 hover:border-blue-500 hover:bg-blue-50 transition-all duration-300">
                   <Users className="w-5 h-5 mr-2" />
                   Sign In to Existing Account

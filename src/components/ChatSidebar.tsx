@@ -282,11 +282,11 @@ export default function ChatSidebar({ documentId, currentUser, isOpen, onClose, 
     
     if (userId === currentUser.id) {
       return (
-        <div 
+        <div
           className="w-7 h-7 rounded-full flex items-center justify-center text-white text-sm font-medium flex-shrink-0"
           style={{ backgroundColor: currentUser.color }}
         >
-          {currentUser.name.charAt(0).toUpperCase()}
+          {(currentUser.name || 'A').charAt(0).toUpperCase()}
         </div>
       )
     }

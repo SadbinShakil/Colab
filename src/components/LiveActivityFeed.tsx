@@ -17,7 +17,8 @@ import {
   Clock,
   Eye,
   Star,
-  Zap
+  Zap,
+  ExternalLink
 } from 'lucide-react'
 
 interface ActivityItem {

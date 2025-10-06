@@ -24,6 +24,7 @@ model User {
   // Relationships
   papers            Paper[]
   annotations       Annotation[]
+  annotationLayers  AnnotationLayer[]
   comments          Comment[]
   reactions         Reaction[]
   notes             QuickNote[]
@@ -45,12 +46,13 @@ model Paper {
   tags        String? // JSON string for academic tags
 
   // Relationships
-  uploader     User           @relation(fields: [uploadedBy], references: [id])
-  annotations  Annotation[]
-  quickNotes   QuickNote[]
-  chatMessages ChatMessage[]
-  stuckHelps   StuckHelp[]
-  summaries    AISummary[]
+  uploader         User              @relation(fields: [uploadedBy], references: [id])
+  annotations      Annotation[]
+  annotationLayers AnnotationLayer[]
+  quickNotes       QuickNote[]
+  chatMessages     ChatMessage[]
+  stuckHelps       StuckHelp[]
+  summaries        AISummary[]
 
   @@map("papers")
 }
@@ -198,6 +200,24 @@ model AISummary {
 
   @@unique([paperId, section])
   @@map("ai_summaries")
+}
+
+model AnnotationLayer {
+  id          String   @id @default(cuid())
+  documentId  String   // Maps to Paper.id
+  userId      String?  // Nullable for global layers
+  xfdf        String   // XFDF content as text
+  version     Int      @default(1)
+  isGlobal    Boolean  @default(false)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  // Relationships
+  document    Paper    @relation(fields: [documentId], references: [id], onDelete: Cascade)
+  user        User?    @relation(fields: [userId], references: [id])
+
+  @@unique([documentId, userId]) // One layer per user per document
+  @@map("annotation_layers")
 }
 
 // Enums

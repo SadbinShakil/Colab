@@ -23,7 +23,8 @@ import {
   Send,
   Bot,
   Users,
-  Lightbulb
+  Lightbulb,
+  ExternalLink
 } from 'lucide-react'
 
 interface StuckHelp {
