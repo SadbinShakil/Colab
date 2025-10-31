@@ -288,7 +288,12 @@ export default function DocumentViewer({ params }: { params: Promise<{ id: strin
         
         if (response.ok) {
           const result = await response.json()
-          setDocument(result.document)
+          const document = result.document
+          // Add "Check: " prefix to the title if it's not already there
+          if (document.title && !document.title.startsWith('Check: ')) {
+            document.title = `Check: ${document.title}`
+          }
+          setDocument(document)
           // Try to parse summary as JSON
           if (result.document.summary) {
             try {
@@ -362,7 +367,7 @@ export default function DocumentViewer({ params }: { params: Promise<{ id: strin
           // Try to find the actual file in uploads directory by looking for files that start with the documentId
           const mockDocument: Document = {
             id: documentId,
-            title: 'Research Document',
+            title: `Check: document-${documentId}.pdf`,
             authors: 'Document Authors',
             journal: 'Academic Journal',
             year: '2024',
@@ -393,7 +398,7 @@ export default function DocumentViewer({ params }: { params: Promise<{ id: strin
         // Create a basic fallback document
         const fallbackDocument: Document = {
           id: documentId,
-          title: 'Document',
+          title: `Check: ${documentId}.pdf`,
           authors: 'Unknown',
           journal: 'Unknown',
           year: '2024',
@@ -1029,7 +1034,7 @@ Would you like to ask about a specific section or concept?`
   return (
     <div className="h-screen bg-background flex flex-col">
       {/* Header */}
-      <header className="border-b border-gray-200 bg-background/95 backdrop-blur">
+      {/* <header className="border-b border-gray-200 bg-background/95 backdrop-blur">
         <div className="flex items-center justify-between px-6 py-3">
           <div className="flex items-center space-x-4">
             <Button variant="ghost" size="sm" asChild>
@@ -1042,21 +1047,48 @@ Would you like to ask about a specific section or concept?`
               <h1 className="font-semibold text-lg">{document.title}</h1>
               <p className="text-sm text-muted-foreground">{document.authors}</p>
             </div>
-          </div>
+          </div> */}
 
-          <div className="flex items-center space-x-2">
-            {/* Collaboration Status */}
-            <div className="flex items-center space-x-2">
-              <div className="flex items-center space-x-1">
-                {collaboration.isConnected ? (
-                  <Wifi className="h-4 w-4 text-green-500" />
-                ) : (
-                  <WifiOff className="h-4 w-4 text-gray-400" />
-                )}
-                <span className="text-sm text-gray-600">
-                  {collaboration.isConnected ? 'Connected' : 'Connecting...'}
-                </span>
-              </div>
+         {/* Header */}
+{/* Header */}
+<header className="border-b border-gray-200 bg-white">
+  <div className="flex items-center justify-between px-4 py-2">
+    <div className="flex items-center space-x-3 flex-1 min-w-0 max-w-3xl">
+      <Button variant="ghost" size="sm" asChild className="flex-shrink-0">
+        <a href="/dashboard" className="flex items-center text-sm">
+          <ChevronLeft className="h-4 w-4" />
+          <span>Back</span>
+        </a>
+      </Button>
+      
+      <div className="flex items-center space-x-2 min-w-0 pl-3 border-l border-gray-200">
+        <BookOpen className="h-3.5 w-3.5 text-blue-600 flex-shrink-0" />
+        <div className="min-w-0">
+          <div className="font-medium text-xs text-gray-700 truncate" title={document.title.replace(/^Check:\s*/i, '')}>
+            {document.title.replace(/^Check:\s*/i, '')}
+          </div>
+          {document.authors && document.authors !== 'Unknown' && (
+            <div className="text-[10px] text-gray-500 truncate leading-tight">
+              {document.authors}
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+
+    <div className="flex items-center space-x-2">
+      {/* Collaboration Status */}
+      <div className="flex items-center space-x-2">
+        <div className="flex items-center space-x-1">
+          {collaboration.isConnected ? (
+            <Wifi className="h-4 w-4 text-green-500" />
+          ) : (
+            <WifiOff className="h-4 w-4 text-gray-400" />
+          )}
+          <span className="text-xs text-gray-600">
+            {collaboration.isConnected ? 'Connected' : 'Connecting...'}
+          </span>
+        </div>
               {/* Active Users */}
               {collaboration.activeUsers.length > 0 && (
                 <div className="flex items-center space-x-1">
@@ -1207,10 +1239,6 @@ Would you like to ask about a specific section or concept?`
               userId={currentUser?.id || 'guest'}
               onHighlightAdd={collaboration.addHighlight}
               // onAnnotationAdd={collaboration.addAnnotation} // DISABLED - using Firestore instead
-              onBroadcastAnnotationChange={collaboration.broadcastAnnotationChange}
-              onSyncAnnotations={collaboration.syncAnnotations}
-              realtimeAnnotations={[]} // DISABLED - using Firestore instead
-              annotationSubscriberCount={collaboration.annotationSubscriberCount}
               extractedText={extractedText}
             />
           </div>

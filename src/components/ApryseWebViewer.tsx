@@ -1,6 +1,9 @@
 'use client'
 
 import { useEffect, useRef, useState, useCallback } from 'react'
+// import { useRealtimeHighlights } from '@/app/hooks/useRealtimeHighlights'
+import { eyeTracker } from '@/lib/eyeTracking'
+import EyeTrackingCalibration from './EyeTrackingCalibration'
 
 // [ADV] Charts
 import {
@@ -10,12 +13,14 @@ import {
   LineChart, Line, Treemap
 } from 'recharts'
 
+import GazeHeatmap from './GazeHeatmap'
 import { toast } from 'sonner'
 import { contextualAI } from '@/lib/contextualAI'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { Input } from '@/components/ui/input'
+import RealResearchStoryboard from './RealResearchStoryboard'
 import { 
   FileText, 
   Users, 
@@ -32,6 +37,7 @@ import {
   ArrowUp,
   ArrowDown,
   ChevronDown,
+  ChevronRight,
   Copy,
   Mail,
   Link2,
@@ -171,6 +177,10 @@ export default function ApryseWebViewer({
   const [isProcessing, setIsProcessing] = useState(false)
   const [processingMessage, setProcessingMessage] = useState('')
   const [processingProgress, setProcessingProgress] = useState(0)
+
+  const [showStoryboard, setShowStoryboard] = useState(false)
+
+  const [showGazeHeatmap, setShowGazeHeatmap] = useState(false)
   
   // Text selection storage
   const [capturedSelections, setCapturedSelections] = useState<Array<{
@@ -184,6 +194,10 @@ export default function ApryseWebViewer({
   const [selectedText, setSelectedText] = useState('')
   const [selectionPosition, setSelectionPosition] = useState({ x: 0, y: 0 })
   const [mousePosition, setMousePosition] = useState({ x: 0, y: 0 })
+
+
+  const [showEyeCalibration, setShowEyeCalibration] = useState(false)
+  const [eyeTrackingEnabled, setEyeTrackingEnabled] = useState(false)
   
   // General Explainer state
   const [showGeneralExplainer, setShowGeneralExplainer] = useState(false)
@@ -207,6 +221,30 @@ export default function ApryseWebViewer({
   const [showSmartPrerequisiteHelper, setShowSmartPrerequisiteHelper] = useState(false)
   const [showAIResearchPrerequisites, setShowAIResearchPrerequisites] = useState(false)
   
+
+  const [activeTab, setActiveTab] = useState('doc1')
+const [openTabs, setOpenTabs] = useState([
+  { id: 'doc1', title: 'Research Paper.pdf', url: documentUrl, active: true }
+])
+
+
+// // Add Socket.io real-time highlights
+// const {
+//   isConnected,
+//   connectedUsers,
+//   broadcastHighlight,
+//   broadcastHighlightDeletion
+// } = useRealtimeHighlights({
+//   documentId,
+//   userName,
+//   userId,
+//   webViewerInstance,
+//   enabled: true
+// })
+
+
+
+
   // Document metadata state
   const [documentContent, setDocumentContent] = useState('')
   const [documentTitle, setDocumentTitle] = useState('')
@@ -258,6 +296,62 @@ export default function ApryseWebViewer({
       setDocumentContent(extractedText)
     }
   }, [extractedText])
+
+
+
+  // Initialize eye tracking
+// Initialize eye tracking
+useEffect(() => {
+  const initEyeTracking = async () => {
+    const success = await eyeTracker.initialize()
+    if (success) {
+      // Style the webcam video preview
+      setTimeout(() => {
+        const videoElement = document.getElementById('webgazerVideoFeed')
+        if (videoElement) {
+          videoElement.style.position = 'fixed'
+          videoElement.style.bottom = '80px' // Bottom right
+          videoElement.style.right = '20px'
+          videoElement.style.width = '120px' // Smaller
+          videoElement.style.height = '90px'
+          videoElement.style.zIndex = '1000'
+          videoElement.style.borderRadius = '50%' // Circular!
+          videoElement.style.boxShadow = '0 4px 12px rgba(0,0,0,0.2)'
+          videoElement.style.border = '3px solid #10b981'
+          videoElement.style.objectFit = 'cover'
+        }
+      
+        const canvas = document.getElementById('webgazerFaceOverlay')
+        if (canvas) {
+          canvas.style.display = 'none' // Hide the face tracking overlay
+        }
+      
+        const faceBox = document.getElementById('webgazerFaceFeedbackBox')
+        if (faceBox) {
+          faceBox.style.display = 'none'
+        }
+      }, 1000)
+
+      // Show calibration modal after 2 seconds
+      setTimeout(() => {
+        setShowEyeCalibration(true)
+      }, 2000)
+    }
+  }
+  
+  initEyeTracking()
+  
+  return () => {
+    eyeTracker.end()
+  }
+}, [])
+
+// Update eye tracking page when PDF page changes
+useEffect(() => {
+  if (eyeTrackingEnabled) {
+    eyeTracker.updatePage(currentPage)
+  }
+}, [currentPage, eyeTrackingEnabled])
 
   // Join document and track collaborators
   useEffect(() => {
@@ -742,7 +836,8 @@ export default function ApryseWebViewer({
       x: selectionPosition.x + 10, // Position very close to selection
       y: selectionPosition.y - 30,  // Slightly above selection
       text: 'I\'m stuck here',
-      page: currentPage
+      page: currentPage,
+      timestamp: Date.now() // ADD THIS LINE
     }
 
     setStuckMarkers(prev => [...prev, newMarker])
@@ -1530,6 +1625,75 @@ ${documentContent}
         const { documentViewer, annotationManager } = instance.Core;
         setWebViewerInstance(instance);
         
+        // ⭐ Make Apryse comment section scrollable ⭐
+        const addCommentPanelStyles = () => {
+          const style = document.createElement('style');
+          style.textContent = `
+            /* Make Apryse Notes Panel scrollable */
+            .NotesPanel,
+            .notes-panel,
+            [data-element="notesPanel"],
+            .Panel.NotesPanel {
+              overflow-y: auto !important;
+              max-height: calc(100vh - 120px) !important;
+            }
+            
+            /* Make the notes container scrollable */
+            .notes-container,
+            .NotesPanel .container,
+            .note-list,
+            .annotation-list {
+              overflow-y: auto !important;
+              max-height: 100% !important;
+            }
+            
+            /* Custom scrollbar styling */
+            .NotesPanel::-webkit-scrollbar,
+            .notes-container::-webkit-scrollbar,
+            .note-list::-webkit-scrollbar {
+              width: 8px !important;
+            }
+            
+            .NotesPanel::-webkit-scrollbar-track,
+            .notes-container::-webkit-scrollbar-track,
+            .note-list::-webkit-scrollbar-track {
+              background: #f1f1f1 !important;
+              border-radius: 4px !important;
+            }
+            
+            .NotesPanel::-webkit-scrollbar-thumb,
+            .notes-container::-webkit-scrollbar-thumb,
+            .note-list::-webkit-scrollbar-thumb {
+              background: #c1c1c1 !important;
+              border-radius: 4px !important;
+            }
+            
+            .NotesPanel::-webkit-scrollbar-thumb:hover,
+            .notes-container::-webkit-scrollbar-thumb:hover,
+            .note-list::-webkit-scrollbar-thumb:hover {
+              background: #a8a8a8 !important;
+            }
+            
+            /* Individual note items */
+            .Note,
+            .note-wrapper,
+            .annotation-note {
+              margin-bottom: 8px !important;
+            }
+            
+            /* Ensure panel content doesn't overflow */
+            .Panel.NotesPanel > div {
+              overflow-y: auto !important;
+              max-height: 100% !important;
+            }
+          `;
+          document.head.appendChild(style);
+          console.log('✅ Apryse comment panel styles added for scrolling');
+        };
+        
+        // Call the function to apply styles
+        addCommentPanelStyles();
+        
         // Set user information for annotations
         if (annotationManager) {
           annotationManager.setCurrentUser(userName);
@@ -1539,6 +1703,7 @@ ${documentContent}
         annotationManager.addEventListener('annotationChanged', (annotations: any[], action: string, info: any) => {
           if (action === 'add' && info && info.annotation) {
             const annotation = info.annotation;
+            
             
             // Track all annotation types for contextual AI
             const sectionId = `page-${annotation.PageNumber}-section`;
@@ -1600,19 +1765,73 @@ ${documentContent}
                 // Store the highlighted text
                 const selection = {
                   text: highlightedText,
-                  timestamp: new Date().toISOString(),
+                  timestamp: new Date().toISOString(), // ✅ Keep as string
                   pageNumber: annotation.PageNumber,
-                  type: 'highlight',
-                  annotationId: annotation.Id
+                  position: { x: annotation.X || 0, y: annotation.Y || 0 }
                 };
                 
                 setCapturedSelections(prev => {
                   const newSelections = [...prev, selection];
                   console.log('📚 HIGHLIGHT SELECTIONS:', newSelections);
+                  console.log('📊 Total selections now:', newSelections.length);
+                  console.log('🔍 Latest selection details:', {
+                    text: selection.text.substring(0, 50) + '...',
+                    timestamp: selection.timestamp,
+                    pageNumber: selection.pageNumber
+                  });
+                  console.log('✅ NEW SELECTIONS ARRAY:', newSelections); // ✅ Added this
                   return newSelections;
                 });
                 
                 setLastSelectedText(highlightedText);
+                // // 🚀 SOCKET.IO REAL-TIME BROADCAST
+                // console.log('🔥 Broadcasting highlight via Socket.io');
+
+                // const highlightData = {
+                //   documentId,
+                //   pageNumber: annotation.PageNumber,
+                //   quads: annotation.getQuads ? annotation.getQuads() : [],
+                //   color: annotation.Color ? `rgb(${annotation.Color.R}, ${annotation.Color.G}, ${annotation.Color.B})` : '#ffeb3b',
+                //   contents: highlightedText,
+                //   position: {
+                //     x: annotation.X || 0,
+                //     y: annotation.Y || 0
+                //   }
+                // }
+
+                // broadcastHighlight(highlightData);
+
+                // 🤝 BROADCAST TO OTHER USERS - SIMPLIFIED
+                console.log('🔥 BROADCAST CODE REACHED!'); // This MUST show if code runs
+                console.log('🔥 documentId:', documentId);
+                console.log('🔥 userId:', userId);
+                console.log('🔥 userName:', userName);
+
+                fetch('/api/socket', {
+                  method: 'POST',
+                  headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify({
+                    action: 'broadcast-annotation',
+                    documentId,
+                    userId,
+                    userName,
+                    annotationData: {
+                      id: annotation.Id,
+                      type: annotation.Subject,
+                      pageNumber: annotation.PageNumber,
+                      x: annotation.X || 0,
+                      y: annotation.Y || 0,
+                      width: annotation.Width || 0,
+                      height: annotation.Height || 0,
+                      color: annotation.Color ? `rgb(${annotation.Color.R}, ${annotation.Color.G}, ${annotation.Color.B})` : '#ffff00',
+                      text: highlightedText,
+                      timestamp: new Date().toISOString()
+                    }
+                  })
+                })
+                .then(r => r.json())
+                .then(result => console.log('📡 Broadcast result:', result))
+                .catch(error => console.error('❌ Broadcast error:', error));
                 
                 // Show popup with highlighted text
                 if (highlightedText.trim()) {
@@ -1622,7 +1841,7 @@ ${documentContent}
                   console.log('🎯 Popup shown for highlighted text:', highlightedText);
                   
                   // Track highlighting behavior for contextual AI
-                  const sectionId = `page-${annotation.PageNumber}-section`; // Simple section ID based on page
+                  const sectionId = `page-${annotation.PageNumber}-section`;
                   const location = { 
                     page: annotation.PageNumber, 
                     x: annotation.X || 0, 
@@ -1696,6 +1915,7 @@ ${documentContent}
         documentViewer.addEventListener('documentLoaded', () => {
           documentViewer.setFitMode(documentViewer.FitMode.FitWidth);
           setIsLoading(false);
+          setTotalPages(documentViewer.getPageCount());
           // Extract document metadata after the document loads
           setTimeout(() => {
             extractDocumentMetadata()
@@ -1705,66 +1925,74 @@ ${documentContent}
           console.log('Setting up text selection capture...');
           
           // Function to capture and store selected text
+          // Function to capture and store selected text
           const captureSelectedText = (text: string, pageNum?: number) => {
             if (!text || !text.trim()) return;
             
             const trimmedText = text.trim();
-            console.log('📝 CAPTURED TEXT:', trimmedText);
+            console.log('🔍 CAPTURED TEXT:', trimmedText);
             
             // Store the text with timestamp
             const selection = {
               text: trimmedText,
               timestamp: new Date().toISOString(),
-              pageNumber: pageNum,
+              pageNumber: pageNum || currentPage,
               position: { x: 0, y: 0 }
             };
             
-            // Add to captured selections array
+            // Add to captured selections array - DIRECTLY UPDATE STATE
             setCapturedSelections(prev => {
               const newSelections = [...prev, selection];
-              console.log('📚 ALL CAPTURED SELECTIONS:', newSelections);
+              console.log('✅ ADDED TO SELECTIONS:', newSelections.length);
               return newSelections;
             });
             
-            // Update last selected text
             setLastSelectedText(trimmedText);
             console.log('✅ Text captured and stored successfully!');
           };
-          
-          // Track mouse position for popup positioning
-          const handleMouseMove = (event: MouseEvent) => {
-            setMousePosition({ x: event.clientX, y: event.clientY });
-          };
-          document.addEventListener('mousemove', handleMouseMove);
+            
+            // Track mouse position for popup positioning
+            const handleMouseMove = (event: MouseEvent) => {
+              setMousePosition({ x: event.clientX, y: event.clientY });
+            };
+            document.addEventListener('mousemove', handleMouseMove);
 
           // Method 1: Apryse text selection event
           try {
             documentViewer.addEventListener('textSelectionChanged', (quads: any, text: string, pageNumber: number) => {
-              console.log('🎯 Apryse text selection event:', { text, pageNumber, quads });
+              console.log('🎯 TEXT SELECTED:', text);
+              
               if (text && text.trim()) {
-                captureSelectedText(text, pageNumber);
-                
-                // Show text selection popup for all text selections
                 const trimmedText = text.trim();
-                if (trimmedText.length > 0) {
-                  // Use current mouse position for popup
-                  console.log('🎯 Setting popup state:', { 
-                    selectedText: trimmedText, 
-                    position: { x: mousePosition.x, y: mousePosition.y },
-                    showPopup: true 
-                  });
-                  setSelectedText(trimmedText);
-                  setSelectionPosition({ x: mousePosition.x, y: mousePosition.y });
-                  setShowTextSelectionPopup(true);
-                  console.log('🎯 Text selection popup shown for:', trimmedText);
-                }
+                
+                // Create selection object
+                const selection = {
+                  text: trimmedText,
+                  timestamp: new Date().toISOString(),
+                  pageNumber: pageNumber || currentPage,
+                  position: { x: 0, y: 0 }
+                };
+                
+                // Save to state - ONLY ONCE
+                setCapturedSelections(prev => {
+                  const updated = [...prev, selection];
+                  console.log('✅ CAPTURED! Total:', updated.length);
+                  console.log('✅ Latest:', selection.text.substring(0, 50));
+                  return updated;
+                });
+                
+                // Show popup
+                setSelectedText(trimmedText);
+                setSelectionPosition({ x: mousePosition.x, y: mousePosition.y });
+                setShowTextSelectionPopup(true);
+                
               } else {
-                console.log('🎯 Text selection event but no text:', text);
+                console.log('❌ No text in selection');
               }
             });
-            console.log('✅ Apryse text selection listener added');
+            console.log('✅ Apryse listener added');
           } catch (error) {
-            console.log('❌ Error adding Apryse listener:', error);
+            console.log('❌ Apryse listener error:', error);
           }
 
           // Method 2: Fallback - Document selection events
@@ -1772,13 +2000,11 @@ ${documentContent}
             const selection = window.getSelection();
             if (selection && selection.toString().trim()) {
               const selectedText = selection.toString().trim();
-              console.log('🎯 Document selection fallback:', selectedText);
-              if (selectedText.length > 0) {
-                setSelectedText(selectedText);
-                setSelectionPosition({ x: mousePosition.x, y: mousePosition.y });
-                setShowTextSelectionPopup(true);
-                console.log('🎯 Text selection popup shown via fallback:', selectedText);
-              }
+              console.log('🎯 Fallback selection:', selectedText);
+              
+              setSelectedText(selectedText);
+              setSelectionPosition({ x: mousePosition.x, y: mousePosition.y });
+              setShowTextSelectionPopup(true);
             }
           };
 
@@ -2081,6 +2307,83 @@ ${documentContent}
     })
   }, [documentUrl, userName, userId]);
 
+
+  // Real-time annotation sync - Listen for other users' highlights
+useEffect(() => {
+  if (!webViewerInstance || !documentId || !userId) return
+
+  console.log('🔄 Starting real-time annotation sync...')
+
+  const syncAnnotations = async () => {
+    try {
+      const response = await fetch('/api/socket', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          action: 'get-annotations',
+          documentId,
+          userId
+        })
+      })
+      
+      if (response.ok) {
+        const data = await response.json()
+        if (data.success && data.annotations && data.annotations.length > 0) {
+          const { annotationManager, Annotations } = webViewerInstance.Core
+          
+          data.annotations.forEach((annot: any) => {
+            // Skip your own annotations
+            if (annot.userId === userId) return
+            
+            // Check if annotation already exists
+            const existing = annotationManager.getAnnotationById(annot.id)
+            if (!existing) {
+              // Add other users' annotations
+              const highlight = new Annotations.HighlightAnnotation()
+              highlight.Id = annot.id
+              highlight.PageNumber = annot.pageNumber
+              highlight.X = annot.x
+              highlight.Y = annot.y
+              highlight.Width = annot.width
+              highlight.Height = annot.height
+              
+              // Parse color
+              const colorMatch = annot.color?.match(/rgb\((\d+),\s*(\d+),\s*(\d+)\)/)
+              if (colorMatch) {
+                highlight.StrokeColor = new Annotations.Color(
+                  parseInt(colorMatch[1]),
+                  parseInt(colorMatch[2]),
+                  parseInt(colorMatch[3])
+                )
+              } else {
+                highlight.StrokeColor = new Annotations.Color(255, 255, 0) // Yellow default
+              }
+              
+              highlight.Author = annot.userName
+              highlight.Contents = annot.text
+              
+              annotationManager.addAnnotation(highlight, { imported: true })
+              annotationManager.redrawAnnotation(highlight)
+              
+              console.log('✅ Added collaborator annotation from', annot.userName)
+            }
+          })
+        }
+      }
+    } catch (error) {
+      console.error('Failed to sync annotations:', error)
+    }
+  }
+
+  // Initial sync
+  syncAnnotations()
+  
+  // Poll every 3 seconds
+  const interval = setInterval(syncAnnotations, 3000)
+
+  return () => clearInterval(interval)
+}, [webViewerInstance, documentId, userId])
+
   // Add global keyboard listener for deleting highlights
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -2211,8 +2514,7 @@ ${documentContent}
 
 
   const handleWebViewerTextSelection = useCallback(async (event: any) => {
-    return
-    
+    // return 
     console.log('WebViewer text selection event triggered:', event)
     console.log('Event type:', event.type)
     console.log('Event detail:', event.detail)
@@ -2318,10 +2620,9 @@ ${documentContent}
 
   // Fallback handler for document text selection
   const handleDocumentSelection = useCallback(async () => {
-    return
-    
+    // return
     console.log('Document selection fallback triggered')
-    
+          
     try {
       // Get selected text from document
       const selection = window.getSelection()
@@ -2422,6 +2723,67 @@ ${documentContent}
     
     return 'Mathematical content selected from document'
   }
+  const addNewTab = (title: string, url: string) => {
+    const newTab = {
+      id: `doc${Date.now()}`,
+      title,
+      url,
+      active: true
+    }
+    setOpenTabs(prev => prev.map(tab => ({ ...tab, active: false })).concat(newTab))
+    setActiveTab(newTab.id)
+    
+    // Load the new document in WebViewer
+    if (webViewerInstance && webViewerInstance.loadDocument) {
+      webViewerInstance.loadDocument(url)
+    }
+  }
+
+  const handleCopyCollaborationLink = async () => {
+    const collabUrl = `${window.location.origin}/document/${documentId}?collab=true`
+    
+    try {
+      await navigator.clipboard.writeText(collabUrl)
+      toast.success('Collaboration link copied! Share it to collaborate in real-time.')
+      setCopied(true)
+      setTimeout(() => setCopied(false), 2000)
+    } catch (error) {
+      console.error('Error copying link:', error)
+      toast.error('Failed to copy link')
+    }
+  }
+  
+  const closeTab = (tabId: string) => {
+    setOpenTabs(prev => {
+      const filtered = prev.filter(tab => tab.id !== tabId)
+      if (filtered.length > 0 && activeTab === tabId) {
+        filtered[0].active = true
+        setActiveTab(filtered[0].id)
+        // Load the active tab's document
+        const activeTabData = filtered[0]
+        if (webViewerInstance && webViewerInstance.loadDocument) {
+          webViewerInstance.loadDocument(activeTabData.url)
+        }
+      }
+      return filtered
+    })
+  }
+  
+  const switchTab = (tabId: string) => {
+    setOpenTabs(prev => prev.map(tab => ({ 
+      ...tab, 
+      active: tab.id === tabId 
+    })))
+    setActiveTab(tabId)
+    
+    // Load the selected tab's document
+    const selectedTab = openTabs.find(tab => tab.id === tabId)
+    if (selectedTab && webViewerInstance && webViewerInstance.loadDocument) {
+      webViewerInstance.loadDocument(selectedTab.url)
+    }
+  }
+
+
 
   if (error) {
     return (
@@ -2648,632 +3010,628 @@ ${documentContent}
         </div>
       )}
       {/* Academic Sidebar */}
-      <div className="w-80 bg-gray-50 border-r border-gray-200 flex flex-col h-full overflow-y-auto">
-        {/* Document Info */}
-        <div className="p-6 border-b border-gray-200">
-          <div className="flex items-center gap-3 mb-4">
-            <div className="w-10 h-10 bg-blue-100 rounded-lg flex items-center justify-center">
-              <FileText className="w-5 h-5 text-blue-600" />
-            </div>
-            <div className="flex-1 flex items-center">
-              <h3 className="font-semibold text-gray-900 truncate mr-2">Research Paper</h3>
-              {/* Plus button for replacing PDF */}
-              <input
-                ref={fileInputRef}
-                type="file"
-                accept="application/pdf"
-                style={{ display: 'none' }}
-                onChange={async e => {
-                  if (e.target.files && e.target.files[0]) {
-                    const file = e.target.files[0];
-                    // Upload the file to /api/upload
-                    let publicUrl = '';
-                    try {
-                      const formData = new FormData();
-                      formData.append('file', file);
-                      const uploadRes = await fetch('/api/upload', {
-                        method: 'POST',
-                        body: formData
-                      });
-                      if (uploadRes.ok) {
-                        const uploadData = await uploadRes.json();
-                        publicUrl = uploadData.document.url;
-                      } else {
-                        throw new Error('Upload failed');
-                      }
-                    } catch (err) {
-                      console.error('Failed to upload PDF', err);
-                      return;
-                    }
-                    // Add cache-busting param
-                    const cacheBustedUrl = publicUrl + (publicUrl.includes('?') ? '&' : '?') + 't=' + Date.now();
-                    setCurrentDocumentUrl(cacheBustedUrl);
-                    lastLoadedBackendPdfUrlRef.current = publicUrl;
-                    if (webViewerInstance && typeof webViewerInstance.loadDocument === 'function') {
-                      webViewerInstance.loadDocument(cacheBustedUrl);
-                    } else if (webViewerInstance && webViewerInstance.Core && webViewerInstance.Core.documentViewer) {
-                      webViewerInstance.Core.documentViewer.loadDocument(cacheBustedUrl);
-                    }
-                    // Notify backend of PDF replacement
-                    try {
-                      await fetch('/api/socket', {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({
-                          action: 'pdf-replaced',
-                          documentId,
-                          pdfUrl: publicUrl,
-                          userId,
-                          userName
-                        })
-                      });
-                    } catch (err) {
-                      console.error('Failed to notify backend of PDF replacement', err);
-                    }
-                  }
-                }}
-              />
-              <Button
-                size="icon"
-                variant="ghost"
-                className="h-6 w-6 p-0 ml-1"
-                tabIndex={0}
-                onClick={() => fileInputRef.current && fileInputRef.current.click()}
-                title="Replace PDF"
-              >
-                <Plus className="w-4 h-4 text-blue-600" />
-              </Button>
-            </div>
-            {/* End flex-1 */}
-          </div>
-          
-          {/* Quick Actions */}
-          <div className="grid grid-cols-2 gap-2">
-            {/* Enhanced Download Button with Dropdown */}
-            <div className="relative">
-              <Button 
-                variant="outline" 
-                size="sm" 
-                className="justify-start h-9 w-full download-button hover:bg-blue-50 hover:border-blue-300 transition-colors"
-                onClick={() => setShowDownloadMenu(!showDownloadMenu)}
-              >
-                <Download className="w-4 h-4 mr-2" />
-                Download
-                <ChevronDown className="w-3 h-3 ml-auto" />
-              </Button>
-              
-              {showDownloadMenu && (
-                <div className="absolute top-full left-0 mt-1 w-56 bg-white border border-gray-200 rounded-lg shadow-lg z-20 download-menu">
-                  <div className="py-1">
-                    <button
-                      onClick={handleDownloadOriginal}
-                      className="w-full px-3 py-2 text-left text-sm hover:bg-blue-50 flex items-center gap-2 transition-colors"
-                    >
-                      <FileDown className="w-4 h-4 text-blue-600" />
-                      <div>
-                        <div className="font-medium text-gray-900">Original PDF</div>
-                        <div className="text-xs text-gray-500">Download source document</div>
-                      </div>
-                    </button>
-                    
-                    <button
-                      onClick={handleDownloadWithAnnotations}
-                      className="w-full px-3 py-2 text-left text-sm hover:bg-blue-50 flex items-center gap-2 transition-colors"
-                    >
-                      <NotebookPen className="w-4 h-4 text-green-600" />
-                      <div>
-                        <div className="font-medium text-gray-900">With Annotations</div>
-                        <div className="text-xs text-gray-500">Include all notes & highlights</div>
-                      </div>
-                    </button>
-                    
-                    <button
-                      onClick={handleDownloadAnnotations}
-                      className="w-full px-3 py-2 text-left text-sm hover:bg-blue-50 flex items-center gap-2 transition-colors"
-                    >
-                      <FileText className="w-4 h-4 text-purple-600" />
-                      <div>
-                        <div className="font-medium text-gray-900">Annotations Only</div>
-                        <div className="text-xs text-gray-500">Export notes as XFDF file</div>
-                      </div>
-                    </button>
-                  </div>
-                </div>
-              )}
-            </div>
 
-            {/* Enhanced Share Button with Dropdown */}
-            <div className="relative">
-              <Button 
-                variant="outline" 
-                size="sm" 
-                className="justify-start h-9 w-full share-button hover:bg-green-50 hover:border-green-300 transition-colors"
-                onClick={() => setShowShareMenu(!showShareMenu)}
-              >
-                <Share2 className="w-4 h-4 mr-2" />
-                Share
-                <ChevronDown className="w-3 h-3 ml-auto" />
-              </Button>
-              
-              {showShareMenu && (
-                <div className="absolute top-full left-0 mt-1 w-56 bg-white border border-gray-200 rounded-lg shadow-lg z-20 share-menu">
-                  <div className="py-1">
-                    <button
-                      onClick={handleCopyLink}
-                      className="w-full px-3 py-2 text-left text-sm hover:bg-green-50 flex items-center gap-2 transition-colors"
-                    >
-                      {copied ? (
-                        <Check className="w-4 h-4 text-green-600" />
-                      ) : (
-                        <Copy className="w-4 h-4 text-blue-600" />
-                      )}
-                      <div>
-                        <div className="font-medium text-gray-900">
-                          {copied ? 'Link Copied!' : 'Copy Link'}
-                        </div>
-                        <div className="text-xs text-gray-500">Share URL with colleagues</div>
-                      </div>
-                    </button>
-                    
-                    <button
-                      onClick={handleEmailShare}
-                      className="w-full px-3 py-2 text-left text-sm hover:bg-green-50 flex items-center gap-2 transition-colors"
-                    >
-                      <Mail className="w-4 h-4 text-orange-600" />
-                      <div>
-                        <div className="font-medium text-gray-900">Email Link</div>
-                        <div className="text-xs text-gray-500">Send via email client</div>
-                      </div>
-                    </button>
-                    
-                    <button
-                      onClick={handleDirectShare}
-                      className="w-full px-3 py-2 text-left text-sm hover:bg-green-50 flex items-center gap-2 transition-colors"
-                    >
-                      <ExternalLink className="w-4 h-4 text-purple-600" />
-                      <div>
-                        <div className="font-medium text-gray-900">Quick Share</div>
-                        <div className="text-xs text-gray-500">Use native sharing</div>
-                      </div>
-                    </button>
-                    
-                    <div className="border-t border-gray-100 mt-1 pt-1">
-                      <button
-                        onClick={() => setShowInviteModal(true)}
-                        className="w-full px-3 py-2 text-left text-sm hover:bg-green-50 flex items-center gap-2 transition-colors"
-                      >
-                        <UserPlus className="w-4 h-4 text-indigo-600" />
-                        <div>
-                          <div className="font-medium text-gray-900">Invite Collaborators</div>
-                          <div className="text-xs text-gray-500">Add research partners</div>
-                        </div>
-                      </button>
-                    </div>
-                  </div>
-                </div>
-              )}
-            </div>
-          </div>
+      <div className="w-72 bg-gradient-to-b from-slate-50 to-white border-r border-slate-200/60 flex flex-col h-full shadow-sm">
+  {/* Document Info - Improved */}
+  <div className="p-4 border-b border-slate-200/60 bg-white/80 backdrop-blur-sm">
+  <div className="flex items-center gap-2 mb-2">
+  <div className="w-6 h-6 bg-gradient-to-br from-blue-500 to-indigo-600 rounded-lg flex items-center justify-center shadow-sm flex-shrink-0">
+    <FileText className="w-3 h-3 text-white" />
+  </div>
+  <div className="flex-1 min-w-0">
+    <h3 className="font-medium text-xs text-slate-800 truncate leading-tight">
+      {documentTitle || 'Academic Paper'}
+    </h3>
+    <p className="text-[10px] text-slate-500 truncate">
+      {documentAuthors ? documentAuthors.split(',')[0] : 'Document Analysis'}
+    </p>
+  </div>
+      {/* Replace PDF Button - Enhanced */}
+      <input
+        ref={fileInputRef}
+        type="file"
+        accept="application/pdf"
+        style={{ display: 'none' }}
+        onChange={async e => {
+          if (e.target.files && e.target.files[0]) {
+            const file = e.target.files[0];
+            let publicUrl = '';
+            try {
+              const formData = new FormData();
+              formData.append('file', file);
+              const uploadRes = await fetch('/api/upload', {
+                method: 'POST',
+                body: formData
+              });
+              if (uploadRes.ok) {
+                const uploadData = await uploadRes.json();
+                publicUrl = uploadData.document.url;
+              } else {
+                throw new Error('Upload failed');
+              }
+            } catch (err) {
+              console.error('Failed to upload PDF', err);
+              return;
+            }
+            const cacheBustedUrl = publicUrl + (publicUrl.includes('?') ? '&' : '?') + 't=' + Date.now();
+            
+            // Add as new tab instead of replacing current
+            addNewTab(file.name, cacheBustedUrl);
+            
+            // Update backend reference
+            lastLoadedBackendPdfUrlRef.current = publicUrl;
+            try {
+              await fetch('/api/socket', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                  action: 'pdf-replaced',
+                  documentId,
+                  pdfUrl: publicUrl,
+                  userId,
+                  userName
+                })
+              });
+            } catch (err) {
+              console.error('Failed to notify backend of PDF replacement', err);
+            }
+          }
+        }}
+      />
+      <Button
+        size="icon"
+        variant="ghost"
+        className="h-7 w-7 hover:bg-blue-50 rounded-xl border border-slate-200/60 transition-all duration-200 hover:shadow-sm flex-shrink-0"
+        onClick={() => fileInputRef.current && fileInputRef.current.click()}
+        title="Add Document"
+      >
+        <Plus className="w-3.5 h-3.5 text-blue-600" />
+      </Button>
+    </div>
+    
+
+{/* Socket.io Connection Status */}
+{/* <div className="px-4 py-2 border-b border-slate-200/60">
+      <div className="flex items-center justify-between">
+        <div className="flex items-center space-x-2">
+          <div className={`w-2 h-2 rounded-full ${isConnected ? 'bg-green-500' : 'bg-red-500'}`} />
+          <span className="text-xs text-slate-600 font-medium">
+            {isConnected ? 'Live' : 'Offline'}
+          </span>
         </div>
-
-        {/* Enhanced Collaborators Section */}
-        <div className="p-6 border-b border-gray-200">
-          <div className="flex items-center justify-between mb-4">
-            <h4 className="font-medium text-gray-900">Collaborators</h4>
-            <div className="flex items-center gap-2">
-            <Badge variant="secondary" className="bg-green-100 text-green-700">
-              {collaborators.filter(c => c.status === 'online').length} online
-            </Badge>
-              <Button 
-                variant="ghost" 
-                size="sm" 
-                onClick={() => setShowCollaborators(!showCollaborators)}
-                className="h-6 w-6 p-0"
-              >
-                {showCollaborators ? <Eye className="h-3 w-3" /> : <X className="h-3 w-3" />}
-              </Button>
-            </div>
-          </div>
-          
-          {showCollaborators && (
-          <div className="space-y-3">
-            {collaborators.map((collaborator) => (
-                <div key={collaborator.id} className="group relative">
-                  <div className="flex items-center gap-3 p-2 rounded-lg hover:bg-gray-100 transition-colors">
-                <div className="relative">
-                      <div className={`w-8 h-8 rounded-full flex items-center justify-center ${
-                        collaborator.isCurrentUser 
-                          ? 'bg-gradient-to-br from-blue-500 to-purple-500' 
-                          : 'bg-blue-100'
-                      }`}>
-                        <span className={`text-sm font-medium ${
-                          collaborator.isCurrentUser ? 'text-white' : 'text-blue-600'
-                        }`}>
-                      {collaborator.name.split(' ').map(n => n[0]).join('')}
-                    </span>
-                  </div>
-                  <div className={`absolute -bottom-0.5 -right-0.5 w-3 h-3 rounded-full border-2 border-white ${
-                    collaborator.status === 'online' ? 'bg-green-400' : 'bg-gray-300'
-                  }`} />
-                </div>
-                <div className="flex-1 min-w-0">
-                      <div className="flex items-center gap-2">
-                        <button
-                          onClick={() => toggleInlineChat(collaborator.userId!)}
-                          className={`text-sm font-medium truncate hover:text-blue-600 transition-colors ${
-                            collaborator.isCurrentUser ? 'text-blue-600' : 'text-gray-900'
-                          }`}
-                        >
-                    {collaborator.name}
-                          {collaborator.isCurrentUser && ' (You)'}
-                        </button>
-                        
-                        {/* Unread Message Badge */}
-                        {!collaborator.isCurrentUser && unreadMessages.get(collaborator.userId!) && (
-                          <Badge 
-                            variant="destructive" 
-                            className="bg-red-500 text-white text-xs px-1.5 py-0.5 min-w-[18px] h-[18px] flex items-center justify-center"
-                          >
-                            {unreadMessages.get(collaborator.userId!)}
-                          </Badge>
-                        )}
-                        
-                        {/* Role Badge - Only show for other users */}
-                        {!collaborator.isCurrentUser && (
-                          <Badge 
-                            variant="outline" 
-                            className={`text-xs ${
-                              collaborator.role === 'admin' ? 'bg-red-50 text-red-700 border-red-200' :
-                              collaborator.role === 'editor' ? 'bg-blue-50 text-blue-700 border-blue-200' :
-                              'bg-gray-50 text-gray-700 border-gray-200'
-                            }`}
-                          >
-                            {collaborator.role === 'admin' ? <Crown className="w-2 h-2 mr-1" /> :
-                             collaborator.role === 'editor' ? <Edit className="w-2 h-2 mr-1" /> :
-                             <Eye className="w-2 h-2 mr-1" />}
-                            {collaborator.role}
-                          </Badge>
-                        )}
-                      </div>
-                      <div className="flex items-center gap-2 text-xs text-gray-500">
-                        <span>
-                          {collaborator.status === 'online' ? 'Active now' : collaborator.lastSeen}
+        
+        {isConnected && connectedUsers.length > 0 && (
+          <div className="flex items-center space-x-1">
+            <Users className="w-3 h-3 text-blue-600" />
+            <span className="text-xs text-slate-500">
+              {connectedUsers.length} user{connectedUsers.length !== 1 ? 's' : ''}
             </span>
-                        {collaborator.activity && (
-                          <>
-                            <span>•</span>
-                            <span className="flex items-center gap-1">
-                              <Activity className="w-2 h-2" />
-                              {collaborator.activity}
-                            </span>
-                          </>
-                        )}
-                      </div>
           </div>
-
-                    {/* Action Menu */}
-                    <div className="opacity-0 group-hover:opacity-100 transition-opacity">
-                      <div className="relative">
-            <Button 
-                          variant="ghost" 
-              size="sm" 
-                          className="h-6 w-6 p-0"
-                          onClick={() => toggleInlineChat(collaborator.userId!)}
-                        >
-                          <MessageSquare className="h-3 w-3" />
-            </Button>
-                        
-                        {/* Role Management Menu (for admins) */}
-                        {currentUserRole === 'admin' && !collaborator.isCurrentUser && (
-                          <div className="absolute right-0 top-6 w-48 bg-white border border-gray-200 rounded-lg shadow-lg z-50 opacity-0 group-hover:opacity-100 transition-opacity">
-                            <div className="py-1">
-                              <div className="px-3 py-2 text-xs font-medium text-gray-500 border-b border-gray-100">
-                                Manage Role
-                              </div>
-                              <button
-                                onClick={() => changeCollaboratorRole(collaborator.userId!, 'viewer')}
-                                className="w-full px-3 py-2 text-left text-sm hover:bg-gray-50 flex items-center gap-2"
-                              >
-                                <Eye className="w-3 h-3" />
-                                Set as Viewer
-                              </button>
-                              <button
-                                onClick={() => changeCollaboratorRole(collaborator.userId!, 'editor')}
-                                className="w-full px-3 py-2 text-left text-sm hover:bg-gray-50 flex items-center gap-2"
-                              >
-                                <Edit className="w-3 h-3" />
-                                Set as Editor
-                              </button>
-                              <button
-                                onClick={() => changeCollaboratorRole(collaborator.userId!, 'admin')}
-                                className="w-full px-3 py-2 text-left text-sm hover:bg-gray-50 flex items-center gap-2"
-                              >
-                                <Crown className="w-3 h-3" />
-                                Set as Admin
-                              </button>
-                              <div className="border-t border-gray-100 mt-1 pt-1">
-                                <button
-                                  onClick={() => removeCollaborator(collaborator.userId!)}
-                                  className="w-full px-3 py-2 text-left text-sm hover:bg-red-50 text-red-600 flex items-center gap-2"
-                                >
-                                  <X className="w-3 h-3" />
-                                  Remove
-                                </button>
-                              </div>
-                            </div>
-                          </div>
-                        )}
-                      </div>
-                    </div>
-          </div>
-
-                    {/* Inline Chat */}
-                    {!collaborator.isCurrentUser && inlineChats.get(collaborator.userId!) && (
-                      <div className="mt-2 ml-11 bg-gray-50 rounded-lg border border-gray-200 p-3">
-                        <div className="flex items-center justify-between mb-2">
-                          <span className="text-xs font-medium text-gray-700">Private chat with {collaborator.name}</span>
-            <Button 
-                          variant="ghost" 
-              size="sm" 
-                          onClick={() => toggleInlineChat(collaborator.userId!)}
-                          className="h-4 w-4 p-0"
-                        >
-                          <X className="h-3 w-3" />
-            </Button>
-                        </div>
-                        
-                        {/* Messages */}
-                        <div className="max-h-32 overflow-y-auto space-y-1 mb-2">
-                          {getConversationMessages(collaborator.userId!).length === 0 ? (
-                            <p className="text-xs text-gray-500 text-center py-2">No messages yet</p>
-                          ) : (
-                            getConversationMessages(collaborator.userId!).map((msg) => (
-                              <div 
-                                key={msg.id} 
-                                className={`flex ${msg.userId === userId ? 'justify-end' : 'justify-start'}`}
-                              >
-                                <div className={`max-w-[200px] p-2 rounded-lg text-xs ${
-                                  msg.userId === userId 
-                                    ? 'bg-blue-500 text-white' 
-                                    : 'bg-white text-gray-900 border border-gray-200'
-                                }`}>
-                                  <p className="text-xs">
-                                    {msg.message}
-                                  </p>
-                                  <p className={`text-xs mt-1 ${
-                                    msg.userId === userId ? 'text-blue-100' : 'text-gray-400'
-                                  }`}>
-                                    {new Date(msg.timestamp).toLocaleTimeString([], { 
-                                      hour: '2-digit', 
-                                      minute: '2-digit' 
-                                    })}
-                                  </p>
-                                </div>
-                              </div>
-                            ))
-                          )}
-            </div>
-
-                      {/* Message Input */}
-                      <div className="flex gap-1">
-            <Input
-                          placeholder="Type a message..."
-                          value={newMessage}
-                          onChange={(e) => setNewMessage(e.target.value)}
-              onKeyPress={(e) => {
-                            if (e.key === 'Enter' && !e.shiftKey && newMessage.trim()) {
-                              e.preventDefault()
-                              sendMessageToCollaborator(collaborator.userId!, newMessage.trim())
-                              setNewMessage('')
-                            }
-                          }}
-                          className="flex-1 text-xs h-7"
-            />
-            <Button 
-              onClick={() => {
-                            if (newMessage.trim()) {
-                              sendMessageToCollaborator(collaborator.userId!, newMessage.trim())
-                              setNewMessage('')
-                            }
-                          }}
-                          disabled={!newMessage.trim()}
-              size="sm" 
-                          className="h-7 px-2"
-                        >
-                          <Send className="h-3 w-3" />
-            </Button>
-          </div>
-                    </div>
-                  )}
-                </div>
-              ))}
-            </div>
-          )}
-        </div>
-
-        {/* Research Tools */}
-        <div className="p-6">
-          <h4 className="font-medium text-gray-900 mb-4">Research Tools</h4>
-          
-          <div className="space-y-2">
-
-            {/* Screen Capture Tool */}
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => setShowScreenCapture(true)}
-              className="flex items-center space-x-2 bg-gradient-to-r from-blue-50 to-cyan-50 border-blue-200 text-blue-700 hover:from-blue-100 hover:to-cyan-100"
-              title="Capture and analyze any area of the PDF with AI Vision"
-            >
-              <Camera className="w-4 h-4" />
-              <span>📸 Snip & Analyze</span>
-            </Button>
-
-            {/* AI Research Prerequisites Tool */}
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => setShowAIResearchPrerequisites(true)}
-              className="flex items-center space-x-2 bg-gradient-to-r from-blue-50 to-purple-50 border-blue-200 text-blue-700 hover:from-blue-100 hover:to-purple-100"
-              title="AI researches this specific paper to determine real prerequisites based on authors, venue, and field"
-            >
-              <Brain className="w-4 h-4" />
-              <span>🔍 AI Research Prerequisites</span>
-            </Button>
-
-            {/* Collaboration Panel Toggle */}
-            <Button 
-              variant="ghost" 
-              size="sm" 
-              className="w-full justify-start h-9 text-gray-700 hover:bg-blue-50 hover:text-blue-700 transition-colors group"
-              onClick={() => {
-                try {
-                  webViewerInstance?.UI.openElements(['searchPanel'])
-                  console.log('Search panel opened')
-                } catch (error) {
-                  console.log('Search panel error:', error)
-                }
-              }}
-            >
-              <Search className="w-4 h-4 mr-3 group-hover:text-blue-600" />
-              Search Document
-            </Button>
-            
-            <Button 
-              variant="ghost" 
-              size="sm" 
-              className="w-full justify-start h-9 text-gray-700 hover:bg-blue-50 hover:text-blue-700 transition-colors group"
-              onClick={() => {
-                try {
-                  webViewerInstance?.UI.openElements(['outlinesPanel'])
-                  console.log('Outlines panel opened')
-                } catch (error) {
-                  console.log('Outlines panel error:', error)
-                }
-              }}
-            >
-              <Bookmark className="w-4 h-4 mr-3 group-hover:text-blue-600" />
-              Table of Contents
-            </Button>
-            
-            <Button 
-              variant="ghost" 
-              size="sm" 
-              className="w-full justify-start h-9 text-gray-700 hover:bg-green-50 hover:text-green-700 transition-colors group"
-              onClick={() => {
-                try {
-                  // Open collaboration features or show invite dialog
-                  console.log('Opening collaboration features')
-                  // You could implement a collaboration invite modal here
-                  alert('Collaboration features: Invite colleagues to review this document together!')
-                } catch (error) {
-                  console.log('Collaboration error:', error)
-                }
-              }}
-            >
-              <Users className="w-4 h-4 mr-3 group-hover:text-green-600" />
-              Invite Collaborators
-            </Button>
-
-            {/* Additional Research Tools */}
-            <div className="border-t border-gray-100 pt-3 mt-3">
-              <Button 
-                variant="ghost" 
-                size="sm" 
-                className="w-full justify-start h-9 text-gray-700 hover:bg-purple-50 hover:text-purple-700 transition-colors group"
-                onClick={() => {
-                  try {
-                    webViewerInstance?.UI.openElements(['toolsOverlay'])
-                    console.log('Tools overlay opened')
-                  } catch (error) {
-                    console.log('Tools overlay error:', error)
-                  }
-                }}
-              >
-                <Settings className="w-4 h-4 mr-3 group-hover:text-purple-600" />
-                Advanced Tools
-              </Button>
-              
-              <Button 
-                variant="ghost" 
-                size="sm" 
-                className="w-full justify-start h-9 text-gray-700 hover:bg-orange-50 hover:text-orange-700 transition-colors group"
-                onClick={() => {
-                  try {
-                    if (webViewerInstance) {
-                      webViewerInstance.UI.printDocument()
-                      console.log('Print dialog opened')
-                    }
-                  } catch (error) {
-                    console.log('Print error:', error)
-                    window.print()
-                  }
-                }}
-              >
-                <FileText className="w-4 h-4 mr-3 group-hover:text-orange-600" />
-                Print Document
-              </Button>
-            </div>
-
-            {/* ========== [ADV] Analysis Controls ========== */}
-            <div className="mt-6 border-t border-gray-200 pt-4">
-              <h4 className="font-medium text-gray-900 mb-2">AI Document Analysis (Pro)</h4>
-
-              <div className="flex items-center gap-2 mb-2">
-                <select value={persona} onChange={e => setPersona(e.target.value as Persona)}
-                  className="border rounded px-2 py-1 text-sm">
-                  <option value="novice">Novice</option>
-                  <option value="practitioner">Practitioner</option>
-                  <option value="reviewer">Reviewer</option>
-                </select>
-
-                <select value={budget} onChange={e => setBudget(e.target.value as TimeBudget)}
-                  className="border rounded px-2 py-1 text-sm">
-                  <option value="30s">30 sec</option>
-                  <option value="2m">2 min</option>
-                  <option value="deep">Deep</option>
-                </select>
-
-                <div className="flex items-center gap-2">
-                  <span className="text-xs text-gray-500">Depth</span>
-                  <input type="range" min={1} max={5} value={depth}
-                    onChange={e => setDepth(parseInt(e.target.value))}
-                    className="w-24" />
-                </div>
-
-                <Button size="sm" onClick={generateAdvancedSummary} disabled={advBusy} className="ml-auto">
-                  {advBusy ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : <Brain className="w-4 h-4 mr-2" />}
-                  Analyze Paper
-                </Button>
-              </div>
-            </div>
-          </div>
-        </div>
+        )}
       </div>
+      
+      {connectionError && (
+        <div className="mt-1 text-xs text-red-600 bg-red-50 px-2 py-1 rounded text-center">
+          Connection Error
+        </div>
+      )}
+    </div> */}
 
-      {/* PDF Viewer Container */}
-      <div className="flex-1 flex flex-col relative" style={{ height: '100vh' }}>
-        {isLoading && (
-          <div className="absolute inset-0 bg-white bg-opacity-90 flex items-center justify-center z-10">
-            <div className="text-center">
-              <Loader2 className="w-8 h-8 animate-spin text-blue-600 mx-auto mb-3" />
-              <p className="text-gray-600 font-medium">Loading academic document...</p>
-              <p className="text-sm text-gray-500 mt-1">Preparing advanced PDF viewer</p>
+
+    {/* Quick Actions - Glass Style */}
+    <div className="flex gap-2">
+      <div className="relative flex-1">
+        <Button 
+          variant="outline" 
+          size="sm" 
+          className="w-full h-8 text-xs px-2 download-button border-slate-200/60 hover:bg-blue-50/80 hover:border-blue-300/60 transition-all duration-200 backdrop-blur-sm bg-white/60 rounded-xl"
+          onClick={() => setShowDownloadMenu(!showDownloadMenu)}
+        >
+          <Download className="w-3 h-3 mr-1.5" />
+          <span className="font-medium">Download</span>
+          <ChevronDown className="w-3 h-3 ml-auto" />
+        </Button>
+        
+        {/* Enhanced Download Menu */}
+        {showDownloadMenu && (
+          <div className="absolute top-full left-0 mt-2 w-48 bg-white/95 backdrop-blur-md border border-slate-200/60 rounded-xl shadow-lg z-20 download-menu ring-1 ring-black/5">
+            <div className="py-2">
+              <button onClick={handleDownloadOriginal} className="w-full px-3 py-2 text-left text-xs hover:bg-blue-50/80 flex items-center gap-2 rounded-lg mx-2 transition-colors">
+                <FileDown className="w-3.5 h-3.5 text-blue-600" />
+                <div className="flex-1">
+                  <div className="font-medium text-slate-900">Original PDF</div>
+                  <div className="text-slate-500">Download source file</div>
+                </div>
+              </button>
+              <button onClick={handleDownloadWithAnnotations} className="w-full px-3 py-2 text-left text-xs hover:bg-blue-50/80 flex items-center gap-2 rounded-lg mx-2 transition-colors">
+                <NotebookPen className="w-3.5 h-3.5 text-green-600" />
+                <div className="flex-1">
+                  <div className="font-medium text-slate-900">With Annotations</div>
+                  <div className="text-slate-500">Include highlights & notes</div>
+                </div>
+              </button>
+              <button onClick={handleDownloadAnnotations} className="w-full px-3 py-2 text-left text-xs hover:bg-blue-50/80 flex items-center gap-2 rounded-lg mx-2 transition-colors">
+                <FileText className="w-3.5 h-3.5 text-purple-600" />
+                <div className="flex-1">
+                  <div className="font-medium text-slate-900">Annotations Only</div>
+                  <div className="text-slate-500">Export XFDF file</div>
+                </div>
+              </button>
             </div>
           </div>
         )}
-        
-        {/* WebViewer Container */}
-        <div 
-          id="webviewer-container"
-          className="webviewer flex-1 w-full relative" 
-          ref={viewer}
-          style={{ 
-            height: 'calc(100vh - 100px)',
-            minHeight: '800px',
-            width: '100%'
-          }}
+      </div>
+
+      <div className="relative flex-1">
+        <Button 
+          variant="outline" 
+          size="sm" 
+          className="w-full h-8 text-xs px-2 share-button border-slate-200/60 hover:bg-green-50/80 hover:border-green-300/60 transition-all duration-200 backdrop-blur-sm bg-white/60 rounded-xl"
+          onClick={() => setShowShareMenu(!showShareMenu)}
         >
+          <Share2 className="w-3 h-3 mr-1.5" />
+          <span className="font-medium">Share</span>
+          <ChevronDown className="w-3 h-3 ml-auto" />
+        </Button>
+        
+        {/* Enhanced Share Menu */}
+        {showShareMenu && (
+          <div className="absolute top-full right-0 mt-2 w-48 bg-white/95 backdrop-blur-md border border-slate-200/60 rounded-xl shadow-lg z-20 share-menu ring-1 ring-black/5">
+            <div className="py-2">
+              <button onClick={handleCopyLink} className="w-full px-3 py-2 text-left text-xs hover:bg-green-50/80 flex items-center gap-2 rounded-lg mx-2 transition-colors">
+                {copied ? <Check className="w-3.5 h-3.5 text-green-600" /> : <Copy className="w-3.5 h-3.5 text-blue-600" />}
+                <div className="flex-1">
+                  <div className="font-medium text-slate-900">{copied ? 'Copied!' : 'Copy Link'}</div>
+                  <div className="text-slate-500">Share document URL</div>
+                </div>
+              </button>
+              <button onClick={handleEmailShare} className="w-full px-3 py-2 text-left text-xs hover:bg-green-50/80 flex items-center gap-2 rounded-lg mx-2 transition-colors">
+                <Mail className="w-3.5 h-3.5 text-orange-600" />
+                <div className="flex-1">
+                  <div className="font-medium text-slate-900">Email</div>
+                  <div className="text-slate-500">Send via email</div>
+                </div>
+              </button>
+
+              <button 
+                onClick={handleCopyCollaborationLink} 
+                className="w-full px-3 py-2 text-left text-xs hover:bg-purple-50/80 flex items-center gap-2 rounded-lg mx-2 transition-colors"
+              >
+                <Users className="w-3.5 h-3.5 text-purple-600" />
+                <div className="flex-1">
+                  <div className="font-medium text-slate-900">Copy Collab Link</div>
+                  <div className="text-slate-500">Real-time co-reading</div>
+                </div>
+              </button>
+
+              <button onClick={handleDirectShare} className="w-full px-3 py-2 text-left text-xs hover:bg-green-50/80 flex items-center gap-2 rounded-lg mx-2 transition-colors">
+                <ExternalLink className="w-3.5 h-3.5 text-purple-600" />
+                <div className="flex-1">
+                  <div className="font-medium text-slate-900">Share</div>
+                  <div className="text-slate-500">Native sharing</div>
+                </div>
+              </button>
+              <div className="border-t border-slate-200/60 mt-2 pt-2">
+                <button onClick={() => setShowInviteModal(true)} className="w-full px-3 py-2 text-left text-xs hover:bg-green-50/80 flex items-center gap-2 rounded-lg mx-2 transition-colors">
+                  <UserPlus className="w-3.5 h-3.5 text-indigo-600" />
+                  <div className="flex-1">
+                    <div className="font-medium text-slate-900">Invite</div>
+                    <div className="text-slate-500">Add collaborators</div>
+                  </div>
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+      </div>
+    </div>
+  </div>
+
+  {/* Enhanced Team Section */}
+  <div className="px-4 py-3 border-b border-slate-200/60">
+    <div className="flex items-center justify-between mb-3">
+      <div className="flex items-center gap-2">
+        <h4 className="font-semibold text-xs text-slate-700 uppercase tracking-wide">Team</h4>
+        <div className="w-2 h-2 rounded-full bg-green-400 animate-pulse ring-2 ring-green-100"></div>
+      </div>
+      <Badge variant="secondary" className="bg-green-100/80 text-green-700 text-xs px-2 py-0.5 h-5 font-medium rounded-full border border-green-200/60">
+        {collaborators.filter(c => c.status === 'online').length}
+      </Badge>
+    </div>
+    
+    {showCollaborators && (
+      <div className="space-y-2">
+        {collaborators.slice(0, 4).map((collaborator) => (
+          <div key={collaborator.id} className="group">
+            <div className="flex items-center gap-3 p-2 rounded-xl hover:bg-slate-50/80 transition-all duration-200 cursor-pointer ring-1 ring-transparent hover:ring-slate-200/60">
+              <div className="relative flex-shrink-0">
+                <div className={`w-7 h-7 rounded-xl flex items-center justify-center text-xs font-semibold transition-all duration-200
+                  ${collaborator.isCurrentUser 
+                    ? 'bg-gradient-to-br from-blue-500 via-purple-500 to-pink-500 text-white shadow-sm ring-2 ring-purple-100' 
+                    : 'bg-slate-200 text-slate-700 ring-2 ring-slate-100'
+                  }`}>
+                  {collaborator.name.split(' ').map(n => n[0]).join('')}
+                </div>
+                {collaborator.status === 'online' && (
+                  <div className="absolute -bottom-0.5 -right-0.5 w-2.5 h-2.5 rounded-full bg-green-400 ring-2 ring-white shadow-sm" />
+                )}
+              </div>
+              
+              <div className="flex-1 min-w-0">
+                <div className="flex items-center gap-2">
+                  <span className="text-xs font-medium text-slate-900 truncate">
+                    {collaborator.name}
+                  </span>
+                  {collaborator.isCurrentUser && (
+                    <Badge variant="outline" className="text-xs px-1.5 py-0 h-4 rounded-full border-blue-200 text-blue-700 bg-blue-50">You</Badge>
+                  )}
+                </div>
+              </div>
+              
+              {!collaborator.isCurrentUser && (
+                <Button 
+                  variant="ghost" 
+                  size="sm"
+                  className="opacity-0 group-hover:opacity-100 h-6 w-6 p-0 flex-shrink-0 rounded-lg transition-all duration-200"
+                  onClick={() => toggleInlineChat(collaborator.userId!)}
+                >
+                  <MessageSquare className="h-3 w-3 text-slate-400 hover:text-blue-600" />
+                </Button>
+              )}
+            </div>
+          </div>
+        ))}
+      </div>
+    )}
+  </div>
+
+  {/* Enhanced Stats Cards */}
+  <div className="px-4 py-3">
+    <div className="grid grid-cols-2 gap-3">
+      <div className="bg-gradient-to-br from-blue-50/80 to-indigo-50/60 rounded-xl p-3 text-center border border-blue-100/60 ring-1 ring-blue-100/30 hover:shadow-sm transition-all duration-200 cursor-pointer">
+        <div className="text-xl font-bold bg-gradient-to-r from-blue-600 to-indigo-600 bg-clip-text text-transparent">
+          {totalPages || 0}
+        </div>
+        <div className="text-xs text-slate-600 uppercase tracking-wide font-medium">Pages</div>
+      </div>
+      <div className="bg-gradient-to-br from-purple-50/80 to-pink-50/60 rounded-xl p-3 text-center border border-purple-100/60 ring-1 ring-purple-100/30 hover:shadow-sm transition-all duration-200 cursor-pointer">
+        <div className="text-xl font-bold bg-gradient-to-r from-purple-600 to-pink-600 bg-clip-text text-transparent">
+          {capturedSelections.length}
+        </div>
+        <div className="text-xs text-slate-600 uppercase tracking-wide font-medium">Notes</div>
+      </div>
+    </div>
+  </div>
+
+  {/* Enhanced Tools */}
+  <div className="px-4 py-3 flex-1 overflow-y-auto" style={{ maxHeight: 'calc(100vh - 500px)' }}>
+    <h4 className="font-semibold text-xs text-slate-700 uppercase tracking-wide mb-3">Tools</h4>
+    
+    <div className="space-y-2">
+      {/* AI Tools Group */}
+      <div className="space-y-2">
+        <button
+          onClick={() => setShowScreenCapture(true)}
+          className="group w-full rounded-xl border border-blue-200/60 bg-gradient-to-r from-blue-50/60 to-cyan-50/40 hover:from-blue-100/80 hover:to-cyan-100/60 p-3 text-left shadow-sm transition-all duration-200 hover:shadow-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2"
+        >
+          <div className="flex items-center gap-3">
+            <div className="rounded-lg ring-1 ring-blue-200/60 bg-white/60 p-2">
+              <Camera className="h-4 w-4 text-blue-600" />
+            </div>
+            <div className="flex-1">
+              <div className="text-sm font-medium text-blue-800">Snip & Analyze</div>
+              <div className="text-xs text-blue-600 mt-0.5">Extract figures, run AI summary</div>
+            </div>
+            <ChevronRight className="h-4 w-4 text-blue-500 group-hover:translate-x-0.5 transition-transform" />
+          </div>
+        </button>
+
+        <button
+  onClick={() => {
+    console.log('═══════════════════════════════════════════════════');
+    console.log('🎬 RESEARCH STORYBOARD BUTTON CLICKED!');
+    console.log('═══════════════════════════════════════════════════');
+    console.log('📊 Current capturedSelections state:', capturedSelections.length);
+    console.log('📝 Current selections:', capturedSelections.slice(0, 3));
+    
+    // CRITICAL: Get fresh highlights from WebViewer RIGHT NOW
+    const freshHighlights: Array<{
+      text: string;
+      timestamp: number;
+      page: number;
+    }> = [];
+    
+    if (webViewerInstance && webViewerInstance.Core) {
+      const { annotationManager } = webViewerInstance.Core;
+      const annotations = annotationManager.getAnnotationsList();
+      
+      console.log('🔍 Total annotations in WebViewer:', annotations.length);
+      
+      annotations.forEach((annotation: any, idx: number) => {
+        if (annotation.Subject === 'Highlight' || annotation.Subject === 'highlight') {
+          const text = annotation.Contents || 'Highlighted text';
+          const highlight = {
+            text: text,
+            timestamp: Date.now() - (annotations.length - idx) * 1000, // Stagger timestamps
+            page: annotation.PageNumber || currentPage
+          };
+          
+          console.log(`  ✅ Adding highlight ${idx + 1}:`, {
+            text: text.substring(0, 50) + '...',
+            textLength: text.length,
+            timestamp: highlight.timestamp,
+            page: highlight.page
+          });
+          
+          freshHighlights.push(highlight);
+        }
+      });
+    } else {
+      console.warn('⚠️ WebViewer instance not available!');
+    }
+    
+    // ALSO include any text selections from state (avoiding duplicates)
+    console.log('\n📚 Processing state selections...');
+    capturedSelections.forEach((sel, idx) => {
+      const selTimestamp = typeof sel.timestamp === 'string' 
+        ? new Date(sel.timestamp).getTime()
+        : (typeof sel.timestamp === 'number' ? sel.timestamp : Date.now());
+      
+      // Check if this selection is already in freshHighlights (avoid duplicates)
+      const isDuplicate = freshHighlights.some(h => 
+        h.text === sel.text && Math.abs(h.timestamp - selTimestamp) < 5000
+      );
+      
+      if (!isDuplicate) {
+        const highlight = {
+          text: sel.text,
+          timestamp: selTimestamp,
+          page: sel.pageNumber || currentPage
+        };
+        
+        freshHighlights.push(highlight);
+        
+        console.log(`  ✅ Adding selection ${idx + 1}:`, {
+          text: sel.text.substring(0, 50) + '...',
+          textLength: sel.text.length,
+          timestamp: highlight.timestamp,
+          page: highlight.page
+        });
+      } else {
+        console.log(`  ⏭️ Skipping duplicate selection ${idx + 1}`);
+      }
+    });
+    
+    console.log('\n📊 FINAL RESULTS:');
+    console.log('  Total highlights collected:', freshHighlights.length);
+    console.log('  Sample highlights:', freshHighlights.slice(0, 3).map(h => ({
+      text: h.text.substring(0, 30) + '...',
+      timestamp: h.timestamp,
+      page: h.page
+    })));
+    
+    // Update state BEFORE opening (convert back to the expected format)
+    const stateFormat = freshHighlights.map((h, idx) => ({
+      text: h.text,
+      timestamp: new Date(h.timestamp).toISOString(),
+      pageNumber: h.page,
+      position: { x: 0, y: 0 }
+    }));
+    
+    console.log('\n💾 Updating capturedSelections state...');
+    console.log('  New state format:', stateFormat.slice(0, 2));
+    setCapturedSelections(stateFormat);
+    
+    // Force a small delay to ensure state updates
+    setTimeout(() => {
+      console.log('\n🚀 OPENING STORYBOARD NOW!');
+      console.log('  Passing', freshHighlights.length, 'highlights to storyboard');
+      console.log('═══════════════════════════════════════════════════\n');
+      setShowStoryboard(true);
+    }, 100);
+  }}
+  className="group w-full rounded-xl border border-indigo-200/60 bg-gradient-to-r from-indigo-50/60 to-blue-50/40 hover:from-indigo-100/80 hover:to-blue-100/60 p-3 text-left shadow-sm transition-all duration-200 hover:shadow-md"
+>
+  <div className="flex items-center gap-3">
+    <div className="rounded-lg ring-1 ring-indigo-200/60 bg-white/60 p-2">
+      <Activity className="h-4 w-4 text-indigo-600" />
+    </div>
+    <div className="flex-1">
+      <div className="text-sm font-medium text-indigo-800">Research Storyboard</div>
+      <div className="text-xs text-indigo-600 mt-0.5">View your reading journey ({capturedSelections.length} tracked)</div>
+    </div>
+    <ChevronRight className="h-4 w-4 text-indigo-500 group-hover:translate-x-0.5 transition-transform" />
+  </div>
+</button>
+
+        <button
+          onClick={() => setShowAIResearchPrerequisites(true)}
+          className="group w-full rounded-xl border border-purple-200/60 bg-gradient-to-r from-purple-50/60 to-pink-50/40 hover:from-purple-100/80 hover:to-pink-100/60 p-3 text-left shadow-sm transition-all duration-200 hover:shadow-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-purple-500 focus-visible:ring-offset-2"
+        >
+          <div className="flex items-center gap-3">
+            <div className="rounded-lg ring-1 ring-purple-200/60 bg-white/60 p-2">
+              <Brain className="h-4 w-4 text-purple-600" />
+            </div>
+            <div className="flex-1">
+              <div className="text-sm font-medium text-purple-800">Prerequisites</div>
+              <div className="text-xs text-purple-600 mt-0.5">Auto-map background readings</div>
+            </div>
+            <ChevronRight className="h-4 w-4 text-purple-500 group-hover:translate-x-0.5 transition-transform" />
+          </div>
+        </button>
+        <button
+        onClick={() => {
+          if (eyeTrackingEnabled) {
+            eyeTracker.pause()
+            setEyeTrackingEnabled(false)
+          } else {
+            setShowEyeCalibration(true)
+          }
+        }}
+        className="group w-full rounded-xl border border-green-200/60 bg-gradient-to-r from-green-50/60 to-emerald-50/40 hover:from-green-100/80 hover:to-emerald-100/60 p-3 text-left shadow-sm transition-all duration-200 hover:shadow-md"
+      >
+        <div className="flex items-center gap-3">
+          <div className="rounded-lg ring-1 ring-green-200/60 bg-white/60 p-2">
+            <Eye className="h-4 w-4 text-green-600" />
+          </div>
+          <div className="flex-1">
+            <div className="text-sm font-medium text-green-800">
+              {eyeTrackingEnabled ? 'Pause Eye Tracking' : 'Start Eye Tracking'}
+            </div>
+            <div className="text-xs text-green-600 mt-0.5">Track reading patterns</div>
+          </div>
+          <ChevronRight className="h-4 w-4 text-green-500 group-hover:translate-x-0.5 transition-transform" />
+        </div>
+      </button>
+
+      {eyeTrackingEnabled && (
+  <button
+    onClick={() => setShowGazeHeatmap(!showGazeHeatmap)}
+    className="group w-full rounded-xl border border-orange-200/60 bg-gradient-to-r from-orange-50/60 to-red-50/40 hover:from-orange-100/80 hover:to-red-100/60 p-3 text-left shadow-sm transition-all duration-200 hover:shadow-md"
+  >
+    <div className="flex items-center gap-3">
+      <div className="rounded-lg ring-1 ring-orange-200/60 bg-white/60 p-2">
+        <Eye className="h-4 w-4 text-orange-600" />
+      </div>
+      <div className="flex-1">
+        <div className="text-sm font-medium text-orange-800">
+          {showGazeHeatmap ? 'Hide' : 'Show'} Gaze Heatmap
+        </div>
+        <div className="text-xs text-orange-600 mt-0.5">Visualize where you looked</div>
+      </div>
+    </div>
+  </button>
+)}
+
+      <button
+  onClick={() => {
+    const gazePoints = eyeTracker.getGazePoints(currentPage)
+    console.log('👁️ Gaze Points on current page:', gazePoints.length)
+    console.log('Sample points:', gazePoints.slice(0, 10))
+  }}
+  className="group w-full rounded-xl border border-amber-200/60 bg-gradient-to-r from-amber-50/60 to-yellow-50/40 hover:from-amber-100/80 hover:to-yellow-100/60 p-3 text-left shadow-sm transition-all duration-200 hover:shadow-md"
+>
+  <div className="flex items-center gap-3">
+    <div className="rounded-lg ring-1 ring-amber-200/60 bg-white/60 p-2">
+      <Activity className="h-4 w-4 text-amber-600" />
+    </div>
+    <div className="flex-1">
+      <div className="text-sm font-medium text-amber-800">Check Gaze Data</div>
+      <div className="text-xs text-amber-600 mt-0.5">View tracked points in console</div>
+    </div>
+  </div>
+</button>
+
+
+
+      </div>
+
+      {/* Divider */}
+      <div className="border-t border-slate-200/60 my-3"></div>
+
+      {/* Navigation Tools */}
+      <div className="space-y-2">
+        <button
+          onClick={() => webViewerInstance?.UI.openElements(['searchPanel'])}
+          className="group w-full rounded-xl hover:bg-slate-50/80 p-3 text-left transition-all duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-500 focus-visible:ring-offset-2"
+        >
+          <div className="flex items-center gap-3">
+            <div className="rounded-lg ring-1 ring-slate-200/60 bg-white/60 p-2">
+              <Search className="h-4 w-4 text-slate-600" />
+            </div>
+            <div className="flex-1">
+              <div className="text-sm font-medium text-slate-700">Search</div>
+              <div className="text-xs text-slate-500 mt-0.5">Cmd/Ctrl + K</div>
+            </div>
+            <ChevronRight className="h-4 w-4 text-slate-400 group-hover:translate-x-0.5 transition-transform" />
+          </div>
+        </button>
+
+        <button
+          onClick={() => webViewerInstance?.UI.openElements(['outlinesPanel'])}
+          className="group w-full rounded-xl hover:bg-slate-50/80 p-3 text-left transition-all duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-500 focus-visible:ring-offset-2"
+        >
+          <div className="flex items-center gap-3">
+            <div className="rounded-lg ring-1 ring-slate-200/60 bg-white/60 p-2">
+              <Bookmark className="h-4 w-4 text-slate-600" />
+            </div>
+            <div className="flex-1">
+              <div className="text-sm font-medium text-slate-700">Contents</div>
+              <div className="text-xs text-slate-500 mt-0.5">Headings & figures</div>
+            </div>
+            <ChevronRight className="h-4 w-4 text-slate-400 group-hover:translate-x-0.5 transition-transform" />
+          </div>
+        </button>
+      </div>
+    </div>
+  </div>
+</div>
+      {/* PDF Viewer Container */}
+      {/* Tabbed PDF Viewer Container */}
+      <div className="flex-1 flex flex-col">
+        {/* Tab Bar */}
+        <div className="flex items-center bg-gray-50 border-b border-gray-200 px-2 min-h-[40px] shadow-sm">
+          <div className="flex items-center space-x-1 flex-1 overflow-x-auto">
+            {openTabs.map((tab) => (
+              <div
+                key={tab.id}
+                className={`flex items-center px-3 py-2 rounded-t-lg text-sm cursor-pointer group min-w-0 max-w-[200px] transition-colors ${
+                  tab.active 
+                    ? 'bg-white border-t border-l border-r border-gray-200 text-gray-900 shadow-sm' 
+                    : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                }`}
+                onClick={() => switchTab(tab.id)}
+              >
+                <FileText className="w-4 h-4 mr-2 flex-shrink-0 text-blue-600" />
+                <span className="truncate font-medium">{tab.title}</span>
+                {openTabs.length > 1 && (
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation()
+                      closeTab(tab.id)
+                    }}
+                    className="ml-2 opacity-0 group-hover:opacity-100 hover:bg-gray-300 rounded p-0.5 flex-shrink-0 transition-opacity"
+                    title="Close tab"
+                  >
+                    <X className="w-3 h-3" />
+                  </button>
+                )}
+              </div>
+            ))}
+            <button
+              onClick={() => fileInputRef.current?.click()}
+              className="px-3 py-2 text-sm text-gray-500 hover:text-gray-700 hover:bg-gray-200 rounded flex items-center transition-colors"
+              title="Add new document"
+            >
+              <Plus className="w-4 h-4 mr-1" />
+              Add Document
+            </button>
+          </div>
+        </div>
+
+        {/* Tab Content Area */}
+        <div className="flex-1 relative" style={{ height: 'calc(100vh - 40px)' }}>
+          {isLoading && (
+            <div className="absolute inset-0 bg-white bg-opacity-90 flex items-center justify-center z-10">
+              <div className="text-center">
+                <Loader2 className="w-8 h-8 animate-spin text-blue-600 mx-auto mb-3" />
+                <p className="text-gray-600 font-medium">Loading academic document...</p>
+                <p className="text-sm text-gray-500 mt-1">Preparing advanced PDF viewer</p>
+              </div>
+            </div>
+          )}
+          
+          {/* WebViewer Container */}
+          <div 
+            id="webviewer-container"
+            className="webviewer flex-1 w-full relative" 
+            ref={viewer}
+            style={{ 
+              height: 'calc(100vh - 140px)',
+              minHeight: '800px',
+              width: '100%'
+            }}
+          >
           {/* Stuck Markers Overlay */}
           {stuckMarkers
             .filter(marker => marker.page === currentPage)
@@ -3675,6 +4033,57 @@ ${documentContent}
           <VisualSummaryPanel advSummary={advSummary} goToPage={goToPage} />
         )}
       </div>
+      {/* Research Storyboard */}
+      <RealResearchStoryboard
+  isOpen={showStoryboard}
+  onClose={() => setShowStoryboard(false)}
+  capturedSelections={capturedSelections.map(sel => ({
+    text: sel.text,
+    timestamp: typeof sel.timestamp === 'string' ? new Date(sel.timestamp).getTime() : sel.timestamp,
+    page: sel.pageNumber || currentPage
+  }))}
+  stuckMarkers={stuckMarkers.map(marker => ({
+    ...marker,
+    timestamp: Date.now(),
+    position: { x: marker.x, y: marker.y }
+  }))}
+  currentPage={currentPage}
+  totalPages={totalPages}
+  showMathExplainer={showMathExplainer}
+  showGeneralExplainer={showGeneralExplainer}
+  showTableExplainer={showTableExplainer}
+  showImageExplainer={showImageExplainer}
+  showPrerequisiteHelper={showPrerequisiteHelper}
+  showScreenCapture={showScreenCapture}
+  selectedEquation={selectedEquation}
+  generalExplainerText={generalExplainerText}
+  tableExplainerText={tableExplainerText}
+  imageExplainerText={imageExplainerText}
+  prerequisiteText={prerequisiteText}
+/>
+
+{/* Gaze Heatmap Overlay */}
+<GazeHeatmap page={currentPage} enabled={eyeTrackingEnabled && showGazeHeatmap} />
+    {/* Eye Tracking Calibration */}
+    <EyeTrackingCalibration
+        isOpen={showEyeCalibration}
+        onClose={() => setShowEyeCalibration(false)}
+        onComplete={() => {
+          eyeTracker.finishCalibration()
+          eyeTracker.startTracking(documentId, currentPage)
+          setEyeTrackingEnabled(true)
+          
+          // Show prediction points for testing
+          const webgazer = (window as any).webgazer
+          if (webgazer) {
+            webgazer.showPredictionPoints(true) // This shows the red dot
+          }
+          
+          console.log('✅ Eye tracking started!')
+        }}
+      />
+    </div>
+    
     </div>
   )
 }

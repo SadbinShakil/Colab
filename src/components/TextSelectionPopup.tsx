@@ -369,21 +369,79 @@ export default function TextSelectionPopup({
                 </Button>
               </div>
             </div>
-          ) : (
-            <div className="space-y-2 p-2">
+        ) : (
+          <div className="space-y-3 p-3">
+            <div className="space-y-2">
+              <label className="text-xs font-medium text-gray-700 flex items-center gap-1">
+                💭 Add your comment
+              </label>
               <textarea
                 value={annotationText}
                 onChange={(e) => setAnnotationText(e.target.value)}
-                placeholder="Add a comment..."
-                className="w-full p-2 text-sm border rounded-md resize-none focus:outline-none focus:ring-2 focus:ring-blue-500"
-                rows={3}
+                placeholder="Share your thoughts, questions, or insights..."
+                className="w-full p-3 text-sm border-2 border-blue-200 rounded-lg resize-none 
+                  focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent
+                  bg-gradient-to-br from-white to-blue-50/30
+                  placeholder:text-gray-400 transition-all"
+                rows={4}
+                maxLength={500}
                 autoFocus
               />
-              <div className="flex justify-end gap-2">
+              
+              {/* Character counter */}
+              <div className="flex justify-between items-center">
+                <span className="text-xs text-gray-500">
+                  {annotationText.length} / 500
+                </span>
+              </div>
+            </div>
+            
+            <div className="flex justify-between gap-2">
+              {/* Quick emoji buttons */}
+              <div className="flex gap-1">
+                <button
+                  type="button"
+                  onClick={() => setAnnotationText(prev => prev + '👍')}
+                  className="w-7 h-7 text-sm hover:bg-gray-100 rounded-md transition-colors"
+                  title="Add thumbs up"
+                >
+                  👍
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setAnnotationText(prev => prev + '❓')}
+                  className="w-7 h-7 text-sm hover:bg-gray-100 rounded-md transition-colors"
+                  title="Add question"
+                >
+                  ❓
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setAnnotationText(prev => prev + '💡')}
+                  className="w-7 h-7 text-sm hover:bg-gray-100 rounded-md transition-colors"
+                  title="Add idea"
+                >
+                  💡
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setAnnotationText(prev => prev + '⚠️')}
+                  className="w-7 h-7 text-sm hover:bg-gray-100 rounded-md transition-colors"
+                  title="Add warning"
+                >
+                  ⚠️
+                </button>
+              </div>
+              
+              <div className="flex gap-2">
                 <Button
                   variant="ghost"
                   size="sm"
-                  onClick={() => setShowAnnotation(false)}
+                  onClick={() => {
+                    setShowAnnotation(false)
+                    setAnnotationText('')
+                  }}
+                  className="hover:bg-gray-100"
                 >
                   Cancel
                 </Button>
@@ -391,21 +449,23 @@ export default function TextSelectionPopup({
                   size="sm"
                   onClick={handleAnnotate}
                   disabled={!annotationText.trim()}
+                  className="bg-blue-600 hover:bg-blue-700 text-white"
                 >
-                  Add Comment
+                  💬 Add Comment
                 </Button>
               </div>
             </div>
-          )}
+          </div>
+        )}
         </div>
-
+        
         {/* Character count */}
         <div className="px-3 pb-2">
           <p className="text-xs text-gray-500">
             {selectedText.length} characters selected
           </p>
         </div>
-      </Card>
-    </div>
-  )
-}
+        </Card>
+        </div>
+        )
+        }

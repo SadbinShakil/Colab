@@ -1,6 +1,9 @@
 // src/app/api/socket/route.ts
 import { NextResponse } from "next/server"
 
+// In-memory storage for annotations (replace with database in production)
+const annotationStorage: Record<string, any[]> = {}
+
 // In-memory storage for demo (in real app, use database)
 const chatMessages: { [documentId: string]: any[] } = {}
 const typingUsers: { [documentId: string]: Set<string> } = {}
@@ -53,6 +56,47 @@ export async function POST(req: Request) {
             { success: false, error: "Missing required fields for activity update" },
             { status: 400 }
           )
+        }
+
+        case 'broadcast-annotation': {
+          const { documentId: reqDocId, annotationData } = body  // 👈 Extract documentId
+          
+          // Save to in-memory storage (or database)
+          if (!annotationStorage[reqDocId]) {  // 👈 Use reqDocId
+            annotationStorage[reqDocId] = []
+          }
+          
+          annotationStorage[reqDocId].push({  // 👈 Use reqDocId
+            ...annotationData,
+            userId: body.userId,
+            userName: body.userName
+          })
+          
+          console.log('📡 Annotation broadcast received:', annotationData.id)
+          
+          return NextResponse.json({ success: true })
+        }
+        
+        case 'get-annotations': {
+          const { documentId: reqDocId } = body  // 👈 ADD THIS LINE
+          const annotations = annotationStorage[reqDocId] || []  // 👈 Use reqDocId
+          
+          return NextResponse.json({ 
+            success: true, 
+            annotations 
+          })
+        }
+        
+        case 'delete-annotation': {
+          const { documentId: reqDocId, annotationId } = body  // 👈 Extract documentId
+          
+          if (annotationStorage[reqDocId]) {  // 👈 Use reqDocId
+            annotationStorage[reqDocId] = annotationStorage[reqDocId].filter(
+              (a: any) => a.id !== annotationId
+            )
+          }
+          
+          return NextResponse.json({ success: true })
         }
 
       case 'join-document':
