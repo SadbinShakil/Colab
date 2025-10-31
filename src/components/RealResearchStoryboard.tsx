@@ -90,15 +90,15 @@ export default function RealResearchStoryboard({
 // Combine all activities into a timeline
 // Combine all activities into a timeline
 const timeline = useMemo(() => {
-  console.log('🔍 Timeline Debug - Raw Props:', {
-    // capturedSelections,
-    // capturedSelectionsLength: capturedSelections.length,
-    // capturedSelectionsFirst3: capturedSelections.slice(0, 3),
-    // stuckMarkers,
-    // stuckMarkersLength: stuckMarkers.length,
-    // showMathExplainer,
-    // showGeneralExplainer
-  });
+  // console.log('🔍 Timeline Debug - Raw Props:', {
+  //   capturedSelections,
+  //   capturedSelectionsLength: capturedSelections.length,
+  //   capturedSelectionsFirst3: capturedSelections.slice(0, 3),
+  //   stuckMarkers,
+  //   stuckMarkersLength: stuckMarkers.length,
+  //   showMathExplainer,
+  //   showGeneralExplainer
+  // });
   
   const events: TimelineEvent[] = []
 

@@ -13,6 +13,10 @@ import {
   LineChart, Line, Treemap
 } from 'recharts'
 
+// Add import
+import { useRealtimeHighlights } from '@/app/hooks/useRealtimeHighlights'
+
+
 import GazeHeatmap from './GazeHeatmap'
 import { toast } from 'sonner'
 import { contextualAI } from '@/lib/contextualAI'
@@ -182,6 +186,20 @@ export default function ApryseWebViewer({
 
   const [showGazeHeatmap, setShowGazeHeatmap] = useState(false)
   
+  const {
+    isConnected,
+    connectedUsers,
+    broadcastHighlight,
+  } = useRealtimeHighlights({
+    documentId,
+    userName,
+    userId,
+    enabled: true
+  })
+
+//   // Add this test line:
+// console.log('🔧 broadcastHighlight function:', typeof broadcastHighlight, broadcastHighlight);
+
   // Text selection storage
   const [capturedSelections, setCapturedSelections] = useState<Array<{
     text: string;
@@ -1784,55 +1802,36 @@ ${documentContent}
                 });
                 
                 setLastSelectedText(highlightedText);
-                // // 🚀 SOCKET.IO REAL-TIME BROADCAST
-                // console.log('🔥 Broadcasting highlight via Socket.io');
-
-                // const highlightData = {
-                //   documentId,
-                //   pageNumber: annotation.PageNumber,
-                //   quads: annotation.getQuads ? annotation.getQuads() : [],
-                //   color: annotation.Color ? `rgb(${annotation.Color.R}, ${annotation.Color.G}, ${annotation.Color.B})` : '#ffeb3b',
-                //   contents: highlightedText,
-                //   position: {
-                //     x: annotation.X || 0,
-                //     y: annotation.Y || 0
-                //   }
-                // }
-
-                // broadcastHighlight(highlightData);
-
-                // 🤝 BROADCAST TO OTHER USERS - SIMPLIFIED
-                console.log('🔥 BROADCAST CODE REACHED!'); // This MUST show if code runs
-                console.log('🔥 documentId:', documentId);
-                console.log('🔥 userId:', userId);
-                console.log('🔥 userName:', userName);
-
-                fetch('/api/socket', {
-                  method: 'POST',
-                  headers: { 'Content-Type': 'application/json' },
-                  body: JSON.stringify({
-                    action: 'broadcast-annotation',
-                    documentId,
-                    userId,
-                    userName,
-                    annotationData: {
-                      id: annotation.Id,
-                      type: annotation.Subject,
-                      pageNumber: annotation.PageNumber,
-                      x: annotation.X || 0,
-                      y: annotation.Y || 0,
-                      width: annotation.Width || 0,
-                      height: annotation.Height || 0,
-                      color: annotation.Color ? `rgb(${annotation.Color.R}, ${annotation.Color.G}, ${annotation.Color.B})` : '#ffff00',
-                      text: highlightedText,
-                      timestamp: new Date().toISOString()
-                    }
-                  })
-                })
-                .then(r => r.json())
-                .then(result => console.log('📡 Broadcast result:', result))
-                .catch(error => console.error('❌ Broadcast error:', error));
                 
+                // 🚀 SOCKET.IO REAL-TIME BROADCAST
+                console.log('🔥 Broadcasting highlight via Socket.io');
+
+                const highlightData = {
+                  documentId,
+                  pageNumber: annotation.PageNumber,
+                  quads: annotation.getQuads ? annotation.getQuads() : [],
+                  color: annotation.Color ? `rgb(${annotation.Color.R}, ${annotation.Color.G}, ${annotation.Color.B})` : '#ffeb3b',
+                  contents: highlightedText,
+                  position: {
+                    x: annotation.X || 0,
+                    y: annotation.Y || 0
+                  }
+                }
+
+                // Broadcast via Socket.io
+                broadcastHighlight(highlightData);
+
+                // Keep your existing callback
+                if (onHighlightAdd) {
+                  onHighlightAdd({
+                    ...highlightData,
+                    id: annotation.Id,
+                    author: userName,
+                    authorId: userId,
+                    timestamp: new Date().toISOString()
+                  })
+                }
+
                 // Show popup with highlighted text
                 if (highlightedText.trim()) {
                   setSelectedText(highlightedText);
@@ -2163,8 +2162,32 @@ ${documentContent}
                     highlightedText = annotation.Contents;
                   }
                   
+                  // if (highlightedText.trim()) {
+                  //   console.log('📝 Clicked highlight text:', highlightedText);
+                  //   setSelectedText(highlightedText);
+                  //   setSelectionPosition({ x: annotation.X, y: annotation.Y });
+                  //   setShowTextSelectionPopup(true);
+                  // }
+
+
                   if (highlightedText.trim()) {
                     console.log('📝 Clicked highlight text:', highlightedText);
+                    
+                    // 🔄 SOCKET.IO HIGHLIGHT CLICK BROADCAST
+                    console.log('🔄 Broadcasting highlight CLICK via Socket.io');
+                    
+                    const clickData = {
+                      documentId,
+                      action: 'click',
+                      pageNumber: annotation.PageNumber,
+                      highlightId: annotation.Id,
+                      clickedText: highlightedText,
+                      user: userName,
+                      timestamp: new Date().toISOString()
+                    }
+                    
+                    broadcastHighlight(clickData);
+                    
                     setSelectedText(highlightedText);
                     setSelectionPosition({ x: annotation.X, y: annotation.Y });
                     setShowTextSelectionPopup(true);
@@ -3089,6 +3112,28 @@ useEffect(() => {
       </Button>
     </div>
     
+
+
+    {/* Socket.io Connection Status */}
+    <div className="px-4 py-2 border-b border-slate-200/60">
+      <div className="flex items-center justify-between">
+        <div className="flex items-center space-x-2">
+          <div className={`w-2 h-2 rounded-full ${isConnected ? 'bg-green-500' : 'bg-red-500'}`} />
+          <span className="text-xs text-slate-600 font-medium">
+            {isConnected ? 'Live' : 'Offline'}
+          </span>
+        </div>
+        
+        {isConnected && connectedUsers.length > 0 && (
+          <div className="flex items-center space-x-1">
+            <Users className="w-3 h-3 text-blue-600" />
+            <span className="text-xs text-slate-500">
+              {connectedUsers.length} user{connectedUsers.length !== 1 ? 's' : ''}
+            </span>
+          </div>
+        )}
+      </div>
+    </div>
 
 {/* Socket.io Connection Status */}
 {/* <div className="px-4 py-2 border-b border-slate-200/60">
