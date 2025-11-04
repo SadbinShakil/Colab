@@ -30,7 +30,7 @@ interface ContextualHelp {
 
 class ContextualAIService {
   private struggleThresholds = {
-    highlightCount: 2,        // Lowered to 2 highlights for easier testing
+    highlightCount: 4,        // Lowered to 2 highlights for easier testing
     timeSpent: 120000,        // Reduced from 5 minutes to 2 minutes on one section
     revisitCount: 2,          // Reduced from 3 to 2 returns to section
     annotationDensity: 0.2    // Reduced from 30% to 20% of section has annotations
@@ -38,6 +38,7 @@ class ContextualAIService {
   
   private userBehavior: Map<string, UserAction[]> = new Map()
   private strugglePatterns: StrugglePattern[] = []
+  private notifiedSections: Set<string> = new Set()
   private isEnabled: boolean = true
 
   // Monitor user highlighting behavior
@@ -197,7 +198,16 @@ class ContextualAIService {
   }
 
   private notifyStruggleDetected(pattern: StrugglePattern) {
-    console.log('📢 [ContextualAI] Notifying struggle detected:', pattern)
+    // ✅ Check if already notified for this section
+    if (this.notifiedSections.has(pattern.sectionId)) {
+      console.log('🔇 [ContextualAI] Already notified for section:', pattern.sectionId)
+      return
+    }
+  
+    console.log('🔢 [ContextualAI] First-time notification for section:', pattern.sectionId)
+    
+    // ✅ Mark as notified BEFORE dispatching event
+    this.notifiedSections.add(pattern.sectionId)
     
     // Emit event for UI to show help popup
     if (typeof window !== 'undefined') {
@@ -216,6 +226,17 @@ class ContextualAIService {
       console.log('⚠️ [ContextualAI] Window not available for event dispatch')
     }
   }
+
+  // Clear notifications when user accepts help or resets
+clearNotifications(sectionId?: string) {
+  if (sectionId) {
+    this.notifiedSections.delete(sectionId)
+    console.log('🧹 [ContextualAI] Cleared notification for section:', sectionId)
+  } else {
+    this.notifiedSections.clear()
+    console.log('🧹 [ContextualAI] Cleared all notifications')
+  }
+}
 
   // Check if user needs help with a specific section
   needsHelp(sectionId: string): boolean {

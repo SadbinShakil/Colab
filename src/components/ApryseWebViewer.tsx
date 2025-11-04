@@ -24,7 +24,7 @@ import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { Input } from '@/components/ui/input'
-import RealResearchStoryboard from './RealResearchStoryboard'
+// import RealResearchStoryboard from './RealResearchStoryboard'
 import { 
   FileText, 
   Users, 
@@ -190,15 +190,20 @@ export default function ApryseWebViewer({
     isConnected,
     connectedUsers,
     broadcastHighlight,
+    incomingHighlights, // Add this
+    clearIncomingHighlights,
   } = useRealtimeHighlights({
     documentId,
     userName,
     userId,
+    webViewerInstance,  // Add this line
     enabled: true
   })
 
-//   // Add this test line:
-// console.log('🔧 broadcastHighlight function:', typeof broadcastHighlight, broadcastHighlight);
+// console.log('🔧 webViewerInstance in main component:', !!webViewerInstance);
+// console.log('🔧 webViewerInstance details:', webViewerInstance);
+
+
 
   // Text selection storage
   const [capturedSelections, setCapturedSelections] = useState<Array<{
@@ -209,6 +214,8 @@ export default function ApryseWebViewer({
   }>>([])
   const [lastSelectedText, setLastSelectedText] = useState('')
   const [showTextSelectionPopup, setShowTextSelectionPopup] = useState(false)
+  const [confusionPopupShown, setConfusionPopupShown] = useState(new Set());
+  const [sectionHighlightCounts, setSectionHighlightCounts] = useState(new Map());
   const [selectedText, setSelectedText] = useState('')
   const [selectionPosition, setSelectionPosition] = useState({ x: 0, y: 0 })
   const [mousePosition, setMousePosition] = useState({ x: 0, y: 0 })
@@ -229,6 +236,11 @@ export default function ApryseWebViewer({
   const [extractedImageData, setExtractedImageData] = useState<string | null>(null)
   const [hasActualImage, setHasActualImage] = useState(false)
   
+
+
+const [showConfusionPopup, setShowConfusionPopup] = useState(false);
+const [confusionSection, setConfusionSection] = useState('');
+
   // Screen Capture state
   const [showScreenCapture, setShowScreenCapture] = useState(false)
   const [capturedImageData, setCapturedImageData] = useState<string | null>(null)
@@ -363,6 +375,27 @@ useEffect(() => {
     eyeTracker.end()
   }
 }, [])
+
+
+
+
+useEffect(() => {
+  if (incomingHighlights.length > 0 && webViewerInstance?.Core) {
+    const { annotationManager } = webViewerInstance.Core;
+    
+    incomingHighlights.forEach(async (highlight) => {
+      try {
+        console.log('📥 Importing XFDF highlight:', highlight);
+        await annotationManager.importAnnotations(highlight.xfdf, { imported: true });
+        console.log('✅ XFDF highlight imported successfully!');
+      } catch (error) {
+        console.error('❌ Error importing XFDF:', error);
+      }
+    });
+    
+    clearIncomingHighlights();
+  }
+}, [incomingHighlights, webViewerInstance, clearIncomingHighlights]);
 
 // Update eye tracking page when PDF page changes
 useEffect(() => {
@@ -1719,9 +1752,17 @@ ${documentContent}
         
         // Listen for annotation events
         annotationManager.addEventListener('annotationChanged', (annotations: any[], action: string, info: any) => {
-          if (action === 'add' && info && info.annotation) {
-            const annotation = info.annotation;
+          console.log('🎯 ANNOTATION EVENT:', { action, info, annotationsCount: annotations.length });
+          
+          if (action === 'add' && annotations && annotations.length > 0) {
+            const annotation = annotations[0]; // Get from annotations array
+            console.log('🎯 NEW ANNOTATION ADDED:', annotation.Subject, annotation);
             
+            // ✅ PREVENT FEEDBACK LOOP: Only process annotations created by current user
+            if (annotation.Author !== userName) {
+              console.log('🔇 Ignoring annotation from another user/Socket.io:', annotation.Author);
+              return; // Exit early to prevent feedback loop
+            }
             
             // Track all annotation types for contextual AI
             const sectionId = `page-${annotation.PageNumber}-section`;
@@ -1733,6 +1774,7 @@ ${documentContent}
             
             // Handle different annotation types
             if (annotation.Subject === 'Highlight' || annotation.Subject === 'highlight') {
+              console.log('🎯 HIGHLIGHT DETECTED - PROCESSING...');
               
               // Get the highlighted text from the annotation using Apryse's official method
               let highlightedText = '';
@@ -1803,34 +1845,36 @@ ${documentContent}
                 
                 setLastSelectedText(highlightedText);
                 
-                // 🚀 SOCKET.IO REAL-TIME BROADCAST
-                console.log('🔥 Broadcasting highlight via Socket.io');
+              // 🚀 SOCKET.IO REAL-TIME BROADCAST - XFDF VERSION
+              console.log('🔥 Broadcasting XFDF highlight via Socket.io');
 
-                const highlightData = {
-                  documentId,
-                  pageNumber: annotation.PageNumber,
-                  quads: annotation.getQuads ? annotation.getQuads() : [],
-                  color: annotation.Color ? `rgb(${annotation.Color.R}, ${annotation.Color.G}, ${annotation.Color.B})` : '#ffeb3b',
-                  contents: highlightedText,
-                  position: {
-                    x: annotation.X || 0,
-                    y: annotation.Y || 0
+              annotationManager.exportAnnotations({ annotList: [annotation], widgets: false })
+                .then((xfdf: string) => {
+                  const highlightData = {
+                    documentId,
+                    xfdf,
+                    pageNumber: annotation.PageNumber,
+                    user: userName
+                  };
+                  
+                  broadcastHighlight(highlightData);
+
+                  // Keep your existing callback
+                  if (onHighlightAdd) {
+                    onHighlightAdd({
+                      id: annotation.Id,
+                      text: highlightedText,
+                      page: annotation.PageNumber,
+                      position: {
+                        x: annotation.X || 0,
+                        y: annotation.Y || 0
+                      },
+                      author: userName,
+                      authorId: userId,
+                      timestamp: new Date().toISOString()
+                    })
                   }
-                }
-
-                // Broadcast via Socket.io
-                broadcastHighlight(highlightData);
-
-                // Keep your existing callback
-                if (onHighlightAdd) {
-                  onHighlightAdd({
-                    ...highlightData,
-                    id: annotation.Id,
-                    author: userName,
-                    authorId: userId,
-                    timestamp: new Date().toISOString()
-                  })
-                }
+                });  // ← YES, this closing }); is needed!
 
                 // Show popup with highlighted text
                 if (highlightedText.trim()) {
@@ -1848,7 +1892,39 @@ ${documentContent}
                   };
                   
                   console.log('🤖 [ContextualAI] Tracking highlight:', { sectionId, text: highlightedText, location });
+                  //contextualAI.trackHighlight(sectionId, highlightedText, location);
+                  // Add state at the top of your component (around line 178):
+                  // Count highlights per section using state from component top
+                  const currentCount = sectionHighlightCounts.get(sectionId) || 0;
+                  const newCount = currentCount + 1;
+                  setSectionHighlightCounts(prev => new Map(prev).set(sectionId, newCount));
+
+                  // Only show confusion popup if more than 3 highlights in this section
+                  if (newCount >= 3 && !confusionPopupShown.has(sectionId)) {
+                    console.log(`🤔 Confusion detected in ${sectionId}: ${newCount} highlights`);
+                    setConfusionPopupShown(prev => new Set(prev).add(sectionId));
+                  }
+
+                // Only show confusion popup if:
+                // 1. More than 3 highlights in this section
+                // 2. Haven't shown popup for this section yet
+                // 3. User created this highlight (not incoming from others)
+                if (newCount >= 3 && 
+                    !confusionPopupShown.has(sectionId) && 
+                    annotation.Author === userName) {
+                  
+                  console.log(`🤔 Confusion detected in ${sectionId}: ${newCount} highlights`);
+                  
+                  // Show the popup (you'll need to create this state)
+                  setShowConfusionPopup(true);
+                  setConfusionSection(sectionId);
+                  
+                  // Mark this section as already shown
+                  setConfusionPopupShown(prev => new Set(prev).add(sectionId));
+                  
+                  // Also call original contextual AI if needed
                   contextualAI.trackHighlight(sectionId, highlightedText, location);
+                }
                 }
                 
               } catch (error) {
@@ -2116,7 +2192,16 @@ ${documentContent}
             if (annotations && annotations.length > 0) {
               const annotation = annotations[0];
               if (annotation.Subject === 'Highlight' || annotation.Subject === 'highlight') {
-                console.log('🖱️ Highlight clicked:', annotation);
+                console.log('🖱️ Highlight clicked:', annotation);   
+                  // ✅ ADD THIS DEBUG CODE HERE:
+                  console.log('🔍 WORKING highlight annotation details:');
+                  console.log('- Type:', annotation.constructor.name);
+                  console.log('- Subject:', annotation.Subject);
+                  console.log('- StrokeColor:', annotation.StrokeColor);
+                  console.log('- FillColor:', annotation.FillColor);
+                  console.log('- Full object:', annotation);
+                  
+                 
                 
                 // Get the text from the clicked highlight using Apryse's official method
                 let highlightedText = '';
@@ -2182,6 +2267,10 @@ ${documentContent}
                       pageNumber: annotation.PageNumber,
                       highlightId: annotation.Id,
                       clickedText: highlightedText,
+                      position: {
+                        x: annotation.X || 0,
+                        y: annotation.Y || 0
+                      },
                       user: userName,
                       timestamp: new Date().toISOString()
                     }
@@ -4079,7 +4168,7 @@ useEffect(() => {
         )}
       </div>
       {/* Research Storyboard */}
-      <RealResearchStoryboard
+      {/* <RealResearchStoryboard
   isOpen={showStoryboard}
   onClose={() => setShowStoryboard(false)}
   capturedSelections={capturedSelections.map(sel => ({
@@ -4105,7 +4194,7 @@ useEffect(() => {
   tableExplainerText={tableExplainerText}
   imageExplainerText={imageExplainerText}
   prerequisiteText={prerequisiteText}
-/>
+/> */}
 
 {/* Gaze Heatmap Overlay */}
 <GazeHeatmap page={currentPage} enabled={eyeTrackingEnabled && showGazeHeatmap} />
