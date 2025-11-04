@@ -80,6 +80,40 @@ import AIResearchPrerequisites from './AIResearchPrerequisites'
 import TextSelectionPopup from './TextSelectionPopup'
 import { isMathematicalContent } from '../utils/contentDetector'
 
+
+
+const HIGHLIGHT_REASONS = {
+  confusion: { 
+    label: 'Confused/Need Help', 
+    color: '#ff6b6b', 
+    colorRgb: 'rgb(255, 107, 107)' 
+  },
+  understood: { 
+    label: 'Understood/Clear', 
+    color: '#4ecdc4', 
+    colorRgb: 'rgb(78, 205, 196)' 
+  },
+  clarification: { 
+    label: 'Need Clarification', 
+    color: '#ffe66d', 
+    colorRgb: 'rgb(255, 230, 109)' 
+  },
+  important: { 
+    label: 'Important Point', 
+    color: '#a8e6cf', 
+    colorRgb: 'rgb(168, 230, 207)' 
+  },
+  question: { 
+    label: 'Have Question', 
+    color: '#ffd93d', 
+    colorRgb: 'rgb(255, 217, 61)' 
+  },
+  disagree: { 
+    label: 'Disagree/Doubt', 
+    color: '#ffaaa5', 
+    colorRgb: 'rgb(255, 170, 165)' 
+  }
+};
 interface ApryseWebViewerProps {
   documentUrl: string
   documentId: string
@@ -185,6 +219,10 @@ export default function ApryseWebViewer({
   const [showStoryboard, setShowStoryboard] = useState(false)
 
   const [showGazeHeatmap, setShowGazeHeatmap] = useState(false)
+
+const [showReasonSelector, setShowReasonSelector] = useState(false);
+const [pendingHighlight, setPendingHighlight] = useState<any>(null);
+const [selectedReason, setSelectedReason] = useState<string>('understood');
   
   const {
     isConnected,
@@ -202,6 +240,42 @@ export default function ApryseWebViewer({
 
 // console.log('🔧 webViewerInstance in main component:', !!webViewerInstance);
 // console.log('🔧 webViewerInstance details:', webViewerInstance);
+
+
+//for having the reason of the highlights
+// const HIGHLIGHT_REASONS = {
+//   confusion: { 
+//     label: 'Confused/Need Help', 
+//     color: '#ff6b6b', 
+//     colorRgb: 'rgb(255, 107, 107)' 
+//   },
+//   understood: { 
+//     label: 'Understood/Clear', 
+//     color: '#4ecdc4', 
+//     colorRgb: 'rgb(78, 205, 196)' 
+//   },
+//   clarification: { 
+//     label: 'Need Clarification', 
+//     color: '#ffe66d', 
+//     colorRgb: 'rgb(255, 230, 109)' 
+//   },
+//   important: { 
+//     label: 'Important Point', 
+//     color: '#a8e6cf', 
+//     colorRgb: 'rgb(168, 230, 207)' 
+//   },
+//   question: { 
+//     label: 'Have Question', 
+//     color: '#ffd93d', 
+//     colorRgb: 'rgb(255, 217, 61)' 
+//   },
+//   disagree: { 
+//     label: 'Disagree/Doubt', 
+//     color: '#ffaaa5', 
+//     colorRgb: 'rgb(255, 170, 165)' 
+//   }
+// };
+
 
 
 
@@ -240,6 +314,7 @@ export default function ApryseWebViewer({
 
 const [showConfusionPopup, setShowConfusionPopup] = useState(false);
 const [confusionSection, setConfusionSection] = useState('');
+
 
   // Screen Capture state
   const [showScreenCapture, setShowScreenCapture] = useState(false)
@@ -318,6 +393,63 @@ const [openTabs, setOpenTabs] = useState([
   const [depth, setDepth] = useState(3); // 1–5
   const [advSummary, setAdvSummary] = useState<AdvancedSummary | null>(null);
   const [advBusy, setAdvBusy] = useState(false);
+
+  // ✅ ADD THIS FUNCTION RIGHT HERE:
+  const completeHighlightWithReason = (reason: string) => {
+    if (!pendingHighlight || !webViewerInstance?.Core) return;
+    
+    const reasonData = HIGHLIGHT_REASONS[reason as keyof typeof HIGHLIGHT_REASONS];
+    const { annotation, highlightedText, documentId, pageNumber } = pendingHighlight;
+    const { annotationManager } = webViewerInstance.Core;
+    
+    // Update annotation color
+    if (webViewerInstance.Core.Annotations?.Color) {
+      annotation.StrokeColor = new webViewerInstance.Core.Annotations.Color(
+        parseInt(reasonData.color.slice(1, 3), 16),
+        parseInt(reasonData.color.slice(3, 5), 16),
+        parseInt(reasonData.color.slice(5, 7), 16)
+      );
+      annotationManager.redrawAnnotation(annotation);
+    }
+    
+    // Export and broadcast with reason
+    annotationManager.exportAnnotations({ annotationList: [annotation], widgets: false })
+      .then((xfdf: string) => {
+        const highlightData = {
+          documentId,
+          xfdf,
+          pageNumber,
+          user: userName,
+          reason: reason,
+          reasonLabel: reasonData.label,
+          color: reasonData.colorRgb,
+          contents: highlightedText
+        };
+        
+        console.log('📡 Broadcasting highlight with reason:', highlightData);
+        broadcastHighlight(highlightData);
+        
+        // Your existing callback
+        if (onHighlightAdd) {
+          onHighlightAdd({
+            id: annotation.Id,
+            text: highlightedText,
+            page: pageNumber,
+            position: { x: annotation.X || 0, y: annotation.Y || 0 },
+            author: userName,
+            authorId: userId,
+            timestamp: new Date().toISOString(),
+            reason: reason,
+            reasonLabel: reasonData.label
+          });
+        }
+      });
+    
+    // Close selector
+    setShowReasonSelector(false);
+    setPendingHighlight(null);
+  };
+
 
   // Update documentContent when extractedText is available from parent
   useEffect(() => {
@@ -1846,35 +1978,51 @@ ${documentContent}
                 setLastSelectedText(highlightedText);
                 
               // 🚀 SOCKET.IO REAL-TIME BROADCAST - XFDF VERSION
-              console.log('🔥 Broadcasting XFDF highlight via Socket.io');
+              // console.log('🔥 Broadcasting XFDF highlight via Socket.io');
 
-              annotationManager.exportAnnotations({ annotList: [annotation], widgets: false })
-                .then((xfdf: string) => {
-                  const highlightData = {
-                    documentId,
-                    xfdf,
-                    pageNumber: annotation.PageNumber,
-                    user: userName
-                  };
+              // annotationManager.exportAnnotations({ annotList: [annotation], widgets: false })
+              //   .then((xfdf: string) => {
+              //     const highlightData = {
+              //       documentId,
+              //       xfdf,
+              //       pageNumber: annotation.PageNumber,
+              //       user: userName
+              //     };
                   
-                  broadcastHighlight(highlightData);
+              //     broadcastHighlight(highlightData);
 
-                  // Keep your existing callback
-                  if (onHighlightAdd) {
-                    onHighlightAdd({
-                      id: annotation.Id,
-                      text: highlightedText,
-                      page: annotation.PageNumber,
-                      position: {
-                        x: annotation.X || 0,
-                        y: annotation.Y || 0
-                      },
-                      author: userName,
-                      authorId: userId,
-                      timestamp: new Date().toISOString()
-                    })
-                  }
-                });  // ← YES, this closing }); is needed!
+              //     // Keep your existing callback
+              //     if (onHighlightAdd) {
+              //       onHighlightAdd({
+              //         id: annotation.Id,
+              //         text: highlightedText,
+              //         page: annotation.PageNumber,
+              //         position: {
+              //           x: annotation.X || 0,
+              //           y: annotation.Y || 0
+              //         },
+              //         author: userName,
+              //         authorId: userId,
+              //         timestamp: new Date().toISOString()
+              //       })
+              //     }
+              //   });  // ← YES, this closing }); is needed!
+
+
+// 🚀 SOCKET.IO REAL-TIME BROADCAST - WITH REASON SELECTOR
+console.log('🎨 Highlight created, showing reason selector');
+
+setPendingHighlight({
+  annotation,
+  highlightedText,
+  documentId,
+  pageNumber: annotation.PageNumber
+});
+setShowReasonSelector(true);
+
+
+
+
 
                 // Show popup with highlighted text
                 if (highlightedText.trim()) {
@@ -4160,6 +4308,81 @@ useEffect(() => {
         documentUrl={documentUrl}
         documentText={documentContent} // Pass the extracted text
       />
+
+      {/* ✅ ADD THIS REASON SELECTOR MODAL HERE: */}
+      {/* Highlight Reason Selector */}
+      {showReasonSelector && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-lg shadow-xl max-w-md w-full mx-4 p-6">
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="text-lg font-semibold text-gray-900">
+                Why are you highlighting this?
+              </h3>
+              <button
+                onClick={() => {
+                  setShowReasonSelector(false);
+                  setPendingHighlight(null);
+                }}
+                className="text-gray-400 hover:text-gray-600"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+            
+            <div className="mb-4">
+              <p className="text-sm text-gray-600 mb-3">
+                Choose the reason that best describes why you highlighted this text:
+              </p>
+              
+              <div className="space-y-2">
+                {Object.entries(HIGHLIGHT_REASONS).map(([key, reason]) => (
+                  <button
+                    key={key}
+                    onClick={() => completeHighlightWithReason(key)}
+                    className={`w-full text-left p-3 rounded-lg border-2 transition-all hover:border-gray-300 ${
+                      selectedReason === key 
+                        ? 'border-blue-500 bg-blue-50' 
+                        : 'border-gray-200 hover:bg-gray-50'
+                    }`}
+                  >
+                    <div className="flex items-center space-x-3">
+                      <div 
+                        className="w-4 h-4 rounded"
+                        style={{ backgroundColor: reason.color }}
+                      ></div>
+                      <span className="font-medium text-gray-900">
+                        {reason.label}
+                      </span>
+                    </div>
+                  </button>
+                ))}
+              </div>
+            </div>
+            
+            <div className="flex space-x-3">
+              <button
+                onClick={() => completeHighlightWithReason(selectedReason)}
+                className="flex-1 bg-blue-600 text-white py-2 px-4 rounded-lg hover:bg-blue-700 transition-colors"
+              >
+                Highlight with Reason
+              </button>
+              <button
+                onClick={() => {
+                  setShowReasonSelector(false);
+                  setPendingHighlight(null);
+                }}
+                className="px-4 py-2 text-gray-600 border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors"
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+
+
+
 
       {/* ========== [ADV] Visual Summary Render ========== */}
       <div className="max-w-6xl mx-auto px-4 py-6">
