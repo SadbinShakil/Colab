@@ -20,11 +20,16 @@ class EyeTrackingService {
   private lastLogTime = 0      // ✅ ADD THIS
   
 
-  async initialize() {
-    // Only run in browser
-    if (typeof window === 'undefined') {
-      return false
-    }
+// ✅ ADD: Get WebGazer instance for calibration component
+getWebGazerInstance() {
+  return this.webgazer
+}
+
+async initialize() {
+  // Only run in browser
+  if (typeof window === 'undefined') {
+    return false
+  }
 
     try {
       console.log('🎯 Initializing WebGazer...')
@@ -56,6 +61,10 @@ class EyeTrackingService {
     
     console.log('🎯 Starting calibration...')
     this.webgazer.showPredictionPoints(true)
+    
+    // ✅ ADD: Clear existing calibration data for fresh start
+    this.webgazer.clearData()
+    
     return true
   }
 
@@ -64,7 +73,14 @@ class EyeTrackingService {
     
     console.log('✅ Calibration complete')
     this.calibrated = true
-    this.webgazer.showPredictionPoints(false) // Hide red dot after calibration
+    
+    // ✅ CHANGE: Keep prediction points visible for a bit to verify accuracy
+    setTimeout(() => {
+      if (this.webgazer) {
+        this.webgazer.showPredictionPoints(false)
+      }
+    }, 3000)
+    
     return true
   }
 

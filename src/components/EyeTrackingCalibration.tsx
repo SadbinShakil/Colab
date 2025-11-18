@@ -27,30 +27,72 @@ interface EyeTrackingCalibrationProps {
   isOpen: boolean
   onClose: () => void
   onComplete: () => void
+  webgazer?: any  // ✅ ADD: Pass WebGazer instance
 }
 
 export default function EyeTrackingCalibration({
   isOpen,
   onClose,
-  onComplete
+  onComplete,
+  webgazer  // ✅ ADD: Receive WebGazer instance
 }: EyeTrackingCalibrationProps) {
   const [currentPoint, setCurrentPoint] = useState(0)
   const [isCalibrating, setIsCalibrating] = useState(false)
+  const [clickCount, setClickCount] = useState(0)  // ✅ ADD: Track clicks per point
+  const [isValidating, setIsValidating] = useState(false)
+  const clicksNeeded = 5  // ✅ ADD: Multiple clicks per point for better accuracy
 
   if (!isOpen) return null
 
   const handleStartCalibration = () => {
     setIsCalibrating(true)
     setCurrentPoint(0)
+    setClickCount(0)
+    
+    // ✅ ADD: Clear previous calibration data
+    if (webgazer) {
+      webgazer.clearData()
+      console.log('🧹 Cleared previous calibration data')
+    }
   }
 
-  const handlePointClick = () => {
-    if (currentPoint < calibrationPoints.length - 1) {
-      setCurrentPoint(currentPoint + 1)
-    } else {
-      // Calibration complete
-      onComplete()
-      onClose()
+  const handlePointClick = async (event: React.MouseEvent) => {
+    if (!webgazer) {
+      console.warn('⚠️ WebGazer not available')
+      return
+    }
+    
+    // Get the actual screen coordinates of the click
+    const x = event.clientX
+    const y = event.clientY
+    
+    // ✅ CRITICAL: Tell WebGazer to record this point
+    webgazer.recordScreenPosition(x, y, 'click')
+    
+    console.log(`📍 Calibration click ${clickCount + 1}/${clicksNeeded} at (${x}, ${y}) for point "${calibrationPoints[currentPoint].label}"`)
+    
+    // Increment click count
+    const newClickCount = clickCount + 1
+    setClickCount(newClickCount)
+    
+    // Move to next point after enough clicks
+    if (newClickCount >= clicksNeeded) {
+      if (currentPoint < calibrationPoints.length - 1) {
+        // Move to next calibration point
+        setCurrentPoint(currentPoint + 1)
+        setClickCount(0)
+        console.log(`✅ Point "${calibrationPoints[currentPoint].label}" complete, moving to next`)
+      } else {
+        // All points done
+        setIsValidating(true)
+        
+        // Give WebGazer a moment to process final calibration
+        setTimeout(() => {
+          console.log('✅ ALL CALIBRATION POINTS COMPLETE!')
+          onComplete()
+          onClose()
+        }, 500)
+      }
     }
   }
 
@@ -87,9 +129,9 @@ export default function EyeTrackingCalibration({
             <CardContent className="p-8 space-y-6">
               {/* Main Description */}
               <div className="text-center">
-                <p className="text-gray-600 text-lg">
-                  We'll guide you through a quick <span className="font-semibold text-gray-900">9-point calibration</span> to 
-                  ensure accurate eye tracking while you read.
+              <p className="text-gray-600 text-lg">
+                  We'll guide you through a quick <span className="font-semibold text-gray-900">9-point calibration</span>.
+                  You'll click each point <span className="font-semibold text-gray-900">5 times</span> for accuracy.
                 </p>
               </div>
 
@@ -125,8 +167,8 @@ export default function EyeTrackingCalibration({
                       <span className="text-white font-bold">3</span>
                     </div>
                     <div>
-                      <h4 className="font-semibold text-gray-900 mb-1">Click Targets</h4>
-                      <p className="text-sm text-gray-600">Click each point you see</p>
+                      <h4 className="font-semibold text-gray-900 mb-1">Look Then Click</h4>
+                      <p className="text-sm text-gray-600">Look at target, then click it 5 times</p>
                     </div>
                   </div>
                 </div>
@@ -146,8 +188,8 @@ export default function EyeTrackingCalibration({
 
               {/* Time Estimate */}
               <div className="bg-gray-50 rounded-xl p-4 text-center border border-gray-200">
-                <p className="text-gray-600">
-                  <span className="font-semibold text-gray-900">⏱️ Takes about 30 seconds</span> · 
+              <p className="text-gray-600">
+                  <span className="font-semibold text-gray-900">⏱️ Takes about 60 seconds</span> · 
                   You can recalibrate anytime
                 </p>
               </div>
@@ -180,28 +222,22 @@ export default function EyeTrackingCalibration({
             <div className="absolute bottom-1/4 right-1/4 w-96 h-96 bg-purple-500/10 rounded-full blur-3xl animate-pulse delay-1000"></div>
           </div>
 
-          {/* Progress Bar */}
-          <div className="absolute top-8 left-1/2 transform -translate-x-1/2 z-50">
+{/* Progress Bar */}
+<div className="absolute top-8 left-1/2 transform -translate-x-1/2 z-50">
             <div className="bg-white/95 backdrop-blur-xl rounded-2xl px-8 py-4 shadow-2xl border border-white/20">
               <div className="flex items-center gap-4">
                 <div className="text-center">
-                  <p className="text-xs font-medium text-gray-500 uppercase tracking-wide mb-1">Step</p>
+                  <p className="text-xs font-medium text-gray-500 uppercase tracking-wide mb-1">Point</p>
                   <p className="text-2xl font-bold bg-gradient-to-r from-blue-600 to-purple-600 bg-clip-text text-transparent">
                     {currentPoint + 1} / {calibrationPoints.length}
                   </p>
                 </div>
                 <div className="w-px h-12 bg-gray-200"></div>
-                <div className="flex flex-col gap-1">
-                  {calibrationPoints.map((_, idx) => (
-                    <div 
-                      key={idx}
-                      className={`h-1.5 rounded-full transition-all ${
-                        idx <= currentPoint 
-                          ? 'w-8 bg-gradient-to-r from-blue-500 to-purple-500' 
-                          : 'w-6 bg-gray-200'
-                      }`}
-                    ></div>
-                  ))}
+                <div className="text-center">
+                  <p className="text-xs font-medium text-gray-500 uppercase tracking-wide mb-1">Clicks</p>
+                  <p className="text-2xl font-bold text-gray-900">
+                    {clickCount} / {clicksNeeded}
+                  </p>
                 </div>
               </div>
             </div>
@@ -235,13 +271,16 @@ export default function EyeTrackingCalibration({
             </div>
           </button>
 
-          {/* Instruction */}
-          <div className="absolute bottom-12 left-1/2 transform -translate-x-1/2 z-50">
+{/* Instruction */}
+<div className="absolute bottom-12 left-1/2 transform -translate-x-1/2 z-50">
             <div className="bg-white/95 backdrop-blur-xl rounded-2xl px-8 py-4 shadow-2xl border border-white/20">
               <div className="flex items-center gap-3">
                 <div className="w-3 h-3 bg-gradient-to-r from-blue-500 to-purple-500 rounded-full animate-pulse"></div>
                 <p className="text-gray-800 font-semibold text-lg">
-                  Look at the target, then click it
+                  {isValidating 
+                    ? 'Processing calibration...' 
+                    : `Look at the target, then click it (${clicksNeeded - clickCount} more ${clicksNeeded - clickCount === 1 ? 'click' : 'clicks'})`
+                  }
                 </p>
               </div>
             </div>

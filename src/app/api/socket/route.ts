@@ -1,4 +1,10 @@
 // src/app/api/socket/route.ts
+
+// Extend global type
+declare global {
+  var sectionAssignments: Record<string, any[]> | undefined
+}
+
 import { NextResponse } from "next/server"
 
 // In-memory storage for annotations (replace with database in production)
@@ -99,23 +105,30 @@ export async function POST(req: Request) {
           return NextResponse.json({ success: true })
         }
 
-      case 'join-document':
-        // Handle user joining document
-        const { documentId: joinDocId, userId: joinUserId, userName: joinUserName } = body
-        if (joinDocId && joinUserId) {
-          if (!activeUsers[joinDocId]) {
-            activeUsers[joinDocId] = new Set()
+        case 'join-document':
+          // Handle user joining document
+          const { documentId: joinDocId, userId: joinUserId, userName: joinUserName } = body
+          if (joinDocId && joinUserId) {
+            if (!activeUsers[joinDocId]) {
+              activeUsers[joinDocId] = new Set()
+            }
+            
+            // Store as object with userId and userName
+            const userKey = JSON.stringify({ userId: joinUserId, userName: joinUserName || 'Anonymous' })
+            activeUsers[joinDocId].add(userKey)
+            
+            console.log(`👤 User ${joinUserName} (${joinUserId}) joined document ${joinDocId}`)
+            
+            // Convert Set to array of objects for response
+            const usersArray = Array.from(activeUsers[joinDocId]).map(userStr => JSON.parse(userStr))
+            
+            return NextResponse.json({
+              success: true,
+              message: "Joined document",
+              activeUsers: usersArray
+            })
           }
-          const safeUserName = joinUserName || 'Anonymous'
-          activeUsers[joinDocId].add(safeUserName)
-          console.log(`👤 User ${safeUserName} joined document ${joinDocId}`)
-          return NextResponse.json({
-            success: true,
-            message: "Joined document",
-            activeUsers: Array.from(activeUsers[joinDocId] || [])
-          })
-        }
-        return NextResponse.json({ success: false, error: "Missing required fields" }, { status: 400 })
+          return NextResponse.json({ success: false, error: "Missing required fields" }, { status: 400 })
 
       case 'leave-document':
         // Handle user leaving document
@@ -181,21 +194,23 @@ export async function POST(req: Request) {
         }
         return NextResponse.json({ success: false, error: "Missing required fields" }, { status: 400 })
 
-      case 'get-active-users':
-        // Handle getting active users
-        const { documentId: getUsersDocId } = body
-        if (getUsersDocId) {
-          const users = Array.from(activeUsers[getUsersDocId] || []).map((userName, index) => ({
-            userId: userName || `user_${index}`,
-            userName: userName || 'Anonymous',
-            documentId: getUsersDocId
-          }))
-          return NextResponse.json({
-            success: true,
-            activeUsers: users
-          })
-        }
-        return NextResponse.json({ success: false, error: "Missing document ID" }, { status: 400 })
+        case 'get-active-users':
+          // Handle getting active users
+          const { documentId: getUsersDocId } = body
+          if (getUsersDocId) {
+            // Convert Set to array of user objects
+            const usersArray = Array.from(activeUsers[getUsersDocId] || []).map(userStr => JSON.parse(userStr))
+            
+            return NextResponse.json({
+              success: true,
+              activeUsers: usersArray.map(user => ({
+                userId: user.userId,
+                userName: user.userName,
+                documentId: getUsersDocId
+              }))
+            })
+          }
+          return NextResponse.json({ success: false, error: "Missing document ID" }, { status: 400 })
 
       case 'get-highlights':
         // Handle getting highlights (empty for now)
@@ -302,6 +317,51 @@ export async function POST(req: Request) {
           })
         }
         return NextResponse.json({ success: false, error: "Missing document ID" }, { status: 400 })
+
+
+
+        case 'get-assignments':
+          // Return assignments for this document
+          const { documentId: getAssignDocId } = body
+          if (getAssignDocId) {
+            if (!global.sectionAssignments) {
+              global.sectionAssignments = {}
+            }
+            return NextResponse.json({
+              success: true,
+              assignments: global.sectionAssignments[getAssignDocId] || []
+            })
+          }
+          return NextResponse.json({ success: false, error: "Missing document ID" }, { status: 400 })
+        
+        case 'section-assigned':
+          // Store assignments when someone assigns
+          const { documentId: assignDocId, assignments } = body
+          if (assignDocId && assignments) {
+            if (!global.sectionAssignments) {
+              global.sectionAssignments = {}
+            }
+            global.sectionAssignments[assignDocId] = assignments
+            
+            console.log('📋 Section assignment stored:', {
+              documentId: assignDocId,
+              assignmentsCount: assignments.length
+            })
+            
+            return NextResponse.json({ 
+              success: true,
+              message: "Assignments saved",
+              assignmentsCount: assignments.length
+            })
+          }
+          return NextResponse.json({ success: false, error: "Missing required fields" }, { status: 400 })
+
+
+
+
+
+
+
 
       case 'sync-annotations':
         // Handle annotation synchronization (for initial load)

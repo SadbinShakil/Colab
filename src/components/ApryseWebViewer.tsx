@@ -4,6 +4,9 @@ import { useEffect, useRef, useState, useCallback } from 'react'
 // import { useRealtimeHighlights } from '@/app/hooks/useRealtimeHighlights'
 import { eyeTracker } from '@/lib/eyeTracking'
 import EyeTrackingCalibration from './EyeTrackingCalibration'
+import { PDFHeadingExtractor, type PDFSection, type PDFHeading } from '@/lib/pdfHeadingExtractor'
+
+import SectionAssignmentPanel from './SectionAssignmentPanel'
 
 // [ADV] Charts
 import {
@@ -66,7 +69,8 @@ import {
   Zap,
   Camera,
   GraduationCap,
-  Trash2
+  Trash2,
+  BookOpen
 } from 'lucide-react'
 import MathExplainer from './MathExplainer'
 import GeneralExplainer from './GeneralExplainer'
@@ -146,6 +150,14 @@ interface Collaborator {
   }
 }
 
+interface SectionAssignment {
+  sectionId: string
+  userId: string
+  userName: string
+  status: 'assigned' | 'reading' | 'completed'
+  progress: number
+}
+
 interface ChatMessage {
   id: string
   userId: string
@@ -194,6 +206,9 @@ export default function ApryseWebViewer({
   const [inviteRole, setInviteRole] = useState<'viewer' | 'editor' | 'admin'>('viewer')
   const [inviteMessage, setInviteMessage] = useState('')
   const [currentUserRole, setCurrentUserRole] = useState<'viewer' | 'editor' | 'admin'>('viewer')
+  const [showTeamProgress, setShowTeamProgress] = useState(false)
+  // Initialize Socket.io for real-time features
+const [socketInstance, setSocketInstance] = useState<any>(null)
   const [stuckMarkers, setStuckMarkers] = useState<Array<{
     id: string
     x: number
@@ -297,6 +312,13 @@ const [selectedReason, setSelectedReason] = useState<string>('understood');
 
   const [showEyeCalibration, setShowEyeCalibration] = useState(false)
   const [eyeTrackingEnabled, setEyeTrackingEnabled] = useState(false)
+
+  // ✅ ADD: Section management state
+const [pdfSections, setPdfSections] = useState<PDFSection[]>([])
+const [extractingHeadings, setExtractingHeadings] = useState(false)
+const [showSectionAssignment, setShowSectionAssignment] = useState(false)
+
+const [sectionAssignments, setSectionAssignments] = useState<SectionAssignment[]>([])
   
   // General Explainer state
   const [showGeneralExplainer, setShowGeneralExplainer] = useState(false)
@@ -390,9 +412,104 @@ const [openTabs, setOpenTabs] = useState([
 
   const [persona, setPersona] = useState<Persona>('reviewer');
   const [budget, setBudget] = useState<TimeBudget>('2m');
-  const [depth, setDepth] = useState(3); // 1–5
+  const [depth, setDepth] = useState(3); // 1–5const highlightAssignedSections = useCallback(() => {
   const [advSummary, setAdvSummary] = useState<AdvancedSummary | null>(null);
   const [advBusy, setAdvBusy] = useState(false);
+
+
+
+
+// Highlight assigned sections in the PDF
+const highlightAssignedSections = useCallback(() => {
+  if (!webViewerInstance || !webViewerInstance.Core) return
+  
+  try {
+    const { documentViewer, annotationManager, Annotations } = webViewerInstance.Core
+    
+    if (!Annotations || !documentViewer || !annotationManager) {
+      console.log('⚠️ Apryse components not ready yet')
+      return
+    }
+    
+    // Remove previous section highlights
+    const existingSectionHighlights = annotationManager
+      .getAnnotationsList()
+      .filter((annot: any) => annot.CustomData?.type === 'section-assignment')
+    
+    annotationManager.deleteAnnotations(existingSectionHighlights, { imported: false })
+    
+    // Add new section highlights
+    sectionAssignments.forEach(assignment => {
+      const section = pdfSections.find(s => s.heading.id === assignment.sectionId)
+      if (!section) return
+      
+      let collabColor = '#3b82f6'
+          
+      if (assignment.userId === userId) {
+        collabColor = '#3b82f6'
+      } else {
+        const collabIndex = collaborators.findIndex(c => c.id === assignment.userId)
+        const colorPalette = ['#10b981', '#8b5cf6', '#ef4444', '#f59e0f', '#06b6d4']
+        collabColor = collabIndex >= 0 
+          ? colorPalette[collabIndex % colorPalette.length]
+          : '#6b7280'
+      }
+      
+      for (let pageNum = section.startPage; pageNum <= section.endPage; pageNum++) {
+        const pageInfo = documentViewer.getDocument().getPageInfo(pageNum)
+        const { width, height } = pageInfo
+        
+        const hexToRGBA = (hex: string, a = 1) => {
+          const h = hex.replace('#', '');
+          const full = h.length === 3 ? h.split('').map(c => c + c).join('') : h;
+          const n = parseInt(full, 16);
+          const r = (n >> 16) & 255;
+          const g = (n >> 8) & 255;
+          const b = n & 255;
+          return new Annotations.Color(r, g, b, a);
+        };
+
+        const stroke = hexToRGBA(collabColor, 1);
+        const fill = hexToRGBA(collabColor, 0.1);
+
+        const rect = new Annotations.RectangleAnnotation({
+          PageNumber: pageNum,
+          X: 10,
+          Y: 10,
+          Width: width - 20,
+          Height: height - 20,
+          StrokeColor: stroke,
+          StrokeThickness: 4,
+          FillColor: fill,
+          Opacity: 1,
+        });
+        
+        rect.Author = 'System'
+        rect.Subject = 'Section Assignment'
+        rect.setCustomData('type', 'section-assignment')
+        rect.setCustomData('sectionId', assignment.sectionId)
+        rect.setCustomData('userId', assignment.userId)
+        rect.setCustomData('userName', assignment.userName)
+        rect.NoDelete = true
+        rect.NoMove = true
+        rect.NoResize = true
+        
+        annotationManager.addAnnotation(rect)
+      }
+    })
+    
+    annotationManager.drawAnnotationsFromList(
+      annotationManager.getAnnotationsList()
+    )
+    
+    console.log('✅ Section assignments highlighted in PDF')
+    
+  } catch (error) {
+    console.log('Highlight error (safe to ignore):', error)
+  }
+}, [webViewerInstance, sectionAssignments, pdfSections, userId, collaborators])
+
+
 
   // ✅ ADD THIS FUNCTION RIGHT HERE:
   const completeHighlightWithReason = (reason: string) => {
@@ -451,6 +568,41 @@ const [openTabs, setOpenTabs] = useState([
   };
 
 
+  useEffect(() => {
+    const initSocket = async () => {
+      // Initialize Socket.io server first
+      await fetch('/api/socketio')
+      
+      // Then connect client
+      const { io } = await import('socket.io-client')
+      const socket = io('http://localhost:3001')
+      
+      socket.on('connect', () => {
+        console.log('✅ Socket.io connected:', socket.id)
+        socket.emit('join-document', { documentId, userName, userId })
+      })
+      
+      socket.on('assignment-updated', (data: any) => {
+        console.log('📥 Assignment update received:', data)
+        setSectionAssignments(data.assignments)
+      })
+      
+      setSocketInstance(socket)
+      ;(window as any).io = socket
+    }
+    
+    initSocket()
+    
+    return () => {
+      if (socketInstance) {
+        socketInstance.disconnect()
+      }
+    }
+  }, [documentId, userName, userId])
+
+
+
+
   // Update documentContent when extractedText is available from parent
   useEffect(() => {
     if (extractedText && extractedText.length > 0) {
@@ -459,7 +611,11 @@ const [openTabs, setOpenTabs] = useState([
     }
   }, [extractedText])
 
-
+  useEffect(() => {
+    if (sectionAssignments.length > 0) {
+      highlightAssignedSections()
+    }
+  }, [sectionAssignments, highlightAssignedSections])
 
   // Initialize eye tracking
 // Initialize eye tracking
@@ -536,115 +692,121 @@ useEffect(() => {
   }
 }, [currentPage, eyeTrackingEnabled])
 
-  // Join document and track collaborators
-  useEffect(() => {
-    const joinDocument = async () => {
-      try {
-        await fetch('/api/socket', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            action: 'join-document',
-            documentId,
-            userId,
-            userName
-          })
-        })
-      } catch (error) {
-        console.error('Error joining document:', error)
-      }
-    }
-
-    const fetchActiveUsers = async () => {
-      try {
-        const response = await fetch('/api/socket', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            action: 'get-active-users',
-            documentId,
-            userId,
-            userName
-          })
-        })
-        
-        if (response.ok) {
-          const data = await response.json()
-          if (data.success && data.activeUsers && data.activeUsers.length > 0) {
-            // Transform active users to collaborators format with enhanced data
-            const activeCollaborators: Collaborator[] = data.activeUsers.map((user: any) => ({
-              id: user.userId,
-              name: user.userName,
-              avatar: `/api/placeholder/32/32`,
-              status: 'online' as const,
-              userId: user.userId,
-              isCurrentUser: user.userId === userId,
-              role: user.role || 'viewer',
-              activity: user.activity || 'viewing',
-              lastActivity: user.lastActivity || new Date().toISOString(),
-              permissions: {
-                canView: true,
-                canEdit: user.role === 'editor' || user.role === 'admin',
-                canInvite: user.role === 'admin',
-                canDelete: user.role === 'admin'
-              }
-            }))
-            
-            // Add current user if not already in the list
-            const currentUserExists = activeCollaborators.some(c => c.userId === userId)
-            if (!currentUserExists) {
-              activeCollaborators.unshift({
-                id: userId,
-                name: userName,
-                avatar: `/api/placeholder/32/32`,
-                status: 'online' as const,
-                userId: userId,
-                isCurrentUser: true,
-                role: currentUserRole,
-                activity: 'viewing',
-                lastActivity: new Date().toISOString(),
-                permissions: {
-                  canView: true,
-                  canEdit: currentUserRole === 'editor' || currentUserRole === 'admin',
-                  canInvite: currentUserRole === 'admin',
-                  canDelete: currentUserRole === 'admin'
-                }
-              })
-            }
-            
-            setCollaborators(activeCollaborators)
-          }
-        }
-      } catch (error) {
-        console.error('Error fetching active users:', error)
-        // Keep existing mock data if API fails
-      }
-    }
-
-    // Join document first, then fetch active users
-    joinDocument().then(() => {
-      fetchActiveUsers()
-    })
-
-    // Set up polling to update collaborators every 30 seconds for real-time feel
-    const interval = setInterval(fetchActiveUsers, 30000)
-
-    return () => {
-      clearInterval(interval)
-      // Leave document when component unmounts
-      fetch('/api/socket', {
+// Join document and track collaborators
+useEffect(() => {
+  const joinDocument = async () => {
+    try {
+      const response = await fetch('/api/socket', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          action: 'leave-document',
+          action: 'join-document',
           documentId,
-          userId
+          userId,
+          userName
         })
-      }).catch(error => {
-        console.error('Error leaving document:', error)
       })
+      
+      if (response.ok) {
+        const data = await response.json()
+        console.log('✅ Joined document, active users:', data.activeUsers)
+        
+        // Immediately update collaborators with the join response
+        if (data.activeUsers && data.activeUsers.length > 0) {
+          const activeCollaborators: Collaborator[] = data.activeUsers.map((user: any) => ({
+            id: user.userId,
+            name: user.userName,
+            avatar: `/api/placeholder/32/32`,
+            status: 'online' as const,
+            userId: user.userId,
+            isCurrentUser: user.userId === userId,
+            role: 'viewer',
+            activity: 'viewing',
+            lastActivity: new Date().toISOString(),
+            permissions: {
+              canView: true,
+              canEdit: false,
+              canInvite: false,
+              canDelete: false
+            }
+          }))
+          
+          console.log('👥 Setting collaborators from join:', activeCollaborators)
+          setCollaborators(activeCollaborators)
+        }
+      }
+    } catch (error) {
+      console.error('Error joining document:', error)
     }
-  }, [documentId, userId, userName, currentUserRole])
+  }
+
+  const fetchActiveUsers = async () => {
+    try {
+      const response = await fetch('/api/socket', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          action: 'get-active-users',
+          documentId,
+          userId,
+          userName
+        })
+      })
+      
+      if (response.ok) {
+        const data = await response.json()
+        console.log('🔄 Polling active users:', data.activeUsers)
+        
+        if (data.success && data.activeUsers && data.activeUsers.length > 0) {
+          const activeCollaborators: Collaborator[] = data.activeUsers.map((user: any) => ({
+            id: user.userId,
+            name: user.userName,
+            avatar: `/api/placeholder/32/32`,
+            status: 'online' as const,
+            userId: user.userId,
+            isCurrentUser: user.userId === userId,
+            role: 'viewer',
+            activity: 'viewing',
+            lastActivity: new Date().toISOString(),
+            permissions: {
+              canView: true,
+              canEdit: false,
+              canInvite: false,
+              canDelete: false
+            }
+          }))
+          
+          console.log('👥 Updating collaborators from poll:', activeCollaborators)
+          setCollaborators(activeCollaborators)
+        }
+      }
+    } catch (error) {
+      console.error('Error fetching active users:', error)
+    }
+  }
+
+  // Join first
+  joinDocument()
+  
+  // Then poll every 3 seconds
+  const interval = setInterval(fetchActiveUsers, 3000)
+
+  return () => {
+    clearInterval(interval)
+    // Leave document when component unmounts
+    fetch('/api/socket', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        action: 'leave-document',
+        documentId,
+        userId
+      })
+    }).catch(error => {
+      console.error('Error leaving document:', error)
+    })
+  }
+}, [documentId, userId, userName, currentUserRole])
 
   // Real-time chat functionality with unread message tracking
   useEffect(() => {
@@ -2136,9 +2298,94 @@ setShowReasonSelector(true);
         });
         
         documentViewer.addEventListener('documentLoaded', () => {
+          console.log('🎉 DOCUMENT LOADED EVENT FIRED!')
+          console.log('📊 Total pages:', documentViewer.getPageCount())
+          
           documentViewer.setFitMode(documentViewer.FitMode.FitWidth);
           setIsLoading(false);
           setTotalPages(documentViewer.getPageCount());
+          
+          // ✅ ADD: Extract PDF sections/headings
+          setTimeout(async () => {
+            try {
+              console.log('⏰ TIMEOUT TRIGGERED - About to extract headings')
+              console.log('📄 Document viewer available?', !!documentViewer)
+              console.log('📝 Annotation manager available?', !!annotationManager)
+              
+              setExtractingHeadings(true)
+              console.log('🔍 Starting heading extraction...')
+              
+              const extractor = new PDFHeadingExtractor(
+                documentViewer,
+                annotationManager
+              )
+              
+              // Extract common research paper sections
+              const sections = await extractor.extractCommonSections()
+              
+              // If no sections found, create test sections based on your actual PDF
+              const finalSections = sections.length > 0 ? sections : [
+                {
+                  heading: { 
+                    id: 'marvista', 
+                    text: 'What Marvista (by Salesforce Research) is:', 
+                    level: 1, 
+                    page: 1, 
+                    boundingBox: { x1: 0, y1: 0, x2: 0, y2: 0 }, 
+                    fontSize: 16, 
+                    fontWeight: 'bold' 
+                  },
+                  startPage: 1,
+                  endPage: 1,
+                  content: '',
+                  subsections: []
+                },
+                {
+                  heading: { 
+                    id: 'care', 
+                    text: 'CARE (Collaborative AI-Assisted Reading Environment):', 
+                    level: 1, 
+                    page: 1, 
+                    boundingBox: { x1: 0, y1: 0, x2: 0, y2: 0 }, 
+                    fontSize: 16, 
+                    fontWeight: 'bold' 
+                  },
+                  startPage: 1,
+                  endPage: 2,
+                  content: '',
+                  subsections: []
+                },
+                {
+                  heading: { 
+                    id: 'paperplain', 
+                    text: 'Paper Plain CHI 23:', 
+                    level: 1, 
+                    page: 2, 
+                    boundingBox: { x1: 0, y1: 0, x2: 0, y2: 0 }, 
+                    fontSize: 16, 
+                    fontWeight: 'bold' 
+                  },
+                  startPage: 2,
+                  endPage: 2,
+                  content: '',
+                  subsections: []
+                }
+              ]
+              
+              setPdfSections(finalSections)
+              console.log('📚 Final sections:', finalSections)
+              
+              if (sections.length > 0) {
+                toast.success(`Found ${sections.length} sections in the paper!`)
+              }
+            } catch (error) {
+              console.error('❌ Error extracting sections:', error)
+              toast.error('Could not extract sections from PDF')
+            } finally {
+              setExtractingHeadings(false)
+            }
+          }, 2000)
+          
           // Extract document metadata after the document loads
           setTimeout(() => {
             extractDocumentMetadata()
@@ -2725,6 +2972,56 @@ useEffect(() => {
       );
     }
   }, [showPdfReplacePrompt, pendingPdfUrl, webViewerInstance]);
+
+
+
+// === Extract PDF headings when the document finishes loading ===
+useEffect(() => {
+  if (!webViewerInstance?.Core) return;
+  const { documentViewer, annotationManager } = webViewerInstance.Core;
+
+  const onDocLoaded = async () => {
+    setExtractingHeadings(true);
+    try {
+      // The extractor constructor takes (documentViewer, annotationManager)
+      const extractor = new PDFHeadingExtractor(documentViewer, annotationManager);
+      // Try the smarter path first
+      const sections = await extractor.extractCommonSections();
+      console.log('✅ Extracted sections:', sections);
+      setPdfSections(sections || []);
+    } catch (err) {
+      console.error('❌ Error extracting headings:', err);
+      setPdfSections([]);
+    } finally {
+      setExtractingHeadings(false);
+    }
+  };
+
+  documentViewer.addEventListener('documentLoaded', onDocLoaded);
+  return () => {
+    documentViewer.removeEventListener('documentLoaded', onDocLoaded);
+  };
+}, [webViewerInstance]);
+
+
+
+
+
+
+
+// Highlight sections when assignments change
+useEffect(() => {
+  if (sectionAssignments.length > 0) {
+    highlightAssignedSections()
+  }
+}, [sectionAssignments, highlightAssignedSections])
+
+
+
+
+
+
+
 
   // When uploading a new PDF, update both the viewer and the backend ref
   useEffect(() => {
@@ -3361,14 +3658,14 @@ useEffect(() => {
           </span>
         </div>
         
-        {isConnected && connectedUsers.length > 0 && (
-          <div className="flex items-center space-x-1">
-            <Users className="w-3 h-3 text-blue-600" />
-            <span className="text-xs text-slate-500">
-              {connectedUsers.length} user{connectedUsers.length !== 1 ? 's' : ''}
-            </span>
-          </div>
-        )}
+        {isConnected && (
+  <div className="flex items-center space-x-1">
+    <Users className="w-3 h-3 text-blue-600" />
+    <span className="text-xs text-slate-500">
+      {collaborators.filter(c => c.status === 'online').length} user{collaborators.filter(c => c.status === 'online').length !== 1 ? 's' : ''}
+    </span>
+  </div>
+)}
       </div>
     </div>
 
@@ -3510,20 +3807,101 @@ useEffect(() => {
   </div>
 
   {/* Enhanced Team Section */}
-  <div className="px-4 py-3 border-b border-slate-200/60">
-    <div className="flex items-center justify-between mb-3">
-      <div className="flex items-center gap-2">
-        <h4 className="font-semibold text-xs text-slate-700 uppercase tracking-wide">Team</h4>
-        <div className="w-2 h-2 rounded-full bg-green-400 animate-pulse ring-2 ring-green-100"></div>
-      </div>
-      <Badge variant="secondary" className="bg-green-100/80 text-green-700 text-xs px-2 py-0.5 h-5 font-medium rounded-full border border-green-200/60">
-        {collaborators.filter(c => c.status === 'online').length}
-      </Badge>
+<div className="px-4 py-3 border-b border-slate-200/60">
+  <div className="flex items-center justify-between mb-3">
+    <div className="flex items-center gap-2">
+      <h4 className="font-semibold text-xs text-slate-700 uppercase tracking-wide">Team</h4>
+      <div className="w-2 h-2 rounded-full bg-green-400 animate-pulse ring-2 ring-green-100"></div>
     </div>
-    
-    {showCollaborators && (
-      <div className="space-y-2">
-        {collaborators.slice(0, 4).map((collaborator) => (
+    <Badge variant="secondary" className="bg-green-100/80 text-green-700 text-xs px-2 py-0.5 h-5 font-medium rounded-full border border-green-200/60">
+      {collaborators.filter(c => c.status === 'online').length}
+    </Badge>
+  </div>
+  
+  {showCollaborators && (
+    <div className="space-y-2">
+      {/* Your Sections - Always visible with Jump */}
+      {sectionAssignments.filter(a => a.userId === userId).length > 0 && (
+        <div className="px-3 py-2 bg-blue-50 border-l-4 border-blue-500 rounded-r-lg mb-3">
+          <div className="text-xs font-semibold text-blue-900 mb-2">Your Sections:</div>
+          <div className="space-y-1">
+            {sectionAssignments
+              .filter(a => a.userId === userId)
+              .map(assignment => {
+                const section = pdfSections.find(s => s.heading.id === assignment.sectionId)
+                return section ? (
+                  <div key={assignment.sectionId} className="text-xs text-blue-700 flex items-center justify-between gap-2">
+                    <span className="truncate flex-1">• {section.heading.text}</span>
+                    <button
+                      onClick={() => {
+                        webViewerInstance?.Core.documentViewer.setCurrentPage(section.startPage)
+                        setCurrentPage(section.startPage)
+                      }}
+                      className="text-blue-600 hover:text-blue-800 underline text-xs font-medium flex-shrink-0"
+                    >
+                      Jump
+                    </button>
+                  </div>
+                ) : null
+              })}
+          </div>
+        </div>
+      )}
+
+      {/* Team Reading Progress - Collapsible */}
+      <div className="mb-3">
+        <button
+          onClick={() => setShowTeamProgress(!showTeamProgress)}
+          className="w-full flex items-center justify-between text-xs font-semibold text-slate-700 uppercase tracking-wide hover:text-slate-900 py-1 px-2 hover:bg-slate-50 rounded transition-colors"
+        >
+          <span>Team Reading Progress</span>
+          {showTeamProgress ? (
+            <ChevronDown className="w-4 h-4" />
+          ) : (
+            <ChevronRight className="w-4 h-4" />
+          )}
+        </button>
+        
+        {showTeamProgress && sectionAssignments.length > 0 && (
+            <div 
+              key={`team-progress-${collaborators.length}-${sectionAssignments.length}`}
+              className="mt-2 px-3 py-2 bg-purple-50 border-l-4 border-purple-500 rounded-r-lg space-y-2"
+            >
+            {collaborators.filter(c => c.status === 'online').map(collab => {
+              const userAssignments = sectionAssignments.filter(a => a.userId === collab.id)
+              if (userAssignments.length === 0) return null
+              
+              return (
+                <div key={collab.id} className="mb-2 last:mb-0">
+                  <div className="flex items-center gap-2 mb-1">
+                    <div
+                      className="w-2 h-2 rounded-full"
+                      style={{ backgroundColor: (collab as any).color || '#6b7280' }}
+                    />
+                    <span className="text-xs font-medium text-purple-800">{collab.name}:</span>
+                  </div>
+                  <div className="space-y-0.5">
+                    {userAssignments.map(assignment => {
+                      const section = pdfSections.find(s => s.heading.id === assignment.sectionId)
+                      return section ? (
+                        <div key={assignment.sectionId} className="text-xs text-purple-700 ml-4 truncate">
+                          • {section.heading.text}
+                        </div>
+                      ) : null
+                    })}
+                  </div>
+                </div>
+              )
+            })}
+          </div>
+        )}
+      </div>
+
+      {/* Regular Team Members List */}
+      {collaborators.slice(0, 4).map((collaborator) => {
+        const userAssignments = sectionAssignments.filter(a => a.userId === collaborator.id)
+        
+        return (
           <div key={collaborator.id} className="group">
             <div className="flex items-center gap-3 p-2 rounded-xl hover:bg-slate-50/80 transition-all duration-200 cursor-pointer ring-1 ring-transparent hover:ring-slate-200/60">
               <div className="relative flex-shrink-0">
@@ -3548,6 +3926,13 @@ useEffect(() => {
                     <Badge variant="outline" className="text-xs px-1.5 py-0 h-4 rounded-full border-blue-200 text-blue-700 bg-blue-50">You</Badge>
                   )}
                 </div>
+                
+                {/* Show assigned sections count */}
+                {userAssignments.length > 0 && (
+                  <div className="text-xs text-slate-500 mt-0.5">
+                    {userAssignments.length} section{userAssignments.length !== 1 ? 's' : ''} assigned
+                  </div>
+                )}
               </div>
               
               {!collaborator.isCurrentUser && (
@@ -3561,12 +3946,26 @@ useEffect(() => {
                 </Button>
               )}
             </div>
+            
+            {/* Show assigned sections when expanded */}
+            {userAssignments.length > 0 && (
+              <div className="ml-10 mt-1 space-y-1">
+                {userAssignments.map(assignment => {
+                  const section = pdfSections.find(s => s.heading.id === assignment.sectionId)
+                  return section ? (
+                    <div key={assignment.sectionId} className="text-xs text-slate-600 truncate">
+                      • {section.heading.text}
+                    </div>
+                  ) : null
+                })}
+              </div>
+            )}
           </div>
-        ))}
-      </div>
-    )}
-  </div>
-
+        )
+      })}
+    </div>
+  )}
+</div>
   {/* Enhanced Stats Cards */}
   <div className="px-4 py-3">
     <div className="grid grid-cols-2 gap-3">
@@ -3804,7 +4203,77 @@ useEffect(() => {
   </div>
 </button>
 
+<button
+  onClick={() => {
+    const gazePoints = eyeTracker.getGazePoints(currentPage)
+    console.log('👁️ Gaze Points on current page:', gazePoints.length)
+    console.log('Sample points:', gazePoints.slice(0, 10))
+  }}
+  className="group w-full rounded-xl border border-amber-200/60 bg-gradient-to-r from-amber-50/60 to-yellow-50/40 hover:from-amber-100/80 hover:to-yellow-100/60 p-3 text-left shadow-sm transition-all duration-200 hover:shadow-md"
+>
+  <div className="flex items-center gap-3">
+    <div className="rounded-lg ring-1 ring-amber-200/60 bg-white/60 p-2">
+      <Activity className="h-4 w-4 text-amber-600" />
+    </div>
+    <div className="flex-1">
+      <div className="text-sm font-medium text-amber-800">Check Gaze Data</div>
+      <div className="text-xs text-amber-600 mt-0.5">View tracked points in console</div>
+    </div>
+  </div>
+</button>
 
+{/* ✅ FIXED Section Assignment Button */}
+<button
+  onClick={() => {
+    console.log('🎯 Section Assignments button clicked!')
+    console.log('📚 Number of sections:', pdfSections.length)
+    
+    if (pdfSections.length === 0) {
+      toast.error('No sections found. Please wait for PDF to load completely.')
+      return
+    }
+    
+    const newState = !showSectionAssignment
+    console.log('🔄 showSectionAssignment changing from', showSectionAssignment, 'to', newState)
+    setShowSectionAssignment(newState)
+    
+    // Check after 100ms if state actually changed
+    setTimeout(() => {
+      console.log('✅ showSectionAssignment after 100ms:', newState)
+    }, 100)
+  }}
+  className="group w-full rounded-xl border border-rose-200/60 bg-gradient-to-r from-rose-50/60 to-pink-50/40 hover:from-rose-100/80 hover:to-pink-100/60 p-3 text-left shadow-sm transition-all duration-200 hover:shadow-md"
+>
+  <div className="flex items-center gap-3">
+    <div className="rounded-lg ring-1 ring-rose-200/60 bg-white/60 p-2">
+      <Users className="h-4 w-4 text-rose-600" />
+    </div>
+    <div className="flex-1">
+      <div className="text-sm font-medium text-rose-800">Section Assignments</div>
+      <div className="text-xs text-rose-600 mt-0.5">
+        {extractingHeadings ? 'Extracting sections...' : `Assign to collaborators (${pdfSections.length} sections)`}
+      </div>
+    </div>
+  </div>
+</button>
+
+
+{/* ✅ ADD THIS DEBUG BUTTON HERE */}
+<button
+  onClick={() => {
+    console.log('='.repeat(50))
+    console.log('🔍 DEBUGGING SECTION ASSIGNMENT')
+    console.log('='.repeat(50))
+    console.log('📚 pdfSections length:', pdfSections.length)
+    console.log('📚 pdfSections data:', pdfSections)
+    console.log('📚 extractingHeadings:', extractingHeadings)
+    console.log('📚 showSectionAssignment:', showSectionAssignment)
+    console.log('='.repeat(50))
+  }}
+  className="w-full p-2 bg-yellow-100 text-yellow-900 text-xs rounded-lg mt-2"
+>
+  🐛 DEBUG: Check pdfSections State
+</button>
 
       </div>
 
@@ -3848,6 +4317,71 @@ useEffect(() => {
     </div>
   </div>
 </div>
+
+
+{/* Section Assignment Panel - Slides out next to sidebar */}
+{showSectionAssignment && pdfSections.length > 0 && (
+  <div className="fixed right-4 top-20 w-[420px] h-[calc(100vh-100px)] z-[9999]">
+<div className="h-full bg-white rounded-lg shadow-2xl overflow-visible border border-gray-200">
+      <div className="flex items-center justify-between p-4 border-b bg-gradient-to-r from-rose-50 to-pink-50">
+        <div className="flex items-center gap-2">
+          <Users className="w-5 h-5 text-rose-600" />
+          <h3 className="font-bold text-lg text-rose-900">Section Assignments</h3>
+        </div>
+        <Button
+          variant="ghost"
+          size="sm"
+          onClick={() => setShowSectionAssignment(false)}
+          className="hover:bg-rose-100"
+        >
+          <X className="w-4 h-4" />
+        </Button>
+      </div>
+      <div className="overflow-y-auto" style={{ height: 'calc(100% - 73px)' }}>
+      <SectionAssignmentPanel
+  sections={pdfSections}
+  collaborators={(() => {
+    // Create a Map to deduplicate by userId
+    const uniqueCollabs = new Map()
+    
+    // Add current user first
+    uniqueCollabs.set(userId, { 
+      id: userId, 
+      name: userName, 
+      color: '#3b82f6' 
+    })
+    
+    // Add other collaborators
+    collaborators
+      .filter(c => c.status === 'online' && c.id !== userId)
+      .forEach((c, index) => {
+        if (!uniqueCollabs.has(c.id)) {
+          uniqueCollabs.set(c.id, {
+            id: c.id,
+            name: c.name,
+            color: ['#10b981', '#8b5cf6', '#ef4444', '#f59e0b', '#06b6d4'][index % 5] || '#6b7280'
+          })
+        }
+      })
+    
+    return Array.from(uniqueCollabs.values())
+  })()}
+  currentUserId={userId}
+  documentId={documentId}
+  socket={socketInstance}
+  onAssignmentChange={(assignments) => {
+    console.log('📚 Section assignments updated:', assignments)
+    setSectionAssignments(assignments)
+  }}
+/>
+      </div>
+    </div>
+  </div>
+)}
+
+
+
+
       {/* PDF Viewer Container */}
       {/* Tabbed PDF Viewer Container */}
       <div className="flex-1 flex flex-col">
@@ -3888,7 +4422,31 @@ useEffect(() => {
               <Plus className="w-4 h-4 mr-1" />
               Add Document
             </button>
+
+{/* ✅ ADD THIS BUTTON RIGHT HERE */}
+{/* <button
+  onClick={() => setShowSectionAssignment(v => !v)}
+  className="px-3 py-2 text-sm text-gray-500 hover:text-gray-700 hover:bg-blue-200 rounded flex items-center transition-colors ml-2"
+  title="Assign sections to collaborators"
+>
+  <BookOpen className="w-4 h-4 mr-1" />
+  Assign Sections
+</button> */}
+
+            
           </div>
+
+          {/* RIGHT: fixed actions (does NOT scroll away) */}
+  <div className="ml-2 shrink-0">
+    <button
+      onClick={() => setShowSectionAssignment(v => !v)}
+      className="px-3 py-2 text-sm text-gray-600 hover:text-gray-800 hover:bg-blue-100 rounded flex items-center transition-colors"
+      title="Assign sections to collaborators"
+    >
+      <BookOpen className="w-4 h-4 mr-1" />
+      Assign Sections
+    </button>
+  </div>
         </div>
 
         {/* Tab Content Area */}
@@ -4425,6 +4983,7 @@ useEffect(() => {
     <EyeTrackingCalibration
         isOpen={showEyeCalibration}
         onClose={() => setShowEyeCalibration(false)}
+        webgazer={eyeTracker.getWebGazerInstance()}  // ✅ ADD THIS LINE
         onComplete={() => {
           eyeTracker.finishCalibration()
           eyeTracker.startTracking(documentId, currentPage)

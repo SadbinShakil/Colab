@@ -74,6 +74,24 @@ export async function GET(req: NextRequest) {
         console.log(`✨ Highlight broadcasted in ${documentId}`)
       })
 
+
+// ✅ ADD THIS NEW EVENT HANDLER FOR ASSIGNMENTS
+socket.on('assignment-changed', (assignmentData) => {
+  const { documentId, assignments, userName } = assignmentData
+  
+  console.log(`📋 Assignment changed by ${userName} in ${documentId}`)
+  
+  // Broadcast to ALL users in the room (including sender for confirmation)
+  io?.to(documentId).emit('assignment-updated', {
+    assignments,
+    updatedBy: userName,
+    timestamp: new Date().toISOString()
+  })
+  
+  console.log(`✅ Assignment broadcasted to all users in ${documentId}`)
+})
+
+
       socket.on('disconnect', () => {
         console.log(`👋 User disconnected: ${socket.id}`)
       })

@@ -21,6 +21,11 @@
 //   ChevronDown,
 //   ChevronUp,
 //   Download,
+//   Palette,
+//   HelpCircle,
+//   CheckCircle,
+//   MessageSquare,
+//   Heart,
 //   Share2
 // } from 'lucide-react'
 
@@ -31,6 +36,16 @@
 //     text: string
 //     timestamp: number
 //     page: number
+//   }>
+//   // ✅ ADD THIS RIGHT HERE:
+//   highlights?: Array<{
+//     id: string
+//     text: string
+//     page: number
+//     author: string
+//     timestamp: string
+//     reason?: string
+//     reasonLabel?: string
 //   }>
 //   stuckMarkers: Array<{
 //     id: string
@@ -56,7 +71,7 @@
 
 // interface TimelineEvent {
 //   id: string
-//   type: 'selection' | 'stuck' | 'math' | 'general' | 'table' | 'image' | 'prerequisite' | 'capture'
+//   type: 'selection' | 'stuck' | 'math' | 'general' | 'table' | 'image' | 'prerequisite' | 'capture' | 'highlight'
 //   timestamp: number
 //   page: number
 //   content: string
@@ -75,6 +90,7 @@
 //   showGeneralExplainer,
 //   showTableExplainer,
 //   showImageExplainer,
+//   highlights = [], // ✅ ADD THIS HERE
 //   showPrerequisiteHelper,
 //   showScreenCapture,
 //   selectedEquation = '',
@@ -131,6 +147,27 @@
 //     })
 //   })
 
+
+//   // ✅ ADD THIS ENTIRE BLOCK RIGHT HERE:
+//   highlights.forEach((highlight) => {
+//     const timestamp = new Date(highlight.timestamp).getTime();
+    
+//     events.push({
+//       id: `highlight-${highlight.id}`,
+//       type: 'highlight',
+//       timestamp,
+//       page: highlight.page,
+//       content: highlight.text,
+//       icon: Palette,
+//       color: highlight.reason === 'confusion' ? 'bg-red-100 text-red-800 border-red-300' :
+//              highlight.reason === 'understood' ? 'bg-green-100 text-green-800 border-green-300' :
+//              highlight.reason === 'clarification' ? 'bg-yellow-100 text-yellow-800 border-yellow-300' :
+//              highlight.reason === 'important' ? 'bg-blue-100 text-blue-800 border-blue-300' :
+//              highlight.reason === 'question' ? 'bg-orange-100 text-orange-800 border-orange-300' :
+//              highlight.reason === 'disagree' ? 'bg-purple-100 text-purple-800 border-purple-300' :
+//              'bg-gray-100 text-gray-800 border-gray-300'
+//     })
+//   })
 //     // Add active explainer activities
 //     if (showMathExplainer && selectedEquation) {
 //       events.push({
@@ -217,24 +254,8 @@
 //     }
 
 //     return events
-//   }, [
-//     capturedSelections,
-//     stuckMarkers,
-//     showMathExplainer,
-//     showGeneralExplainer,
-//     showTableExplainer,
-//     showImageExplainer,
-//     showPrerequisiteHelper,
-//     showScreenCapture,
-//     selectedEquation,
-//     generalExplainerText,
-//     tableExplainerText,
-//     imageExplainerText,
-//     prerequisiteText,
-//     currentPage,
-//     sortBy,
-//     filterType
-//   ])
+//   }, [capturedSelections.length, stuckMarkers.length, highlights?.length, currentPage, showMathExplainer, showGeneralExplainer, showTableExplainer, showImageExplainer, showPrerequisiteHelper, showScreenCapture, selectedEquation, generalExplainerText, tableExplainerText, imageExplainerText, prerequisiteText, filterType, sortBy])
+
 
 //   // Calculate statistics
 //   const stats = useMemo(() => {
