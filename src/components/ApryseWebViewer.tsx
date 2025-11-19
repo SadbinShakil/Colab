@@ -8,6 +8,7 @@ import { PDFHeadingExtractor, type PDFSection, type PDFHeading } from '@/lib/pdf
 
 import SectionAssignmentPanel from './SectionAssignmentPanel'
 
+
 // [ADV] Charts
 import {
   ResponsiveContainer,
@@ -23,6 +24,8 @@ import { useRealtimeHighlights } from '@/app/hooks/useRealtimeHighlights'
 import GazeHeatmap from './GazeHeatmap'
 import { toast } from 'sonner'
 import { contextualAI } from '@/lib/contextualAI'
+import { interactionCollector } from '@/lib/interactionCollector'
+import InteractionAnalysisDashboard from '@/components/InteractionAnalysisDashboard'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
@@ -70,6 +73,8 @@ import {
   Camera,
   GraduationCap,
   Trash2,
+  CheckCircle,  // ✅ ADD THIS
+  AlertCircle,  // ✅ ADD THIS
   BookOpen
 } from 'lucide-react'
 import MathExplainer from './MathExplainer'
@@ -191,6 +196,7 @@ export default function ApryseWebViewer({
   const [error, setError] = useState<string | null>(null)
   const [webViewerInstance, setWebViewerInstance] = useState<any>(null)
   const [currentPage, setCurrentPage] = useState(1)
+  const isJumpingRef = useRef(false)  // ✅ ADD THIS LINE RIGHT AFTER
   const [totalPages, setTotalPages] = useState(0)
   const [showDownloadMenu, setShowDownloadMenu] = useState(false)
   const [showShareMenu, setShowShareMenu] = useState(false)
@@ -347,6 +353,7 @@ const [confusionSection, setConfusionSection] = useState('');
   const [prerequisiteText, setPrerequisiteText] = useState('')
   const [showSmartPrerequisiteHelper, setShowSmartPrerequisiteHelper] = useState(false)
   const [showAIResearchPrerequisites, setShowAIResearchPrerequisites] = useState(false)
+  const [showInteractionAnalysis, setShowInteractionAnalysis] = useState(false)
   
 
   const [activeTab, setActiveTab] = useState('doc1')
@@ -560,6 +567,18 @@ const highlightAssignedSections = useCallback(() => {
             reasonLabel: reasonData.label
           });
         }
+
+        interactionCollector.trackHighlight({
+          id: annotation.Id,
+          text: highlightedText,
+          page: pageNumber,
+          position: { x: annotation.X || 0, y: annotation.Y || 0 },
+          author: userName,
+          authorId: userId,
+          reason: reason as any,
+          reasonLabel: reasonData.label,
+          sectionId: `section-page-${pageNumber}`
+        })
       });
     
     // Close selector
@@ -567,6 +586,22 @@ const highlightAssignedSections = useCallback(() => {
     setPendingHighlight(null);
   };
 
+
+  // useEffect(() => {
+  //   if (documentId && userId) {
+  //     interactionCollector.startSession(userId, userName, documentId)
+  //   }
+  //   return () => interactionCollector.endSession()
+  // }, [documentId, userId])
+
+  useEffect(() => {
+    if (documentId && userId && userName) {
+      interactionCollector.startSession(userId, userName, documentId)
+    }
+    return () => {
+      interactionCollector.endSession()
+    }
+  }, [documentId, userId, userName])
 
   useEffect(() => {
     const initSocket = async () => {
@@ -1187,6 +1222,13 @@ useEffect(() => {
 
     setStuckMarkers(prev => [...prev, newMarker])
     toast.success('"I\'m stuck here" marker added!')
+
+    interactionCollector.trackStuckMarker({
+      id: newMarker.id,
+      page: newMarker.page,
+      position: { x: newMarker.x, y: newMarker.y },
+      text: newMarker.text
+    })
   }
 
   const handleRemoveStuckMarker = (markerId: string) => {
@@ -1219,6 +1261,35 @@ useEffect(() => {
     }
     setShowShareMenu(false)
   }
+
+  // Jump to a specific section in the PDF
+  const handleJumpToSection = useCallback((section: PDFSection) => {
+    if (!webViewerInstance || !webViewerInstance.Core) {
+      console.error('❌ WebViewer not ready')
+      toast.error('PDF viewer not ready yet')
+      return
+    }
+
+    const { documentViewer } = webViewerInstance.Core
+    
+    if (!documentViewer) {
+      console.error('❌ Document viewer not available')
+      toast.error('Document viewer not available')
+      return
+    }
+
+    try {
+      console.log('🚀 Jumping to section:', section.heading.text, 'on page', section.startPage)
+      
+      // Set the current page to the section's start page
+      documentViewer.setCurrentPage(section.startPage)
+      
+      toast.success(`Jumped to: ${section.heading.text}`)
+    } catch (error) {
+      console.error('❌ Error jumping to section:', error)
+      toast.error('Failed to jump to section')
+    }
+  }, [webViewerInstance])
 
   // Close dropdowns when clicking outside
   useEffect(() => {
@@ -1367,6 +1438,21 @@ useEffect(() => {
             };
             onAnnotationAdd(aiAnnotation);
           }
+
+          interactionCollector.trackAnnotation({
+            id: annotation.Id,
+            type: 'comment',
+            text: comment,
+            page: annotation.PageNumber || 1,
+            position: {
+              x: annotation.X || 0,
+              y: annotation.Y || 0,
+              width: annotation.Width || 0,
+              height: annotation.Height || 0
+            },
+            author: userName || 'Unknown',
+            sectionId: `section-page-${annotation.PageNumber || 1}`
+          })
           
           // Here you can implement saving the comment to your backend
           // For now, just close the panel
@@ -2514,6 +2600,7 @@ setShowReasonSelector(true);
               if (onPageChange) {
                 onPageChange(currentPage);
               }
+              interactionCollector.trackPageVisit(currentPage, `section-page-${currentPage}`)
             });
             console.log('✅ Page change listener added for contextual AI');
           } catch (error) {
@@ -3833,14 +3920,25 @@ useEffect(() => {
                   <div key={assignment.sectionId} className="text-xs text-blue-700 flex items-center justify-between gap-2">
                     <span className="truncate flex-1">• {section.heading.text}</span>
                     <button
-                      onClick={() => {
-                        webViewerInstance?.Core.documentViewer.setCurrentPage(section.startPage)
-                        setCurrentPage(section.startPage)
-                      }}
-                      className="text-blue-600 hover:text-blue-800 underline text-xs font-medium flex-shrink-0"
-                    >
-                      Jump
-                    </button>
+onClick={() => {
+  if (webViewerInstance?.Core?.documentViewer) {
+    const { documentViewer } = webViewerInstance.Core
+    
+    isJumpingRef.current = true
+    documentViewer.setCurrentPage(section.startPage)
+    
+    setTimeout(() => {
+      isJumpingRef.current = false
+      setCurrentPage(section.startPage)
+    }, 500)
+    
+    console.log(`✅ Jumped to page ${section.startPage}`)
+  }
+}}
+  className="text-blue-600 hover:text-blue-800 underline text-xs font-medium flex-shrink-0"
+>
+  Jump
+</button>
                   </div>
                 ) : null
               })}
@@ -3863,38 +3961,64 @@ useEffect(() => {
         </button>
         
         {showTeamProgress && sectionAssignments.length > 0 && (
-            <div 
-              key={`team-progress-${collaborators.length}-${sectionAssignments.length}`}
-              className="mt-2 px-3 py-2 bg-purple-50 border-l-4 border-purple-500 rounded-r-lg space-y-2"
-            >
-            {collaborators.filter(c => c.status === 'online').map(collab => {
-              const userAssignments = sectionAssignments.filter(a => a.userId === collab.id)
-              if (userAssignments.length === 0) return null
-              
-              return (
-                <div key={collab.id} className="mb-2 last:mb-0">
-                  <div className="flex items-center gap-2 mb-1">
-                    <div
-                      className="w-2 h-2 rounded-full"
-                      style={{ backgroundColor: (collab as any).color || '#6b7280' }}
-                    />
-                    <span className="text-xs font-medium text-purple-800">{collab.name}:</span>
-                  </div>
-                  <div className="space-y-0.5">
-                    {userAssignments.map(assignment => {
-                      const section = pdfSections.find(s => s.heading.id === assignment.sectionId)
-                      return section ? (
-                        <div key={assignment.sectionId} className="text-xs text-purple-700 ml-4 truncate">
-                          • {section.heading.text}
-                        </div>
-                      ) : null
-                    })}
-                  </div>
+  <div 
+    key={`team-progress-${collaborators.length}-${sectionAssignments.length}`}
+    className="mt-2 px-3 py-2 bg-purple-50 border-l-4 border-purple-500 rounded-r-lg space-y-2"
+  >
+    {collaborators.filter(c => c.status === 'online').map(collab => {
+      const userAssignments = sectionAssignments.filter(a => a.userId === collab.id)
+      if (userAssignments.length === 0) return null
+      
+      return (
+        <div key={collab.id} className="mb-2 last:mb-0">
+          <div className="flex items-center gap-2 mb-1">
+            <div
+              className="w-2 h-2 rounded-full"
+              style={{ backgroundColor: (collab as any).color || '#6b7280' }}
+            />
+            <span className="text-xs font-medium text-purple-800">{collab.name}:</span>
+          </div>
+          <div className="space-y-1">
+            {userAssignments.map(assignment => {
+              const section = pdfSections.find(s => s.heading.id === assignment.sectionId)
+              return section ? (
+                <div key={assignment.sectionId} className="ml-4">
+                <div className="flex items-center gap-2 text-xs text-purple-700">
+                  {assignment.status === 'completed' && <CheckCircle className="w-3 h-3 text-green-600" />}
+                  {assignment.status === 'reading' && <Eye className="w-3 h-3 text-blue-600" />}
+                  {assignment.status === 'assigned' && <AlertCircle className="w-3 h-3 text-amber-600" />}
+                  <span className="truncate flex-1">• {section.heading.text}</span>
+                  <span className="text-[10px] text-purple-600 font-medium">{assignment.progress}%</span>
+                  <button
+onClick={() => {
+  if (webViewerInstance?.Core?.documentViewer) {
+    const { documentViewer } = webViewerInstance.Core
+    
+    isJumpingRef.current = true
+    documentViewer.setCurrentPage(section.startPage)
+    
+    setTimeout(() => {
+      isJumpingRef.current = false
+      setCurrentPage(section.startPage)
+    }, 500)
+    
+    console.log(`✅ Jumped to page ${section.startPage}`)
+  }
+}}
+  className="text-[10px] text-blue-600 hover:text-blue-800 underline font-medium flex-shrink-0"
+>
+  Jump
+</button>
                 </div>
-              )
+                </div>
+              ) : null
             })}
           </div>
-        )}
+        </div>
+      )
+    })}
+  </div>
+)}
       </div>
 
       {/* Regular Team Members List */}
@@ -4313,6 +4437,26 @@ useEffect(() => {
             <ChevronRight className="h-4 w-4 text-slate-400 group-hover:translate-x-0.5 transition-transform" />
           </div>
         </button>
+
+
+
+
+
+        <button
+  onClick={() => setShowInteractionAnalysis(true)}
+  className="group w-full rounded-xl hover:bg-slate-50/80 p-3 text-left transition-all duration-200"
+>
+  <div className="flex items-center gap-3">
+    <div className="rounded-lg ring-1 ring-slate-200/60 bg-white/60 p-2">
+      <Activity className="h-4 w-4 text-slate-600" />
+    </div>
+    <div className="flex-1">
+      <div className="text-sm font-medium text-slate-700">Analysis</div>
+      <div className="text-xs text-slate-500 mt-0.5">View insights</div>
+    </div>
+    <ChevronRight className="h-4 w-4 text-slate-400 group-hover:translate-x-0.5 transition-transform" />
+  </div>
+</button>
       </div>
     </div>
   </div>
@@ -4373,6 +4517,7 @@ useEffect(() => {
     console.log('📚 Section assignments updated:', assignments)
     setSectionAssignments(assignments)
   }}
+  onJumpToSection={handleJumpToSection}
 />
       </div>
     </div>
@@ -4997,9 +5142,18 @@ useEffect(() => {
           
           console.log('✅ Eye tracking started!')
         }}
-      />
-    </div>
-    
-    </div>
-  )
+        />
+
+        <InteractionAnalysisDashboard
+          isOpen={showInteractionAnalysis}
+          onClose={() => setShowInteractionAnalysis(false)}
+        />
+        </div>
+        
+        </div>
+        
+      )
+
+
+  
 }

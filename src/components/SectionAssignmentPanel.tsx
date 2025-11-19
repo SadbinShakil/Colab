@@ -24,11 +24,16 @@ import type { PDFSection } from '@/lib/pdfHeadingExtractor'
 
 interface SectionAssignmentPanelProps {
   sections: PDFSection[]
-  collaborators: Array<{ id: string; name: string; color: string }>
+  collaborators: Array<{
+    id: string
+    name: string
+    color: string
+  }>
   currentUserId: string
   documentId: string
+  socket: any
   onAssignmentChange: (assignments: SectionAssignment[]) => void
-  socket?: any  // ✅ ADD THIS LINE
+  onJumpToSection: (section: PDFSection) => void
 }
 
 
@@ -42,13 +47,13 @@ interface SectionAssignment {
   assignedAt?: string
 }
 
-interface SectionAssignmentPanelProps {
-  sections: PDFSection[]
-  collaborators: Array<{ id: string; name: string; color: string }>
-  currentUserId: string
-  documentId: string
-  onAssignmentChange: (assignments: SectionAssignment[]) => void
-}
+// interface SectionAssignmentPanelProps {
+//   sections: PDFSection[]
+//   collaborators: Array<{ id: string; name: string; color: string }>
+//   currentUserId: string
+//   documentId: string
+//   onAssignmentChange: (assignments: SectionAssignment[]) => void
+// }
 
 
 
@@ -60,6 +65,7 @@ export default function SectionAssignmentPanel({
   currentUserId,
   documentId,
   onAssignmentChange,
+  onJumpToSection,
   socket  // ✅ ADD THIS LINE
 }: SectionAssignmentPanelProps) {
   const [assignments, setAssignments] = useState<SectionAssignment[]>([])
@@ -235,7 +241,7 @@ useEffect(() => {
     }
   }
 
-  const markAsReading = (sectionId: string) => {
+  const markAsReading = async (sectionId: string) => {
     const newAssignments = assignments.map(a => 
       a.sectionId === sectionId 
         ? { ...a, status: 'reading' as const, progress: 25 }
@@ -244,9 +250,34 @@ useEffect(() => {
     setAssignments(newAssignments)
     onAssignmentChange(newAssignments)
     toast.info('Status updated to Reading')
+    
+    // Save to REST API
+    try {
+      await fetch('/api/socket', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          action: 'section-assigned',
+          documentId,
+          assignments: newAssignments
+        })
+      })
+    } catch (error) {
+      console.error('❌ Failed to save status:', error)
+    }
+    
+    // Broadcast via Socket.io
+    if (socket && socket.connected) {
+      socket.emit('assignment-changed', {
+        documentId,
+        assignments: newAssignments,
+        userName: currentUserId
+      })
+      console.log('✅ Reading status broadcasted')
+    }
   }
-
-  const markAsCompleted = (sectionId: string) => {
+  
+  const markAsCompleted = async (sectionId: string) => {
     const newAssignments = assignments.map(a => 
       a.sectionId === sectionId 
         ? { ...a, status: 'completed' as const, progress: 100 }
@@ -255,7 +286,70 @@ useEffect(() => {
     setAssignments(newAssignments)
     onAssignmentChange(newAssignments)
     toast.success('Section marked as completed!')
+    
+    // Save to REST API
+    try {
+      await fetch('/api/socket', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          action: 'section-assigned',
+          documentId,
+          assignments: newAssignments
+        })
+      })
+    } catch (error) {
+      console.error('❌ Failed to save status:', error)
+    }
+    
+    // Broadcast via Socket.io
+    if (socket && socket.connected) {
+      socket.emit('assignment-changed', {
+        documentId,
+        assignments: newAssignments,
+        userName: currentUserId
+      })
+      console.log('✅ Completed status broadcasted')
+    }
   }
+
+
+  const updateProgress = async (sectionId: string, progress: number) => {
+    const newAssignments = assignments.map(a => 
+      a.sectionId === sectionId 
+        ? { ...a, progress }
+        : a
+    )
+    setAssignments(newAssignments)
+    onAssignmentChange(newAssignments)
+    toast.info(`Progress updated to ${progress}%`)
+    
+    // Save to REST API
+    try {
+      await fetch('/api/socket', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          action: 'section-assigned',
+          documentId,
+          assignments: newAssignments
+        })
+      })
+    } catch (error) {
+      console.error('❌ Failed to save progress:', error)
+    }
+    
+    // Broadcast via Socket.io
+    if (socket && socket.connected) {
+      socket.emit('assignment-changed', {
+        documentId,
+        assignments: newAssignments,
+        userName: currentUserId
+      })
+      console.log(`✅ Progress ${progress}% broadcasted`)
+    }
+  }
+
 
   const getAssignment = (sectionId: string) => {
     return assignments.find(a => a.sectionId === sectionId)
@@ -448,33 +542,52 @@ useEffect(() => {
                         </div>
 
                         {assignment && (
-                          <div className="mt-2 flex items-center gap-2">
-                            <Badge
-                              style={{ backgroundColor: getUserColor(assignment.userId), color: 'white', fontSize: '11px' }}
-                              className="flex items-center gap-1 shadow-sm"
-                            >
-                              <span>👤</span>
-                              {assignment.userName}
-                            </Badge>
+                          <div className="mt-2 space-y-2">
+                            <div className="flex items-center gap-2">
+                              <Badge
+                                style={{ backgroundColor: getUserColor(assignment.userId), color: 'white', fontSize: '11px' }}
+                                className="flex items-center gap-1 shadow-sm"
+                              >
+                                <span>👤</span>
+                                {assignment.userName}
+                              </Badge>
+                              
+                              {assignment.status === 'completed' && (
+                                <Badge variant="outline" className="bg-green-50 text-green-700 border-green-300 text-xs">
+                                  <CheckCircle className="w-3 h-3 mr-1" />
+                                  Completed
+                                </Badge>
+                              )}
+                              {assignment.status === 'reading' && (
+                                <Badge variant="outline" className="bg-blue-50 text-blue-700 border-blue-300 text-xs">
+                                  <Eye className="w-3 h-3 mr-1" />
+                                  Reading
+                                </Badge>
+                              )}
+                              {assignment.status === 'assigned' && (
+                                <Badge variant="outline" className="bg-amber-50 text-amber-700 border-amber-300 text-xs">
+                                  <AlertCircle className="w-3 h-3 mr-1" />
+                                  Assigned
+                                </Badge>
+                              )}
+                            </div>
                             
-                            {assignment.status === 'completed' && (
-                              <Badge variant="outline" className="bg-green-50 text-green-700 border-green-300 text-xs">
-                                <CheckCircle className="w-3 h-3 mr-1" />
-                                Completed
-                              </Badge>
-                            )}
-                            {assignment.status === 'reading' && (
-                              <Badge variant="outline" className="bg-blue-50 text-blue-700 border-blue-300 text-xs">
-                                <Eye className="w-3 h-3 mr-1" />
-                                Reading
-                              </Badge>
-                            )}
-                            {assignment.status === 'assigned' && (
-                              <Badge variant="outline" className="bg-amber-50 text-amber-700 border-amber-300 text-xs">
-                                <AlertCircle className="w-3 h-3 mr-1" />
-                                Assigned
-                              </Badge>
-                            )}
+                            {/* Progress Bar */}
+                            <div className="flex items-center gap-2">
+                              <div className="flex-1 bg-gray-200 rounded-full h-2 overflow-hidden">
+                                <div 
+                                  className={`h-full transition-all duration-500 ${
+                                    assignment.status === 'completed' ? 'bg-green-500' :
+                                    assignment.status === 'reading' ? 'bg-blue-500' :
+                                    'bg-amber-400'
+                                  }`}
+                                  style={{ width: `${assignment.progress}%` }}
+                                />
+                              </div>
+                              <span className="text-xs font-medium text-gray-600 min-w-[35px]">
+                                {assignment.progress}%
+                              </span>
+                            </div>
                           </div>
                         )}
                       </div>
@@ -535,56 +648,85 @@ useEffect(() => {
     </div>
   </div>
 )}
-                        </div>
-                      ) : (
-                        <div className="flex gap-1">
-                          {assignment.status === 'assigned' && (
-                            <Button
-                              variant="ghost"
-                              size="sm"
-                              onClick={(e) => {
-                                e.stopPropagation()
-                                markAsReading(section.heading.id)
-                              }}
-                              className="hover:bg-blue-50 hover:text-blue-700"
-                              title="Mark as Reading"
-                            >
-                              <Eye className="w-4 h-4" />
-                            </Button>
-                          )}
-                          
-                          {assignment.status === 'reading' && (
-                            <Button
-                              variant="ghost"
-                              size="sm"
-                              onClick={(e) => {
-                                e.stopPropagation()
-                                markAsCompleted(section.heading.id)
-                              }}
-                              className="hover:bg-green-50 hover:text-green-700"
-                              title="Mark as Completed"
-                            >
-                              <CheckCircle className="w-4 h-4" />
-                            </Button>
-                          )}
+                       </div>
+) : (
+  /* Only show buttons if this is YOUR assignment */
+  assignment.userId === currentUserId ? (
+    <div className="flex gap-1">
+      {assignment.status === 'assigned' && (
+        <Button
+          variant="ghost"
+          size="sm"
+          onClick={(e) => {
+            e.stopPropagation()
+            markAsReading(section.heading.id)
+          }}
+          className="hover:bg-blue-50 hover:text-blue-700"
+          title="Mark as Reading"
+        >
+          <Eye className="w-4 h-4" />
+        </Button>
+      )}
+      
+      {assignment.status === 'reading' && (
+        <>
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={(e) => {
+              e.stopPropagation()
+              updateProgress(section.heading.id, 50)
+            }}
+            className="hover:bg-blue-50 hover:text-blue-700 text-xs"
+            title="50% Progress"
+          >
+            50%
+          </Button>
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={(e) => {
+              e.stopPropagation()
+              updateProgress(section.heading.id, 75)
+            }}
+            className="hover:bg-blue-50 hover:text-blue-700 text-xs"
+            title="75% Progress"
+          >
+            75%
+          </Button>
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={(e) => {
+              e.stopPropagation()
+              markAsCompleted(section.heading.id)
+            }}
+            className="hover:bg-green-50 hover:text-green-700"
+            title="Mark as Completed"
+          >
+            <CheckCircle className="w-4 h-4" />
+          </Button>
+        </>
+      )}
 
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            onClick={(e) => {
-                              e.stopPropagation()
-                              unassignSection(section.heading.id)
-                            }}
-                            className="hover:bg-red-50 hover:text-red-600"
-                            title="Unassign"
-                          >
-                            <X className="w-4 h-4" />
-                          </Button>
-                        </div>
-                      )}
-                    </div>
-                  </div>
-                </div>
+      <Button
+        variant="ghost"
+        size="sm"
+        onClick={(e) => {
+          e.stopPropagation()
+          unassignSection(section.heading.id)
+        }}
+        className="hover:bg-red-50 hover:text-red-600"
+        title="Unassign"
+      >
+        <X className="w-4 h-4" />
+      </Button>
+    </div>
+  ) : null
+)}
+              </div>
+            </div>
+          </div>
 
                 {isExpanded && section.subsections.length > 0 && (
                   <div className="bg-gray-50/50 border-t border-gray-200 px-4 py-2">
