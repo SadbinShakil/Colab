@@ -24,7 +24,9 @@ import { useRealtimeHighlights } from '@/app/hooks/useRealtimeHighlights'
 import GazeHeatmap from './GazeHeatmap'
 import { toast } from 'sonner'
 import { contextualAI } from '@/lib/contextualAI'
-import { interactionCollector } from '@/lib/interactionCollector'
+import { interactionCollector } from '@/lib/interactionCollector' 
+import { aiCoordinationCore } from '@/lib/agents/aiCoordinationCore'
+import { agent2_collaborationOrchestrator } from '@/lib/agents/Agent2_CollaborationOrchestrator'
 import InteractionAnalysisDashboard from '@/components/InteractionAnalysisDashboard'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
@@ -89,6 +91,12 @@ import AIResearchPrerequisites from './AIResearchPrerequisites'
 import TextSelectionPopup from './TextSelectionPopup'
 import { isMathematicalContent } from '../utils/contentDetector'
 
+
+// // Expose for debugging
+// if (typeof window !== 'undefined') {
+//   (window as any).agent2 = agent2_collaborationOrchestrator
+//   (window as any).aiCore = aiCoordinationCore
+// }
 
 
 const HIGHLIGHT_REASONS = {
@@ -179,6 +187,10 @@ interface InviteRequest {
   message?: string
 }
 
+
+
+
+
 export default function ApryseWebViewer({ 
   documentUrl, 
   documentId, 
@@ -212,6 +224,8 @@ export default function ApryseWebViewer({
   const [inviteRole, setInviteRole] = useState<'viewer' | 'editor' | 'admin'>('viewer')
   const [inviteMessage, setInviteMessage] = useState('')
   const [currentUserRole, setCurrentUserRole] = useState<'viewer' | 'editor' | 'admin'>('viewer')
+  const [smartNotifications, setSmartNotifications] = useState<any[]>([])
+  const [dismissedNotifications, setDismissedNotifications] = useState<Set<string>>(new Set())
   const [showTeamProgress, setShowTeamProgress] = useState(false)
   // Initialize Socket.io for real-time features
 const [socketInstance, setSocketInstance] = useState<any>(null)
@@ -579,7 +593,42 @@ const highlightAssignedSections = useCallback(() => {
           reasonLabel: reasonData.label,
           sectionId: `section-page-${pageNumber}`
         })
+
+
+// ADD THIS NEW CODE HERE:
+// Manually trigger struggle detection for confusion highlights
+if (reason === 'confusion') {
+  // Update current user's peer status to struggling
+  agent2_collaborationOrchestrator.updatePeerStatus(
+    userId,
+    `section-page-${pageNumber}`,
+    30  // Low score = struggling
+  )
+  aiCoordinationCore.routeAgentEvent('agent1', 'struggle-detected', {
+    sectionId: `section-page-${pageNumber}`,
+    sectionName: `Section Page ${pageNumber}`,
+    severity: 'medium',
+    indicators: {
+      confusionHighlights: 1,
+      stuckMarkers: 0,
+      revisitCount: 0,
+      timeSpent: 0,
+      understandingScore: 30
+    }
+  })
+}
+
+
+        aiCoordinationCore.routeUserAction('highlight-added', {
+          text: highlightedText,
+          reason: reason,
+          sectionId: `section-page-${pageNumber}`
+        })
       });
+
+
+
+
     
     // Close selector
     setShowReasonSelector(false);
@@ -594,14 +643,51 @@ const highlightAssignedSections = useCallback(() => {
   //   return () => interactionCollector.endSession()
   // }, [documentId, userId])
 
+
+  useEffect(() => {
+    const handleNotification = (e: any) => {
+      setSmartNotifications(prev => [...prev, e.detail])
+    }
+    
+    window.addEventListener('agent7:notification', handleNotification)
+    
+    return () => {
+      window.removeEventListener('agent7:notification', handleNotification)
+    }
+  }, [])
+
+
+
   useEffect(() => {
     if (documentId && userId && userName) {
+      // Initialize multi-agent system
+      aiCoordinationCore.initialize()
+      
+      // Start session
       interactionCollector.startSession(userId, userName, documentId)
     }
+    
     return () => {
       interactionCollector.endSession()
+      aiCoordinationCore.shutdown()
     }
   }, [documentId, userId, userName])
+
+
+  agent2_collaborationOrchestrator.registerPeer(userId, userName)
+
+  // Emit when socket is ready
+  if (socketInstance) {
+    socketInstance.emit('peer-joined', {
+      userId,
+      userName,
+      documentId
+    })
+  }
+
+
+
+
 
   useEffect(() => {
     const initSocket = async () => {
@@ -615,11 +701,22 @@ const highlightAssignedSections = useCallback(() => {
       socket.on('connect', () => {
         console.log('✅ Socket.io connected:', socket.id)
         socket.emit('join-document', { documentId, userName, userId })
+        
+        // Register local peer
+        agent2_collaborationOrchestrator.registerPeer(userId, userName)
+        
+        // Emit peer-joined to notify other users
+        socket.emit('peer-joined', { documentId, userName, userId })
       })
       
       socket.on('assignment-updated', (data: any) => {
         console.log('📥 Assignment update received:', data)
         setSectionAssignments(data.assignments)
+      })
+
+      socket.on('peer-joined', (data: any) => {
+        console.log('👥 Peer joined:', data.userName)
+        agent2_collaborationOrchestrator.registerPeer(data.userId, data.userName)
       })
       
       setSocketInstance(socket)
@@ -1229,6 +1326,10 @@ useEffect(() => {
       position: { x: newMarker.x, y: newMarker.y },
       text: newMarker.text
     })
+
+    aiCoordinationCore.routeUserAction('stuck-marker-added', {
+      sectionId: `section-page-${newMarker.page}`
+    })
   }
 
   const handleRemoveStuckMarker = (markerId: string) => {
@@ -1451,6 +1552,12 @@ useEffect(() => {
               height: annotation.Height || 0
             },
             author: userName || 'Unknown',
+            sectionId: `section-page-${annotation.PageNumber || 1}`
+          })
+
+
+          aiCoordinationCore.routeUserAction('annotation-added', {
+            text: comment,
             sectionId: `section-page-${annotation.PageNumber || 1}`
           })
           
@@ -2138,11 +2245,41 @@ ${documentContent}
             const annotation = annotations[0]; // Get from annotations array
             console.log('🎯 NEW ANNOTATION ADDED:', annotation.Subject, annotation);
             
-            // ✅ PREVENT FEEDBACK LOOP: Only process annotations created by current user
-            if (annotation.Author !== userName) {
-              console.log('🔇 Ignoring annotation from another user/Socket.io:', annotation.Author);
-              return; // Exit early to prevent feedback loop
-            }
+// ✅ PREVENT FEEDBACK LOOP: Only process annotations created by current user
+if (annotation.Author !== userName) {
+  console.log('👥 Received annotation from another user:', annotation.Author)
+  
+  // If it's a confusion highlight, update their peer status
+  const customData = annotation.getCustomData('reason')
+  if (customData === 'confusion') {
+    const authorId = annotation.getCustomData('authorId') || annotation.Author
+    const annotationPage = annotation.PageNumber || 1
+    const sectionId = `section-page-${annotationPage}`
+    
+    agent2_collaborationOrchestrator.updatePeerStatus(
+      authorId,
+      sectionId,
+      30
+    )
+    console.log('🤝 Updated peer status for remote user:', annotation.Author)
+    
+    // ALSO trigger struggle detection so Agent 2 can find matches
+    aiCoordinationCore.routeAgentEvent('agent1', 'struggle-detected', {
+      sectionId: sectionId,
+      sectionName: `Section Page ${annotationPage}`,
+      severity: 'medium',
+      indicators: {
+        confusionHighlights: 1,
+        stuckMarkers: 0,
+        revisitCount: 0,
+        timeSpent: 0,
+        understandingScore: 30
+      }
+    })
+  }
+  
+  return // Exit early to prevent feedback loop
+}
             
             // Track all annotation types for contextual AI
             const sectionId = `page-${annotation.PageNumber}-section`;
@@ -2601,6 +2738,15 @@ setShowReasonSelector(true);
                 onPageChange(currentPage);
               }
               interactionCollector.trackPageVisit(currentPage, `section-page-${currentPage}`)
+
+
+
+
+
+              aiCoordinationCore.routeUserAction('page-changed', {
+                page: currentPage,
+                sectionId: `section-page-${currentPage}`
+              })
             });
             console.log('✅ Page change listener added for contextual AI');
           } catch (error) {
@@ -5143,6 +5289,37 @@ onClick={() => {
           console.log('✅ Eye tracking started!')
         }}
         />
+
+
+
+{/* Smart Notifications from Agent 7 */}
+{smartNotifications.length > 0 && (
+  <div className="fixed top-20 right-4 w-80 space-y-2 z-50">
+    {smartNotifications.filter(n => !dismissedNotifications.has(n.id)).slice(-3).map((notif, idx) => (
+      <div key={idx} className="bg-blue-50 border border-blue-200 rounded-lg p-4 shadow-lg relative">
+<button 
+  onClick={() => {
+    setDismissedNotifications(prev => new Set(prev).add(notif.id))
+    setSmartNotifications(prev => prev.filter(n => n.id !== notif.id))
+  }}
+  className="absolute top-2 left-2 text-gray-400 hover:text-gray-600"
+>
+  ✕
+</button>
+        <p className="font-semibold text-sm pr-6">{notif.title}</p>
+        <p className="text-xs text-gray-600 mt-1">{notif.message}</p>
+        {notif.actionButton && (
+          <button className="mt-2 text-xs bg-blue-600 text-white px-3 py-1 rounded">
+            {notif.actionButton.label}
+          </button>
+        )}
+      </div>
+    ))}
+  </div>
+)}
+
+
+
 
         <InteractionAnalysisDashboard
           isOpen={showInteractionAnalysis}

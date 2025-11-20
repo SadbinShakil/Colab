@@ -23,6 +23,7 @@ import {
 } from 'lucide-react'
 import { interactionCollector } from '@/lib/interactionCollector'
 import { interactionAnalyzer, type AnalysisResult } from '@/lib/interactionAnalyzer'
+import { aiCoordinationCore } from '@/lib/agents/aiCoordinationCore'
 
 interface InteractionAnalysisDashboardProps {
   isOpen: boolean
@@ -46,11 +47,9 @@ export default function InteractionAnalysisDashboard({
   const runAnalysis = () => {
     setLoading(true)
     
-    const session = interactionCollector.getCurrentSession()
-    if (session) {
-      const result = interactionAnalyzer.analyzeSession(session)
-      setAnalysis(result)
-    }
+    // Use coordination core for comprehensive analysis
+    const result = aiCoordinationCore.runComprehensiveAnalysis()
+    setAnalysis(result)
     
     setLoading(false)
   }
@@ -164,6 +163,41 @@ export default function InteractionAnalysisDashboard({
               {/* Overview Tab */}
               {activeTab === 'overview' && (
                 <div className="space-y-6">
+
+
+
+{/* Active Agents Display */}
+<Card className="mb-6">
+  <CardHeader>
+    <CardTitle className="flex items-center gap-2">
+      <Activity className="w-5 h-5 text-blue-600" />
+      Active Agents
+    </CardTitle>
+  </CardHeader>
+  <CardContent>
+    <div className="space-y-2">
+      {aiCoordinationCore.getAgentActivities().map((agent, idx) => (
+        <div key={idx} className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
+          <div className="flex items-center gap-3">
+            <div className={`w-2 h-2 rounded-full ${agent.status === 'active' ? 'bg-green-500' : 'bg-gray-400'}`} />
+            <div>
+              <p className="font-medium text-sm">{agent.agentName}</p>
+              <p className="text-xs text-gray-600">{agent.lastActivity}</p>
+            </div>
+          </div>
+          <Badge variant="outline" className={agent.status === 'active' ? 'bg-green-50' : 'bg-gray-50'}>
+            {agent.status}
+          </Badge>
+        </div>
+      ))}
+    </div>
+  </CardContent>
+</Card>
+
+
+
+
+
                   {/* Score Cards */}
                   <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
                     <Card className={`${getScoreBg(100 - analysis.overallStruggleScore)} border-2`}>

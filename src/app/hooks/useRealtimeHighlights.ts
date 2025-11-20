@@ -68,6 +68,34 @@ const clearIncomingHighlights = useCallback(() => {
       } else {
         console.log('📝 Received new highlight, passing to main component');
         setIncomingHighlights(prev => [...prev, highlight]);
+        
+        // If it's a confusion highlight, update peer status
+        if (highlight.reason === 'confusion') {
+          const { agent2_collaborationOrchestrator } = require('@/lib/agents/Agent2_CollaborationOrchestrator')
+          const { aiCoordinationCore } = require('@/lib/agents/aiCoordinationCore')
+          
+          const sectionId = `section-page-${highlight.pageNumber}`
+          
+          agent2_collaborationOrchestrator.updatePeerStatus(
+            highlight.user,
+            sectionId,
+            30
+          )
+          console.log('🤝 Updated peer status for remote user:', highlight.user)
+          
+          aiCoordinationCore.routeAgentEvent('agent1', 'struggle-detected', {
+            sectionId: sectionId,
+            sectionName: `Section Page ${highlight.pageNumber}`,
+            severity: 'medium',
+            indicators: {
+              confusionHighlights: 1,
+              stuckMarkers: 0,
+              revisitCount: 0,
+              timeSpent: 0,
+              understandingScore: 30
+            }
+          })
+        }
       }
     })
 

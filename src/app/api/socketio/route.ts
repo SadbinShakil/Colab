@@ -52,6 +52,18 @@ export async function GET(req: NextRequest) {
         io?.to(documentId).emit('users-update', room.users)
       })
 
+      // Handle peer joining for Agent 2
+socket.on('peer-joined', ({ documentId, userName, userId }) => {
+  console.log(`👥 Peer joined event: ${userName}`)
+  
+  // Broadcast to all other users in the document
+  socket.to(documentId).emit('peer-joined', {
+    userId,
+    userName,
+    documentId
+  })
+})
+
       // Handle new highlights
       socket.on('new-highlight', (highlightData) => {
         const { documentId } = highlightData
