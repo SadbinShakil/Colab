@@ -5,6 +5,7 @@ import { useEffect, useRef, useState, useCallback } from 'react'
 import { eyeTracker } from '@/lib/eyeTracking'
 import EyeTrackingCalibration from './EyeTrackingCalibration'
 import { PDFHeadingExtractor, type PDFSection, type PDFHeading } from '@/lib/pdfHeadingExtractor'
+import SmartHelpPanel from '@/components/SmartHelpPanel'
 
 import SectionAssignmentPanel from './SectionAssignmentPanel'
 
@@ -27,6 +28,7 @@ import { contextualAI } from '@/lib/contextualAI'
 import { interactionCollector } from '@/lib/interactionCollector' 
 import { aiCoordinationCore } from '@/lib/agents/aiCoordinationCore'
 import { agent2_collaborationOrchestrator } from '@/lib/agents/Agent2_CollaborationOrchestrator'
+import { agent5_storyboardCurator } from '@/lib/agents/Agent5_StoryboardCurator'
 import InteractionAnalysisDashboard from '@/components/InteractionAnalysisDashboard'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
@@ -254,6 +256,23 @@ const [socketInstance, setSocketInstance] = useState<any>(null)
   const [showStoryboard, setShowStoryboard] = useState(false)
 
   const [showGazeHeatmap, setShowGazeHeatmap] = useState(false)
+
+
+// Smart Help Panel state
+const [showHelpPanel, setShowHelpPanel] = useState(false)
+const [helpPanelContext, setHelpPanelContext] = useState<{
+  confusedHighlights: Array<{
+    id: string
+    text: string
+    sectionId: string
+    page: number
+  }>
+  sectionName: string
+}>({
+  confusedHighlights: [],
+  sectionName: ''
+})
+
 
 const [showReasonSelector, setShowReasonSelector] = useState(false);
 const [pendingHighlight, setPendingHighlight] = useState<any>(null);
@@ -531,6 +550,63 @@ const highlightAssignedSections = useCallback(() => {
 }, [webViewerInstance, sectionAssignments, pdfSections, userId, collaborators])
 
 
+const handleNotificationAction = (notification: any) => {
+  const action = notification.actionButton?.action
+  
+  if (action === 'open-ai-help' || action === 'get-help' || action === 'open-stuck-here') {
+    // Get confused highlights from the section
+    const session = interactionCollector.getCurrentSession()
+    if (session) {
+      const confusedHighlights = session.highlights
+        .filter(h => h.sectionId === notification.sectionId && h.reason === 'confusion')
+        .map(h => ({
+          id: h.id,
+          text: h.text,
+          sectionId: h.sectionId || '',
+          page: h.page
+        }))
+      
+      setHelpPanelContext({
+        confusedHighlights,
+        sectionName: notification.sectionName || `Section ${notification.sectionId}`
+      })
+      
+      setShowHelpPanel(true)
+    }
+    
+    // Dismiss the notification
+    setDismissedNotifications(prev => new Set(prev).add(notification.id))
+    setSmartNotifications(prev => prev.filter(n => n.id !== notification.id))
+  }
+}
+
+const getAvailablePeers = () => {
+  const peers: Array<{
+    userId: string
+    userName: string
+    status: 'online' | 'offline' | 'busy'
+    isProficient: boolean
+  }> = []
+  
+  collaborators.forEach(collab => {
+    if (collab.userId && collab.userId !== userId) {
+      const peerProfile = agent2_collaborationOrchestrator.getPeerStatus(collab.userId as string)
+      
+      if (peerProfile) {
+        peers.push({
+          userId: collab.userId as string,
+          userName: collab.name,
+          status: 'online', // TODO: Track real status via Socket.io
+          isProficient: peerProfile.status === 'proficient'
+        })
+      }
+    }
+  })
+  
+  return peers
+}
+
+
 
   // ✅ ADD THIS FUNCTION RIGHT HERE:
   const completeHighlightWithReason = (reason: string) => {
@@ -595,27 +671,65 @@ const highlightAssignedSections = useCallback(() => {
         })
 
 
-// ADD THIS NEW CODE HERE:
-// Manually trigger struggle detection for confusion highlights
+// ✅ Only trigger struggle detection for confusion highlights
 if (reason === 'confusion') {
-  // Update current user's peer status to struggling
+  
+  // Update peer status in Agent 2
   agent2_collaborationOrchestrator.updatePeerStatus(
     userId,
     `section-page-${pageNumber}`,
-    30  // Low score = struggling
+    30
   )
-  aiCoordinationCore.routeAgentEvent('agent1', 'struggle-detected', {
-    sectionId: `section-page-${pageNumber}`,
-    sectionName: `Section Page ${pageNumber}`,
-    severity: 'medium',
-    indicators: {
-      confusionHighlights: 1,
-      stuckMarkers: 0,
-      revisitCount: 0,
-      timeSpent: 0,
-      understandingScore: 30
+  
+// ✅ Check if user is REALLY struggling before triggering agents
+// Small delay to ensure session is updated with new highlight
+setTimeout(() => {
+  const session = interactionCollector.getCurrentSession()
+  const sectionInteraction = session?.sectionInteractions.get(`section-page-${pageNumber}`)
+  
+  if (sectionInteraction) {
+    const confusionCount = sectionInteraction.confusionHighlights
+    const timeSpent = sectionInteraction.totalTimeSpent
+    const revisits = sectionInteraction.visitCount
+    
+    console.log(`📊 Section stats: ${confusionCount} confusion highlights, ${timeSpent}ms spent, ${revisits} visits`)
+    
+    // ✅ Only trigger struggle detection if MULTIPLE signals
+    const shouldTrigger = 
+    confusionCount >= 3 ||  // ✅ Changed: 3+ confusion highlights
+    (confusionCount >= 2 && timeSpent > 120000) ||  // 2 confusion + 2+ minutes
+    (confusionCount >= 2 && revisits >= 2)  // 2 confusion + revisited
+    
+    if (shouldTrigger) {
+      console.log(`⚠️ [STRUGGLE DETECTED] User ${userName} is struggling with section ${pageNumber}`)
+      
+      // Determine severity based on signals
+      let severity: 'low' | 'medium' | 'high' = 'low'
+      if (confusionCount >= 3 || revisits >= 3) {
+        severity = 'high'
+      } else if (confusionCount >= 2 || timeSpent > 180000) {
+        severity = 'medium'
+      }
+      
+      aiCoordinationCore.routeAgentEvent('agent1', 'struggle-detected', {
+        userId: userId,
+        userName: userName,
+        sectionId: `section-page-${pageNumber}`,
+        sectionName: `Section Page ${pageNumber}`,
+        severity: severity,
+        indicators: {
+          confusionHighlights: confusionCount,
+          stuckMarkers: 0,
+          revisitCount: revisits - 1,
+          timeSpent: timeSpent,
+          understandingScore: sectionInteraction.understandingScore
+        }
+      })
+    } else {
+      console.log(`ℹ️ Confusion tracked but not enough signals yet (${confusionCount} highlights)`)
     }
-  })
+  }
+}, 100)  // ✅ Add this closing for setTimeout
 }
 
 
@@ -646,7 +760,27 @@ if (reason === 'confusion') {
 
   useEffect(() => {
     const handleNotification = (e: any) => {
-      setSmartNotifications(prev => [...prev, e.detail])
+      const notification = e.detail
+      
+      console.log(`🔔 [Event] Notification received:`, {
+        title: notification.title,
+        targetUserId: notification.targetUserId,
+        currentUserId: userId
+      })
+      
+      // ✅ CRITICAL: Filter at event level - only add if for this user
+      if (notification.targetUserId && notification.targetUserId !== userId) {
+        console.log(`❌ [Event] BLOCKED - Not for user ${userId}`)
+        return  // Don't even add to state
+      }
+      
+      if (notification.targetUserIds && !notification.targetUserIds.includes(userId)) {
+        console.log(`❌ [Event] BLOCKED - Not in target group`)
+        return
+      }
+      
+      console.log(`✅ [Event] ACCEPTED - Adding to notifications`)
+      setSmartNotifications(prev => [...prev, notification])
     }
     
     window.addEventListener('agent7:notification', handleNotification)
@@ -654,36 +788,45 @@ if (reason === 'confusion') {
     return () => {
       window.removeEventListener('agent7:notification', handleNotification)
     }
-  }, [])
+  }, [userId])  // ✅ Add userId to dependencies
 
 
 
   useEffect(() => {
     if (documentId && userId && userName) {
+      console.log('🚀 [LitSense] Initializing AI Multi-Agent System...')
+      
       // Initialize multi-agent system
       aiCoordinationCore.initialize()
       
       // Start session
-      interactionCollector.startSession(userId, userName, documentId)
+      const sessionId = interactionCollector.startSession(userId, userName, documentId)
+      
+      // Start journey tracking for Agent 5
+      agent5_storyboardCurator.startJourney(userId, sessionId)
+      
+      // Register peer for Agent 2
+      agent2_collaborationOrchestrator.registerPeer(userId, userName)
+      
+      console.log('✅ [LitSense] All agents activated!')
+      
+      // Emit socket event if connected
+      if (socketInstance) {
+        socketInstance.emit('peer-joined', {
+          userId,
+          userName,
+          documentId
+        })
+      }
     }
     
     return () => {
+      console.log('🛑 [LitSense] Shutting down agents...')
+      agent5_storyboardCurator.endJourney()
       interactionCollector.endSession()
       aiCoordinationCore.shutdown()
     }
-  }, [documentId, userId, userName])
-
-
-  agent2_collaborationOrchestrator.registerPeer(userId, userName)
-
-  // Emit when socket is ready
-  if (socketInstance) {
-    socketInstance.emit('peer-joined', {
-      userId,
-      userName,
-      documentId
-    })
-  }
+  }, [documentId, userId, userName, socketInstance])
 
 
 
@@ -696,27 +839,62 @@ if (reason === 'confusion') {
       
       // Then connect client
       const { io } = await import('socket.io-client')
-      const socket = io('http://localhost:3001')
+      const socket = io('http://localhost:3000')  // Use port 3000 (server.js)
       
       socket.on('connect', () => {
         console.log('✅ Socket.io connected:', socket.id)
+        
+        // Join document room
         socket.emit('join-document', { documentId, userName, userId })
         
         // Register local peer
         agent2_collaborationOrchestrator.registerPeer(userId, userName)
-        
-        // Emit peer-joined to notify other users
-        socket.emit('peer-joined', { documentId, userName, userId })
       })
       
-      socket.on('assignment-updated', (data: any) => {
+      // ✅ CRITICAL: Listen for users-update from server
+      socket.on('users-update', (users: any) => {
+        console.log('👥 Users update received from server:', users)
+        
+        // Deduplicate users by userId
+        const uniqueUsers = Array.from(
+          new Map(users.map((user: any) => [user.userId, user])).values()
+        )
+        
+        const activeCollaborators: Collaborator[] = uniqueUsers.map((user: any) => ({
+          id: user.userId,
+          name: user.userName,
+          avatar: `/api/placeholder/32/32`,
+          status: 'online' as const,  // ← Add 'as const'
+          userId: user.userId,
+          isCurrentUser: user.userId === userId,
+          role: 'viewer' as const,  // ← Add 'as const' here too
+          activity: 'viewing' as const,  // ← And here
+          lastActivity: new Date().toISOString(),
+          permissions: {
+            canView: true,
+            canEdit: false,
+            canInvite: false,
+            canDelete: false
+          }
+        }))
+        
+        console.log('✅ Setting collaborators from Socket.io (deduplicated):', activeCollaborators)
+        setCollaborators(activeCollaborators)
+      })
+      
+      socket.on('assignment-updated', (data) => {
         console.log('📥 Assignment update received:', data)
         setSectionAssignments(data.assignments)
       })
-
-      socket.on('peer-joined', (data: any) => {
+  
+      socket.on('peer-joined', (data) => {
         console.log('👥 Peer joined:', data.userName)
         agent2_collaborationOrchestrator.registerPeer(data.userId, data.userName)
+      })
+      
+      socket.on('peer-left', (data) => {
+        console.log('👋 Peer left:', data.userName)
+        // Update will come via users-update event
       })
       
       setSocketInstance(socket)
@@ -727,6 +905,7 @@ if (reason === 'confusion') {
     
     return () => {
       if (socketInstance) {
+        socketInstance.emit('leave-document', { documentId, userId })
         socketInstance.disconnect()
       }
     }
@@ -825,120 +1004,182 @@ useEffect(() => {
 }, [currentPage, eyeTrackingEnabled])
 
 // Join document and track collaborators
-useEffect(() => {
-  const joinDocument = async () => {
-    try {
-      const response = await fetch('/api/socket', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          action: 'join-document',
-          documentId,
-          userId,
-          userName
-        })
-      })
+// useEffect(() => {
+//   const joinDocument = async () => {
+//     try {
+//       const response = await fetch('/api/socket', {
+//         method: 'POST',
+//         headers: { 'Content-Type': 'application/json' },
+//         body: JSON.stringify({
+//           action: 'join-document',
+//           documentId,
+//           userId,
+//           userName
+//         })
+//       })
       
-      if (response.ok) {
-        const data = await response.json()
-        console.log('✅ Joined document, active users:', data.activeUsers)
+//       if (response.ok) {
+//         const data = await response.json()
+//         console.log('✅ Joined document, active users:', data.activeUsers)
         
-        // Immediately update collaborators with the join response
-        if (data.activeUsers && data.activeUsers.length > 0) {
-          const activeCollaborators: Collaborator[] = data.activeUsers.map((user: any) => ({
-            id: user.userId,
-            name: user.userName,
-            avatar: `/api/placeholder/32/32`,
-            status: 'online' as const,
-            userId: user.userId,
-            isCurrentUser: user.userId === userId,
-            role: 'viewer',
-            activity: 'viewing',
-            lastActivity: new Date().toISOString(),
-            permissions: {
-              canView: true,
-              canEdit: false,
-              canInvite: false,
-              canDelete: false
-            }
-          }))
+//         // Immediately update collaborators with the join response
+//         if (data.activeUsers && data.activeUsers.length > 0) {
+//           const activeCollaborators: Collaborator[] = data.activeUsers.map((user: any) => ({
+//             id: user.userId,
+//             name: user.userName,
+//             avatar: `/api/placeholder/32/32`,
+//             status: 'online' as const,
+//             userId: user.userId,
+//             isCurrentUser: user.userId === userId,
+//             role: 'viewer',
+//             activity: 'viewing',
+//             lastActivity: new Date().toISOString(),
+//             permissions: {
+//               canView: true,
+//               canEdit: false,
+//               canInvite: false,
+//               canDelete: false
+//             }
+//           }))
           
-          console.log('👥 Setting collaborators from join:', activeCollaborators)
-          setCollaborators(activeCollaborators)
-        }
-      }
-    } catch (error) {
-      console.error('Error joining document:', error)
-    }
-  }
+//           console.log('👥 Setting collaborators from join:', activeCollaborators)
+//           setCollaborators(activeCollaborators)
+//         }
+//       }
+//     } catch (error) {
+//       console.error('Error joining document:', error)
+//     }
+//   }
 
-  const fetchActiveUsers = async () => {
-    try {
-      const response = await fetch('/api/socket', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          action: 'get-active-users',
-          documentId,
-          userId,
-          userName
-        })
-      })
+//   const fetchActiveUsers = async () => {
+//     try {
+//       const response = await fetch('/api/socket', {
+//         method: 'POST',
+//         headers: { 'Content-Type': 'application/json' },
+//         body: JSON.stringify({
+//           action: 'get-active-users',
+//           documentId,
+//           userId,
+//           userName
+//         })
+//       })
       
-      if (response.ok) {
-        const data = await response.json()
-        console.log('🔄 Polling active users:', data.activeUsers)
+//       if (response.ok) {
+//         const data = await response.json()
+//         console.log('🔄 Polling active users:', data.activeUsers)
         
-        if (data.success && data.activeUsers && data.activeUsers.length > 0) {
-          const activeCollaborators: Collaborator[] = data.activeUsers.map((user: any) => ({
-            id: user.userId,
-            name: user.userName,
-            avatar: `/api/placeholder/32/32`,
-            status: 'online' as const,
-            userId: user.userId,
-            isCurrentUser: user.userId === userId,
-            role: 'viewer',
-            activity: 'viewing',
-            lastActivity: new Date().toISOString(),
-            permissions: {
-              canView: true,
-              canEdit: false,
-              canInvite: false,
-              canDelete: false
-            }
-          }))
+//         if (data.success && data.activeUsers && data.activeUsers.length > 0) {
+//           const activeCollaborators: Collaborator[] = data.activeUsers.map((user: any) => ({
+//             id: user.userId,
+//             name: user.userName,
+//             avatar: `/api/placeholder/32/32`,
+//             status: 'online' as const,
+//             userId: user.userId,
+//             isCurrentUser: user.userId === userId,
+//             role: 'viewer',
+//             activity: 'viewing',
+//             lastActivity: new Date().toISOString(),
+//             permissions: {
+//               canView: true,
+//               canEdit: false,
+//               canInvite: false,
+//               canDelete: false
+//             }
+//           }))
           
-          console.log('👥 Updating collaborators from poll:', activeCollaborators)
-          setCollaborators(activeCollaborators)
-        }
-      }
-    } catch (error) {
-      console.error('Error fetching active users:', error)
-    }
-  }
+//           console.log('👥 Updating collaborators from poll:', activeCollaborators)
+//           setCollaborators(activeCollaborators)
+//         }
+//       }
+//     } catch (error) {
+//       console.error('Error fetching active users:', error)
+//     }
+//   }
 
-  // Join first
-  joinDocument()
+//   // Join first
+//   joinDocument()
   
-  // Then poll every 3 seconds
-  const interval = setInterval(fetchActiveUsers, 3000)
+//   // Then poll every 3 seconds
+//   const interval = setInterval(fetchActiveUsers, 3000)
 
-  return () => {
-    clearInterval(interval)
-    // Leave document when component unmounts
-    fetch('/api/socket', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        action: 'leave-document',
-        documentId,
-        userId
-      })
-    }).catch(error => {
-      console.error('Error leaving document:', error)
+//   return () => {
+//     clearInterval(interval)
+//     // Leave document when component unmounts
+//     fetch('/api/socket', {
+//       method: 'POST',
+//       headers: { 'Content-Type': 'application/json' },
+//       body: JSON.stringify({
+//         action: 'leave-document',
+//         documentId,
+//         userId
+//       })
+//     }).catch(error => {
+//       console.error('Error leaving document:', error)
+//     })
+//   }
+// }, [documentId, userId, userName, currentUserRole])
+
+
+// // Register all collaborators with Agent 2 whenever collaborators list changes
+// useEffect(() => {
+//   if (collaborators.length > 0) {
+//     console.log('🤝 Registering all collaborators with Agent 2...')
+    
+//     collaborators.forEach(collab => {
+//       // Safety check: only register if userId exists
+//       if (collab.userId && collab.name) {
+//         agent2_collaborationOrchestrator.registerPeer(collab.userId, collab.name)
+        
+//         // Mock: Set understanding scores (in real system, this would come from actual data)
+//         // For testing, let's say current user is struggling, others are proficient
+//         const mockScore = collab.userId === userId ? 30 : 85
+//         agent2_collaborationOrchestrator.updatePeerStatus(
+//           collab.userId,
+//           `section-page-${currentPage}`,
+//           mockScore
+//         )
+//       }
+//     })
+    
+//     console.log('✅ All collaborators registered with Agent 2!')
+//   }
+// }, [collaborators, userId, currentPage])
+
+
+
+// Register all collaborators with Agent 2 whenever collaborators list changes
+useEffect(() => {
+  if (collaborators.length > 0) {
+    console.log('🤝 Registering all collaborators with Agent 2...')
+    console.log('👥 Collaborators to register:', collaborators)
+    
+    collaborators.forEach(collab => {
+      // Safety check: only register if userId exists
+      if (collab.userId && collab.name) {
+        console.log(`  ✅ Registering: ${collab.name} (${collab.userId})`)
+        agent2_collaborationOrchestrator.registerPeer(collab.userId, collab.name)
+        
+        // Mock: Set understanding scores (in real system, this would come from actual data)
+        // For testing, let's say current user is struggling, others are proficient
+        const mockScore = collab.userId === userId ? 30 : 85
+        const sectionId = `section-page-${currentPage}`
+        
+        console.log(`  📊 Setting ${collab.name} score: ${mockScore} for ${sectionId}`)
+        agent2_collaborationOrchestrator.updatePeerStatus(
+          collab.userId,
+          sectionId,
+          mockScore
+        )
+      }
     })
+    
+    // Debug: Check what Agent 2 knows
+    console.log('🔍 Agent 2 peer profiles:', agent2_collaborationOrchestrator.getPeerStatus(userId))
+    console.log('✅ All collaborators registered with Agent 2!')
   }
-}, [documentId, userId, userName, currentUserRole])
+}, [collaborators, userId, currentPage])
+
+
 
   // Real-time chat functionality with unread message tracking
   useEffect(() => {
@@ -5293,9 +5534,35 @@ onClick={() => {
 
 
 {/* Smart Notifications from Agent 7 */}
+{/* Smart Notifications from Agent 7 */}
 {smartNotifications.length > 0 && (
   <div className="fixed top-20 right-4 w-80 space-y-2 z-50">
-    {smartNotifications.filter(n => !dismissedNotifications.has(n.id)).slice(-3).map((notif, idx) => (
+    {smartNotifications
+      .filter(n => !dismissedNotifications.has(n.id))
+      .filter(n => {
+        console.log(`🔍 [UI Filter] Checking notification:`, {
+          title: n.title,
+          targetUserId: n.targetUserId,
+          currentUserId: userId,
+          match: n.targetUserId === userId
+        })
+        
+        // ✅ STRICT: Only show if explicitly targeted to this user
+        if (n.targetUserId === userId) {
+          console.log('✅ [UI Filter] MATCH - Showing notification')
+          return true
+        }
+        
+        if (n.targetUserIds && n.targetUserIds.includes(userId)) {
+          console.log('✅ [UI Filter] GROUP MATCH - Showing notification')
+          return true
+        }
+        
+        console.log('❌ [UI Filter] NO MATCH - Hiding notification')
+        return false  // ✅ CRITICAL: Don't show if targetUserId doesn't match
+      })
+      .slice(-3)
+      .map((notif, idx) => (
       <div key={idx} className="bg-blue-50 border border-blue-200 rounded-lg p-4 shadow-lg relative">
 <button 
   onClick={() => {
@@ -5309,10 +5576,13 @@ onClick={() => {
         <p className="font-semibold text-sm pr-6">{notif.title}</p>
         <p className="text-xs text-gray-600 mt-1">{notif.message}</p>
         {notif.actionButton && (
-          <button className="mt-2 text-xs bg-blue-600 text-white px-3 py-1 rounded">
-            {notif.actionButton.label}
-          </button>
-        )}
+  <button 
+    onClick={() => handleNotificationAction(notif)}
+    className="mt-2 text-xs bg-blue-600 text-white px-3 py-1 rounded hover:bg-blue-700 transition"
+  >
+    {notif.actionButton.label}
+  </button>
+)}
       </div>
     ))}
   </div>
@@ -5325,6 +5595,22 @@ onClick={() => {
           isOpen={showInteractionAnalysis}
           onClose={() => setShowInteractionAnalysis(false)}
         />
+
+
+
+
+
+        {/* Smart Help Panel */}
+<SmartHelpPanel
+  isOpen={showHelpPanel}
+  onClose={() => setShowHelpPanel(false)}
+  confusedHighlights={helpPanelContext.confusedHighlights}
+  sectionName={helpPanelContext.sectionName}
+  userId={userId}
+  userName={userName}
+  availablePeers={getAvailablePeers()}
+  documentId={documentId}
+/>
         </div>
         
         </div>

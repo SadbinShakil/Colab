@@ -33,6 +33,8 @@ export interface SmartNotification {
   timestamp: number
   sectionId?: string
   dismissed?: boolean
+  targetUserId?: string  // ✅ ADD: User who should see this notification
+  targetUserIds?: string[]  // ✅ ADD: Multiple users (for group notifications)
 }
 
 export interface ImplicitSuggestion {
@@ -100,7 +102,15 @@ class Agent7_ImplicitAssistance {
   onStruggleDetected(signal: StruggleSignal) {
     if (!this.isActive) return
     
-    // Generate struggle awareness notification
+    // ✅ CRITICAL: Only notify the struggling user!
+    const strugglingUserId = (signal as any).userId
+    
+    if (!strugglingUserId) {
+      console.warn('⚠️ [Agent 7] No userId in struggle signal - skipping notification')
+      return
+    }
+    
+    // Generate struggle awareness notification FOR THE STRUGGLING USER
     const notification: SmartNotification = {
       id: `struggle-${signal.sectionId}-${Date.now()}`,
       type: 'struggle-awareness',
@@ -113,9 +123,11 @@ class Agent7_ImplicitAssistance {
         action: 'open-stuck-here'
       },
       timestamp: Date.now(),
-      sectionId: signal.sectionId
+      sectionId: signal.sectionId,
+      targetUserId: strugglingUserId  // ✅ ADD: Only this user sees it
     }
     
+    console.log(`📢 [Agent 7] Notification for user ${strugglingUserId}:`, notification.title)
     this.addNotification(notification)
     
     // Generate confusion loop notification if applicable
@@ -132,7 +144,8 @@ class Agent7_ImplicitAssistance {
           action: 'open-explainer'
         },
         timestamp: Date.now(),
-        sectionId: signal.sectionId
+        sectionId: signal.sectionId,
+        targetUserId: strugglingUserId  // ✅ ADD: Only this user sees it
       }
       
       this.addNotification(loopNotification)
@@ -183,6 +196,8 @@ class Agent7_ImplicitAssistance {
     priority: 'high' | 'medium' | 'low'
     sectionId?: string
     actionButton?: { label: string; action: string }
+    targetUserId?: string  // ✅ ADD: Optional target user
+    targetUserIds?: string[]  // ✅ ADD: Optional multiple users
   }) {
     const notification: SmartNotification = {
       id: `custom-${Date.now()}`,
@@ -193,7 +208,9 @@ class Agent7_ImplicitAssistance {
       actionable: config.message,
       actionButton: config.actionButton,
       timestamp: Date.now(),
-      sectionId: config.sectionId
+      sectionId: config.sectionId,
+      targetUserId: config.targetUserId,  // ✅ ADD
+      targetUserIds: config.targetUserIds  // ✅ ADD
     }
     
     this.addNotification(notification)

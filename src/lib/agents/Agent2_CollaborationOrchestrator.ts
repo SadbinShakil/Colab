@@ -127,6 +127,10 @@ class Agent2_CollaborationOrchestrator {
     const helpee = this.peerProfiles.get(userId)
     if (!helpee) return []
     
+
+    // ✅ DEBUG: Log all registered peers
+  console.log(`🔍 [Agent 2] Finding peers for ${userId} in section ${sectionId}`)
+  console.log(`📋 [Agent 2] All registered peers:`, Array.from(this.peerProfiles.entries()))
     const matches: PeerMatch[] = []
     
     // NEW: Find other struggling peers for group study
@@ -138,6 +142,7 @@ class Agent2_CollaborationOrchestrator {
         peer.sectionId === sectionId &&
         peer.status === 'struggling'
       ) {
+        console.log(`    ✅ Found struggling peer: ${peer.userName}`)
         strugglingPeers.push(peer)
       }
     })
@@ -214,8 +219,9 @@ class Agent2_CollaborationOrchestrator {
   private getMatchReason(helpee: PeerProfile, helper: PeerProfile): string {
     const gap = helper.understandingScore - helpee.understandingScore
     
+    // ✅ NEVER expose understanding scores to users - keep private!
     if (gap > 30) {
-      return `${helper.userName} has strong understanding (${helper.understandingScore}) of this section`
+      return `${helper.userName} has strong understanding of this section`
     } else {
       return `${helper.userName} recently mastered this section and can relate to your challenges`
     }

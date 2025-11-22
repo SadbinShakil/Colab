@@ -135,47 +135,107 @@ class AICoordinationCoreService {
     switch (event) {
       case 'struggle-detected':
         // Agent 1 detected struggle → Agent 7 generates notification
-        agent7_implicitAssistance.onStruggleDetected(data)
+        const strugglingUserId = data.userId || interactionCollector.getCurrentSession()?.userId
+        const strugglingUserName = data.userName
+        const dataWithUserId = { ...data, userId: strugglingUserId }
         
-        // Agent 2 finds available peers
+        console.log(`🔍 [AI Core] Struggle detected for user ${strugglingUserId} in section ${data.sectionId}`)
+        
+        // Step 1: Notify the struggling user with basic help message
+        agent7_implicitAssistance.generateNotification({
+          type: 'struggle-awareness',
+          title: '⚠️ This section is challenging',
+          message: `Having trouble with ${data.sectionName}? You can get AI help or connect with others.`,
+          priority: data.severity === 'high' ? 'high' : 'medium',
+          sectionId: data.sectionId,
+          targetUserId: strugglingUserId,
+          actionButton: {
+            label: 'Get AI Help',
+            action: 'open-ai-help'
+          }
+        })
+        
+        // Step 2: Find peers who can help
         const session = interactionCollector.getCurrentSession()
         if (session) {
           const matches = agent2_collaborationOrchestrator.findPeersForHelp(
-            session.userId,
+            strugglingUserId,
             data.sectionId
           )
-          console.log('🤝 [Agent 2] Found peers for help:', matches)
+          console.log('🔍 [Agent 2] Peer matches found:', matches.length)
           
-          // Generate notification if matches found
           if (matches.length > 0) {
             const match = matches[0]
+            
             if (match.suggestedApproach === 'group') {
-              // Group collaboration notification
+              // GROUP STUDY: Multiple people struggling on same section
+              console.log('👥 [Group Study] Multiple users struggling')
+              
+              // Notify the current struggling user
               agent7_implicitAssistance.generateNotification({
                 type: 'peer-suggestion',
-                title: '👥 Others struggling too',
-                message: match.matchReason,
+                title: '👥 You\'re not alone!',
+                message: 'Other students are also working on this section. Join group study?',
                 priority: 'medium',
                 sectionId: data.sectionId,
+                targetUserId: strugglingUserId,
                 actionButton: {
                   label: 'Join Group',
                   action: 'join-group'
                 }
               })
+              
+              // ✅ ALSO notify the other struggling user(s)
+              if (match.helper.status === 'struggling') {
+                agent7_implicitAssistance.generateNotification({
+                  type: 'peer-suggestion',
+                  title: '👥 You\'re not alone!',
+                  message: `${strugglingUserName} is also working on this section. Join group study?`,
+                  priority: 'medium',
+                  sectionId: data.sectionId,
+                  targetUserId: match.helper.userId,
+                  actionButton: {
+                    label: 'Join Group',
+                    action: 'join-group'
+                  }
+                })
+              }
             } else {
-              // Peer tutoring notification
+              // PEER TUTORING: Helper available
+              console.log('🤝 [Peer Match] Helper found:', match.helper.userName)
+              
+              // ✅ BIDIRECTIONAL NOTIFICATIONS (both users notified)
+              
+              // 1. Notify struggling user about available helper (NO SCORE!)
               agent7_implicitAssistance.generateNotification({
                 type: 'peer-suggestion',
                 title: `💡 ${match.helper.userName} can help`,
-                message: match.matchReason,
+                message: `${match.helper.userName} already understood this section. Want to connect?`,
                 priority: 'high',
                 sectionId: data.sectionId,
+                targetUserId: strugglingUserId,
                 actionButton: {
                   label: 'Connect',
                   action: 'connect-peer'
                 }
               })
+              
+              // 2. Notify helper about struggling user
+              agent7_implicitAssistance.generateNotification({
+                type: 'peer-suggestion',
+                title: `🆘 ${strugglingUserName} is struggling`,
+                message: `${strugglingUserName} is having trouble with ${data.sectionName}. Want to help?`,
+                priority: 'medium',
+                sectionId: data.sectionId,
+                targetUserId: match.helper.userId,
+                actionButton: {
+                  label: 'Offer Help',
+                  action: 'offer-help'
+                }
+              })
             }
+          } else {
+            console.log('ℹ️ [No Peers] No peers available to help')
           }
         }
         break
