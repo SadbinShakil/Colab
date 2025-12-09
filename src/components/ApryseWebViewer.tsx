@@ -25,21 +25,24 @@ import { useRealtimeHighlights } from '@/app/hooks/useRealtimeHighlights'
 import GazeHeatmap from './GazeHeatmap'
 import { toast } from 'sonner'
 import { contextualAI } from '@/lib/contextualAI'
-import { interactionCollector } from '@/lib/interactionCollector' 
+import { interactionCollector } from '@/lib/interactionCollector'
 import { aiCoordinationCore } from '@/lib/agents/aiCoordinationCore'
 import { agent2_collaborationOrchestrator } from '@/lib/agents/Agent2_CollaborationOrchestrator'
+import { agent3_discussionFacilitator } from '@/lib/agents/Agent3_DiscussionFacilitator'  // ✅ ADD THIS LINE
 import { agent5_storyboardCurator } from '@/lib/agents/Agent5_StoryboardCurator'
+import { agent7_implicitAssistance } from '@/lib/agents/Agent7_ImplicitAssistance'
+
 import InteractionAnalysisDashboard from '@/components/InteractionAnalysisDashboard'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { Input } from '@/components/ui/input'
 // import RealResearchStoryboard from './RealResearchStoryboard'
-import { 
-  FileText, 
-  Users, 
-  MessageSquare, 
-  Bookmark, 
+import {
+  FileText,
+  Users,
+  MessageSquare,
+  Bookmark,
   Download,
   Share2,
   Settings,
@@ -102,35 +105,35 @@ import { isMathematicalContent } from '../utils/contentDetector'
 
 
 const HIGHLIGHT_REASONS = {
-  confusion: { 
-    label: 'Confused/Need Help', 
-    color: '#ff6b6b', 
-    colorRgb: 'rgb(255, 107, 107)' 
+  confusion: {
+    label: 'Confused/Need Help',
+    color: '#ff6b6b',
+    colorRgb: 'rgb(255, 107, 107)'
   },
-  understood: { 
-    label: 'Understood/Clear', 
-    color: '#4ecdc4', 
-    colorRgb: 'rgb(78, 205, 196)' 
+  understood: {
+    label: 'Understood/Clear',
+    color: '#4ecdc4',
+    colorRgb: 'rgb(78, 205, 196)'
   },
-  clarification: { 
-    label: 'Need Clarification', 
-    color: '#ffe66d', 
-    colorRgb: 'rgb(255, 230, 109)' 
+  clarification: {
+    label: 'Need Clarification',
+    color: '#ffe66d',
+    colorRgb: 'rgb(255, 230, 109)'
   },
-  important: { 
-    label: 'Important Point', 
-    color: '#a8e6cf', 
-    colorRgb: 'rgb(168, 230, 207)' 
+  important: {
+    label: 'Important Point',
+    color: '#a8e6cf',
+    colorRgb: 'rgb(168, 230, 207)'
   },
-  question: { 
-    label: 'Have Question', 
-    color: '#ffd93d', 
-    colorRgb: 'rgb(255, 217, 61)' 
+  question: {
+    label: 'Have Question',
+    color: '#ffd93d',
+    colorRgb: 'rgb(255, 217, 61)'
   },
-  disagree: { 
-    label: 'Disagree/Doubt', 
-    color: '#ffaaa5', 
-    colorRgb: 'rgb(255, 170, 165)' 
+  disagree: {
+    label: 'Disagree/Doubt',
+    color: '#ffaaa5',
+    colorRgb: 'rgb(255, 170, 165)'
   }
 };
 interface ApryseWebViewerProps {
@@ -193,10 +196,10 @@ interface InviteRequest {
 
 
 
-export default function ApryseWebViewer({ 
-  documentUrl, 
-  documentId, 
-  userName = 'Anonymous', 
+export default function ApryseWebViewer({
+  documentUrl,
+  documentId,
+  userName = 'Anonymous',
   userId = 'guest',
   onHighlightAdd,
   collaborationHighlights = [],
@@ -227,10 +230,19 @@ export default function ApryseWebViewer({
   const [inviteMessage, setInviteMessage] = useState('')
   const [currentUserRole, setCurrentUserRole] = useState<'viewer' | 'editor' | 'admin'>('viewer')
   const [smartNotifications, setSmartNotifications] = useState<any[]>([])
+
+  const [peerChatOpen, setPeerChatOpen] = useState(false)
+  const [peerChatData, setPeerChatData] = useState<{
+    peerId: string
+    peerName: string
+    sectionId: string
+  } | null>(null)
+
+
   const [dismissedNotifications, setDismissedNotifications] = useState<Set<string>>(new Set())
   const [showTeamProgress, setShowTeamProgress] = useState(false)
   // Initialize Socket.io for real-time features
-const [socketInstance, setSocketInstance] = useState<any>(null)
+  const [socketInstance, setSocketInstance] = useState<any>(null)
   const [stuckMarkers, setStuckMarkers] = useState<Array<{
     id: string
     x: number
@@ -258,26 +270,30 @@ const [socketInstance, setSocketInstance] = useState<any>(null)
   const [showGazeHeatmap, setShowGazeHeatmap] = useState(false)
 
 
-// Smart Help Panel state
-const [showHelpPanel, setShowHelpPanel] = useState(false)
-const [helpPanelContext, setHelpPanelContext] = useState<{
-  confusedHighlights: Array<{
-    id: string
-    text: string
-    sectionId: string
-    page: number
-  }>
-  sectionName: string
-}>({
-  confusedHighlights: [],
-  sectionName: ''
-})
+  // Smart Help Panel state
+  const [showHelpPanel, setShowHelpPanel] = useState(false)
+  const [helpPanelContext, setHelpPanelContext] = useState<{
+    confusedHighlights: Array<{
+      id: string
+      text: string
+      sectionId: string
+      page: number
+    }>
+    sectionName: string
+    isGroupSession?: boolean  // ✅ ADD THIS LINE
+  }>({
+    confusedHighlights: [],
+    sectionName: ''
+  })
 
 
-const [showReasonSelector, setShowReasonSelector] = useState(false);
-const [pendingHighlight, setPendingHighlight] = useState<any>(null);
-const [selectedReason, setSelectedReason] = useState<string>('understood');
+  const [showReasonSelector, setShowReasonSelector] = useState(false);
+  const [pendingHighlight, setPendingHighlight] = useState<any>(null);
+  const [selectedReason, setSelectedReason] = useState<string>('understood');
   
+  // Track confusion highlights per user per section to only trigger notifications when there are 3+
+  const [userConfusionHighlights, setUserConfusionHighlights] = useState<Map<string, Map<string, number>>>(new Map());
+
   const {
     isConnected,
     connectedUsers,
@@ -292,43 +308,43 @@ const [selectedReason, setSelectedReason] = useState<string>('understood');
     enabled: true
   })
 
-// console.log('🔧 webViewerInstance in main component:', !!webViewerInstance);
-// console.log('🔧 webViewerInstance details:', webViewerInstance);
+  // console.log('🔧 webViewerInstance in main component:', !!webViewerInstance);
+  // console.log('🔧 webViewerInstance details:', webViewerInstance);
 
 
-//for having the reason of the highlights
-// const HIGHLIGHT_REASONS = {
-//   confusion: { 
-//     label: 'Confused/Need Help', 
-//     color: '#ff6b6b', 
-//     colorRgb: 'rgb(255, 107, 107)' 
-//   },
-//   understood: { 
-//     label: 'Understood/Clear', 
-//     color: '#4ecdc4', 
-//     colorRgb: 'rgb(78, 205, 196)' 
-//   },
-//   clarification: { 
-//     label: 'Need Clarification', 
-//     color: '#ffe66d', 
-//     colorRgb: 'rgb(255, 230, 109)' 
-//   },
-//   important: { 
-//     label: 'Important Point', 
-//     color: '#a8e6cf', 
-//     colorRgb: 'rgb(168, 230, 207)' 
-//   },
-//   question: { 
-//     label: 'Have Question', 
-//     color: '#ffd93d', 
-//     colorRgb: 'rgb(255, 217, 61)' 
-//   },
-//   disagree: { 
-//     label: 'Disagree/Doubt', 
-//     color: '#ffaaa5', 
-//     colorRgb: 'rgb(255, 170, 165)' 
-//   }
-// };
+  //for having the reason of the highlights
+  // const HIGHLIGHT_REASONS = {
+  //   confusion: { 
+  //     label: 'Confused/Need Help', 
+  //     color: '#ff6b6b', 
+  //     colorRgb: 'rgb(255, 107, 107)' 
+  //   },
+  //   understood: { 
+  //     label: 'Understood/Clear', 
+  //     color: '#4ecdc4', 
+  //     colorRgb: 'rgb(78, 205, 196)' 
+  //   },
+  //   clarification: { 
+  //     label: 'Need Clarification', 
+  //     color: '#ffe66d', 
+  //     colorRgb: 'rgb(255, 230, 109)' 
+  //   },
+  //   important: { 
+  //     label: 'Important Point', 
+  //     color: '#a8e6cf', 
+  //     colorRgb: 'rgb(168, 230, 207)' 
+  //   },
+  //   question: { 
+  //     label: 'Have Question', 
+  //     color: '#ffd93d', 
+  //     colorRgb: 'rgb(255, 217, 61)' 
+  //   },
+  //   disagree: { 
+  //     label: 'Disagree/Doubt', 
+  //     color: '#ffaaa5', 
+  //     colorRgb: 'rgb(255, 170, 165)' 
+  //   }
+  // };
 
 
 
@@ -353,12 +369,12 @@ const [selectedReason, setSelectedReason] = useState<string>('understood');
   const [eyeTrackingEnabled, setEyeTrackingEnabled] = useState(false)
 
   // ✅ ADD: Section management state
-const [pdfSections, setPdfSections] = useState<PDFSection[]>([])
-const [extractingHeadings, setExtractingHeadings] = useState(false)
-const [showSectionAssignment, setShowSectionAssignment] = useState(false)
+  const [pdfSections, setPdfSections] = useState<PDFSection[]>([])
+  const [extractingHeadings, setExtractingHeadings] = useState(false)
+  const [showSectionAssignment, setShowSectionAssignment] = useState(false)
 
-const [sectionAssignments, setSectionAssignments] = useState<SectionAssignment[]>([])
-  
+  const [sectionAssignments, setSectionAssignments] = useState<SectionAssignment[]>([])
+
   // General Explainer state
   const [showGeneralExplainer, setShowGeneralExplainer] = useState(false)
   const [generalExplainerText, setGeneralExplainerText] = useState('')
@@ -370,44 +386,44 @@ const [sectionAssignments, setSectionAssignments] = useState<SectionAssignment[]
   const [imageExplainerText, setImageExplainerText] = useState('')
   const [extractedImageData, setExtractedImageData] = useState<string | null>(null)
   const [hasActualImage, setHasActualImage] = useState(false)
-  
 
 
-const [showConfusionPopup, setShowConfusionPopup] = useState(false);
-const [confusionSection, setConfusionSection] = useState('');
+
+  const [showConfusionPopup, setShowConfusionPopup] = useState(false);
+  const [confusionSection, setConfusionSection] = useState('');
 
 
   // Screen Capture state
   const [showScreenCapture, setShowScreenCapture] = useState(false)
   const [capturedImageData, setCapturedImageData] = useState<string | null>(null)
-  
+
   // Prerequisite Helper state
   const [showPrerequisiteHelper, setShowPrerequisiteHelper] = useState(false)
   const [prerequisiteText, setPrerequisiteText] = useState('')
   const [showSmartPrerequisiteHelper, setShowSmartPrerequisiteHelper] = useState(false)
   const [showAIResearchPrerequisites, setShowAIResearchPrerequisites] = useState(false)
   const [showInteractionAnalysis, setShowInteractionAnalysis] = useState(false)
-  
+
 
   const [activeTab, setActiveTab] = useState('doc1')
-const [openTabs, setOpenTabs] = useState([
-  { id: 'doc1', title: 'Research Paper.pdf', url: documentUrl, active: true }
-])
+  const [openTabs, setOpenTabs] = useState([
+    { id: 'doc1', title: 'Research Paper.pdf', url: documentUrl, active: true }
+  ])
 
 
-// // Add Socket.io real-time highlights
-// const {
-//   isConnected,
-//   connectedUsers,
-//   broadcastHighlight,
-//   broadcastHighlightDeletion
-// } = useRealtimeHighlights({
-//   documentId,
-//   userName,
-//   userId,
-//   webViewerInstance,
-//   enabled: true
-// })
+  // // Add Socket.io real-time highlights
+  // const {
+  //   isConnected,
+  //   connectedUsers,
+  //   broadcastHighlight,
+  //   broadcastHighlightDeletion
+  // } = useRealtimeHighlights({
+  //   documentId,
+  //   userName,
+  //   userId,
+  //   webViewerInstance,
+  //   enabled: true
+  // })
 
 
 
@@ -421,7 +437,7 @@ const [openTabs, setOpenTabs] = useState([
   const [documentYear, setDocumentYear] = useState('')
   const [documentTags, setDocumentTags] = useState<string[]>([])
   const [metadataLoaded, setMetadataLoaded] = useState(false)
-  
+
   // ========== [ADV] Advanced Summary types & state ==========
   type Persona = 'novice' | 'practitioner' | 'reviewer';
   type TimeBudget = '30s' | '2m' | 'deep';
@@ -459,163 +475,383 @@ const [openTabs, setOpenTabs] = useState([
 
 
 
-// Highlight assigned sections in the PDF
-const highlightAssignedSections = useCallback(() => {
-  if (!webViewerInstance || !webViewerInstance.Core) return
-  
-  try {
-    const { documentViewer, annotationManager, Annotations } = webViewerInstance.Core
-    
-    if (!Annotations || !documentViewer || !annotationManager) {
-      console.log('⚠️ Apryse components not ready yet')
-      return
-    }
-    
-    // Remove previous section highlights
-    const existingSectionHighlights = annotationManager
-      .getAnnotationsList()
-      .filter((annot: any) => annot.CustomData?.type === 'section-assignment')
-    
-    annotationManager.deleteAnnotations(existingSectionHighlights, { imported: false })
-    
-    // Add new section highlights
-    sectionAssignments.forEach(assignment => {
-      const section = pdfSections.find(s => s.heading.id === assignment.sectionId)
-      if (!section) return
-      
-      let collabColor = '#3b82f6'
-          
-      if (assignment.userId === userId) {
-        collabColor = '#3b82f6'
-      } else {
-        const collabIndex = collaborators.findIndex(c => c.id === assignment.userId)
-        const colorPalette = ['#10b981', '#8b5cf6', '#ef4444', '#f59e0f', '#06b6d4']
-        collabColor = collabIndex >= 0 
-          ? colorPalette[collabIndex % colorPalette.length]
-          : '#6b7280'
+  // Highlight assigned sections in the PDF
+  const highlightAssignedSections = useCallback(() => {
+    if (!webViewerInstance || !webViewerInstance.Core) return
+
+    try {
+      const { documentViewer, annotationManager, Annotations } = webViewerInstance.Core
+
+      if (!Annotations || !documentViewer || !annotationManager) {
+        console.log('⚠️ Apryse components not ready yet')
+        return
       }
-      
-      for (let pageNum = section.startPage; pageNum <= section.endPage; pageNum++) {
-        const pageInfo = documentViewer.getDocument().getPageInfo(pageNum)
-        const { width, height } = pageInfo
-        
-        const hexToRGBA = (hex: string, a = 1) => {
-          const h = hex.replace('#', '');
-          const full = h.length === 3 ? h.split('').map(c => c + c).join('') : h;
-          const n = parseInt(full, 16);
-          const r = (n >> 16) & 255;
-          const g = (n >> 8) & 255;
-          const b = n & 255;
-          return new Annotations.Color(r, g, b, a);
-        };
 
-        const stroke = hexToRGBA(collabColor, 1);
-        const fill = hexToRGBA(collabColor, 0.1);
+      // Remove previous section highlights
+      const existingSectionHighlights = annotationManager
+        .getAnnotationsList()
+        .filter((annot: any) => annot.CustomData?.type === 'section-assignment')
 
-        const rect = new Annotations.RectangleAnnotation({
-          PageNumber: pageNum,
-          X: 10,
-          Y: 10,
-          Width: width - 20,
-          Height: height - 20,
-          StrokeColor: stroke,
-          StrokeThickness: 4,
-          FillColor: fill,
-          Opacity: 1,
-        });
-        
-        rect.Author = 'System'
-        rect.Subject = 'Section Assignment'
-        rect.setCustomData('type', 'section-assignment')
-        rect.setCustomData('sectionId', assignment.sectionId)
-        rect.setCustomData('userId', assignment.userId)
-        rect.setCustomData('userName', assignment.userName)
-        rect.NoDelete = true
-        rect.NoMove = true
-        rect.NoResize = true
-        
-        annotationManager.addAnnotation(rect)
-      }
-    })
-    
-    annotationManager.drawAnnotationsFromList(
-      annotationManager.getAnnotationsList()
-    )
-    
-    console.log('✅ Section assignments highlighted in PDF')
-    
-  } catch (error) {
-    console.log('Highlight error (safe to ignore):', error)
-  }
-}, [webViewerInstance, sectionAssignments, pdfSections, userId, collaborators])
+      annotationManager.deleteAnnotations(existingSectionHighlights, { imported: false })
 
+      // Add new section highlights
+      sectionAssignments.forEach(assignment => {
+        const section = pdfSections.find(s => s.heading.id === assignment.sectionId)
+        if (!section) return
 
-const handleNotificationAction = (notification: any) => {
-  const action = notification.actionButton?.action
-  
-  if (action === 'open-ai-help' || action === 'get-help' || action === 'open-stuck-here') {
-    // Get confused highlights from the section
-    const session = interactionCollector.getCurrentSession()
-    if (session) {
-      const confusedHighlights = session.highlights
-        .filter(h => h.sectionId === notification.sectionId && h.reason === 'confusion')
-        .map(h => ({
-          id: h.id,
-          text: h.text,
-          sectionId: h.sectionId || '',
-          page: h.page
-        }))
-      
-      setHelpPanelContext({
-        confusedHighlights,
-        sectionName: notification.sectionName || `Section ${notification.sectionId}`
+        let collabColor = '#3b82f6'
+
+        if (assignment.userId === userId) {
+          collabColor = '#3b82f6'
+        } else {
+          const collabIndex = collaborators.findIndex(c => c.id === assignment.userId)
+          const colorPalette = ['#10b981', '#8b5cf6', '#ef4444', '#f59e0f', '#06b6d4']
+          collabColor = collabIndex >= 0
+            ? colorPalette[collabIndex % colorPalette.length]
+            : '#6b7280'
+        }
+
+        for (let pageNum = section.startPage; pageNum <= section.endPage; pageNum++) {
+          const pageInfo = documentViewer.getDocument().getPageInfo(pageNum)
+          const { width, height } = pageInfo
+
+          const hexToRGBA = (hex: string, a = 1) => {
+            const h = hex.replace('#', '');
+            const full = h.length === 3 ? h.split('').map(c => c + c).join('') : h;
+            const n = parseInt(full, 16);
+            const r = (n >> 16) & 255;
+            const g = (n >> 8) & 255;
+            const b = n & 255;
+            return new Annotations.Color(r, g, b, a);
+          };
+
+          const stroke = hexToRGBA(collabColor, 1);
+          const fill = hexToRGBA(collabColor, 0.1);
+
+          const rect = new Annotations.RectangleAnnotation({
+            PageNumber: pageNum,
+            X: 10,
+            Y: 10,
+            Width: width - 20,
+            Height: height - 20,
+            StrokeColor: stroke,
+            StrokeThickness: 4,
+            FillColor: fill,
+            Opacity: 1,
+          });
+
+          rect.Author = 'System'
+          rect.Subject = 'Section Assignment'
+          rect.setCustomData('type', 'section-assignment')
+          rect.setCustomData('sectionId', assignment.sectionId)
+          rect.setCustomData('userId', assignment.userId)
+          rect.setCustomData('userName', assignment.userName)
+          rect.NoDelete = true
+          rect.NoMove = true
+          rect.NoResize = true
+
+          annotationManager.addAnnotation(rect)
+        }
       })
-      
-      setShowHelpPanel(true)
+
+      annotationManager.drawAnnotationsFromList(
+        annotationManager.getAnnotationsList()
+      )
+
+      console.log('✅ Section assignments highlighted in PDF')
+
+    } catch (error) {
+      console.log('Highlight error (safe to ignore):', error)
     }
-    
-    // Dismiss the notification
+  }, [webViewerInstance, sectionAssignments, pdfSections, userId, collaborators])
+
+
+  const handleNotificationAction = (notification: any) => {
+    const action = notification.actionButton?.action
+  
+    console.log('🔘 [Action] Button clicked:', action, notification)
+  
+    switch (action) {
+      // AI HELP ACTIONS
+      case 'open-ai-help':
+      case 'get-help':
+      case 'open-stuck-here':
+        const session = interactionCollector.getCurrentSession()
+        if (session) {
+          // Get confused highlights for this section
+          // Try to match sectionId exactly, or match by page if sectionId format differs
+          const sectionId = notification.sectionId || ''
+          const confusedHighlights = session.highlights
+            .filter(h => {
+              // Match by exact sectionId
+              if (h.sectionId === sectionId && h.reason === 'confusion') return true
+              // Also match by page number if sectionId contains page info
+              const pageMatch = sectionId.match(/page-(\d+)/)
+              if (pageMatch && h.page === parseInt(pageMatch[1]) && h.reason === 'confusion') return true
+              return false
+            })
+            .map(h => ({
+              id: h.id,
+              text: h.text,
+              sectionId: h.sectionId || sectionId,
+              page: h.page
+            }))
+  
+          console.log(`🔍 [AI Help] Found ${confusedHighlights.length} confused highlights for section ${sectionId}`)
+  
+          setHelpPanelContext({
+            confusedHighlights,
+            sectionName: notification.sectionName || `Section ${sectionId}`
+          })
+  
+          setShowHelpPanel(true)
+        } else {
+          // If no session, still open panel with empty highlights
+          console.warn('⚠️ [AI Help] No active session, opening panel with empty context')
+          setHelpPanelContext({
+            confusedHighlights: [],
+            sectionName: notification.sectionName || `Section ${notification.sectionId || 'Unknown'}`
+          })
+          setShowHelpPanel(true)
+        }
+        break
+  
+      // PEER CONNECTION ACTIONS
+      case 'connect-peer':
+        console.log('💡 [Connect Peer] Opening peer chat...')
+        
+        const matches = agent2_collaborationOrchestrator.findPeersForHelp(
+          userId,
+          notification.sectionId
+        )
+        
+        if (matches.length > 0) {
+          const match = matches[0]
+          
+          openPeerChat(
+            match.helper.userId,
+            match.helper.userName,
+            notification.sectionId
+          )
+          
+          agent2_collaborationOrchestrator.startCollaboration(match, 'peer-tutoring')
+          
+          console.log(`✅ [Connect Peer] Chat opened with ${match.helper.userName}`)
+        } else {
+          alert('Sorry, the helper is no longer available.')
+        }
+        break
+  
+      case 'offer-help':
+        console.log('🆘 [Offer Help] Helper accepting...')
+        console.log('🆘 [Offer Help] Notification data:', notification)
+        
+        // ✅ FIX: Extract struggling user info from notification
+        // The notification should contain info about who is struggling
+        // Check if notification has invitationData or extract from notification itself
+        let strugglingUserId: string | null = null
+        let strugglingUserName: string | null = null
+        
+        // Try to get from notification metadata (if stored when notification was created)
+        if (notification.invitationData) {
+          strugglingUserId = notification.invitationData.strugglingUserId || notification.invitationData.fromUserId || null
+          strugglingUserName = notification.invitationData.strugglingUserName || notification.invitationData.fromUserName || null
+        }
+        
+        // If not in invitationData, try to find struggling users in the section
+        if (!strugglingUserId && notification.sectionId) {
+          const strugglingPeers = agent2_collaborationOrchestrator.getStrugglingPeers(notification.sectionId)
+          const otherStrugglingPeer = strugglingPeers.find(p => p.userId !== userId)
+          
+          if (otherStrugglingPeer) {
+            strugglingUserId = otherStrugglingPeer.userId
+            strugglingUserName = otherStrugglingPeer.userName
+          }
+        }
+        
+        // Last resort: try to extract from notification title/message
+        if (!strugglingUserId && notification.title) {
+          // Notification title format: "🆘 {userName} is struggling"
+          const match = notification.title.match(/🆘\s+(.+?)\s+is struggling/)
+          if (match && match[1]) {
+            const extractedName: string = match[1]
+            // Find user by name in registered peers
+            const allPeers = Array.from((agent2_collaborationOrchestrator as any).peerProfiles?.values() || [])
+            const foundPeer = allPeers.find((p: any) => p.userName === extractedName && p.userId !== userId) as { userId: string; userName: string } | undefined
+            if (foundPeer && foundPeer.userId) {
+              strugglingUserId = foundPeer.userId
+              strugglingUserName = foundPeer.userName
+            }
+          }
+        }
+        
+        console.log('🆘 [Offer Help] Found struggling user:', { strugglingUserId, strugglingUserName })
+        
+        if (strugglingUserId && strugglingUserName && notification.sectionId) {
+          openPeerChat(
+            strugglingUserId,
+            strugglingUserName,
+            notification.sectionId
+          )
+          
+          console.log(`✅ [Offer Help] Helping ${strugglingUserName}`)
+          toast.success(`Connecting with ${strugglingUserName}...`)
+        } else {
+          console.error('❌ [Offer Help] Could not find struggling user', { strugglingUserId, strugglingUserName, sectionId: notification.sectionId })
+          toast.error('Unable to find user', {
+            description: 'The user may have left or the notification data is missing. Please try refreshing.'
+          })
+        }
+        break
+  
+      case 'join-group':
+        console.log('👥 [Join Group] Opening group chat...')
+        
+        setHelpPanelContext({
+          confusedHighlights: [],
+          sectionName: notification.sectionName || `Section ${notification.sectionId}`,
+          isGroupSession: true
+        })
+        
+        setShowHelpPanel(true)
+        
+        console.log('✅ [Join Group] Group session started')
+        break
+  
+      // INVITATION ACTIONS
+      case 'accept-invitation':
+        console.log('✅ [Invitation] Accepting invitation...')
+        
+        if (notification.invitationData && socketInstance) {
+          const data = notification.invitationData
+          
+          // Notify sender that invitation was accepted
+          socketInstance.emit('peer-chat-accepted', {
+            fromUserId: data.fromUserId,
+            fromUserName: data.fromUserName,
+            toUserId: data.toUserId,
+            toUserName: data.toUserName,
+            sectionId: data.sectionId,
+            documentId: data.documentId
+          })
+          
+          // Open chat for accepter (User B)
+          setPeerChatData({
+            peerId: data.fromUserId,
+            peerName: data.fromUserName,
+            sectionId: data.sectionId
+          })
+          setPeerChatOpen(true)
+          
+          console.log(`✅ [Invitation] Accepted from ${data.fromUserName}`)
+          toast.success(`Connected with ${data.fromUserName}!`)
+        } else {
+          console.error('❌ [Invitation] Missing invitation data or socket not connected')
+          toast.error('Unable to accept invitation. Please try again.')
+        }
+        break
+  
+      case 'dismiss-invitation':
+        console.log('⏭️ [Invitation] Dismissed - will show later')
+        toast.info('Invitation dismissed. You can connect later.')
+        break
+  
+      default:
+        console.warn('⚠️ [Action] Unknown action:', action)
+    }
+  
+    // Dismiss notification
     setDismissedNotifications(prev => new Set(prev).add(notification.id))
     setSmartNotifications(prev => prev.filter(n => n.id !== notification.id))
+    
+    // ✅ FIX: Also notify Agent7 that this notification was dismissed
+    // This ensures Agent7's internal state is updated
+    agent7_implicitAssistance.dismissNotification(notification.id)
   }
-}
 
-const getAvailablePeers = () => {
-  const peers: Array<{
-    userId: string
-    userName: string
-    status: 'online' | 'offline' | 'busy'
-    isProficient: boolean
-  }> = []
-  
-  collaborators.forEach(collab => {
-    if (collab.userId && collab.userId !== userId) {
-      const peerProfile = agent2_collaborationOrchestrator.getPeerStatus(collab.userId as string)
-      
-      if (peerProfile) {
-        peers.push({
-          userId: collab.userId as string,
-          userName: collab.name,
-          status: 'online', // TODO: Track real status via Socket.io
-          isProficient: peerProfile.status === 'proficient'
-        })
-      }
+
+  const openPeerChat = (peerId: string, peerName: string, sectionId: string) => {
+    console.log(`💬 [Peer Chat] Sending invitation to ${peerName}`)
+    console.log(`💬 [Peer Chat] Socket instance:`, socketInstance ? `connected (${socketInstance.id})` : 'null')
+    console.log(`💬 [Peer Chat] Invitation data:`, {
+      fromUserId: userId,
+      fromUserName: userName,
+      toUserId: peerId,
+      toUserName: peerName,
+      sectionId: sectionId,
+      documentId: documentId
+    })
+    
+    // ✅ EARLY RETURN if socket is null
+    if (!socketInstance) {
+      console.error('❌ Socket not connected')
+      toast.error('Connection error', {
+        description: 'Socket not connected. Please refresh the page.'
+      })
+      return  // ✅ EXIT HERE - nothing below runs
     }
-  })
-  
-  return peers
-}
+    
+    // ✅ Now TypeScript knows socketInstance is NOT null
+    const invitationData = {
+      fromUserId: String(userId),      // ✅ Convert to string
+      fromUserName: userName,
+      toUserId: String(peerId),        // ✅ Convert to string
+      toUserName: peerName,
+      sectionId: sectionId,
+      documentId: documentId
+    }
+    
+    console.log(`📤 [Invitation] Emitting to server:`, invitationData)
+    console.log(`📤 [Invitation] Socket connected:`, socketInstance.connected)
+    console.log(`📤 [Invitation] Socket ID:`, socketInstance.id)
+    
+    socketInstance.emit('peer-chat-invitation', invitationData)
+    
+    console.log(`✅ [Invitation] Emitted to socket: ${socketInstance.id}`)
+    
+    // Show pending status
+    toast.info(`Invitation sent to ${peerName}...`, {
+      description: 'Waiting for them to accept...',
+      duration: 3000
+    })
+  }
+
+  const getAvailablePeers = () => {
+    const peers: Array<{
+      userId: string
+      userName: string
+      status: 'online' | 'offline' | 'busy'
+      isProficient: boolean
+    }> = []
+
+    collaborators.forEach(collab => {
+      if (collab.userId && collab.userId !== userId) {
+        const peerProfile = agent2_collaborationOrchestrator.getPeerStatus(collab.userId as string)
+
+        if (peerProfile) {
+          peers.push({
+            userId: collab.userId as string,
+            userName: collab.name,
+            status: 'online', // TODO: Track real status via Socket.io
+            isProficient: peerProfile.status === 'proficient'
+          })
+        }
+      }
+    })
+
+    return peers
+  }
 
 
 
   // ✅ ADD THIS FUNCTION RIGHT HERE:
   const completeHighlightWithReason = (reason: string) => {
     if (!pendingHighlight || !webViewerInstance?.Core) return;
-    
+
     const reasonData = HIGHLIGHT_REASONS[reason as keyof typeof HIGHLIGHT_REASONS];
     const { annotation, highlightedText, documentId, pageNumber } = pendingHighlight;
     const { annotationManager } = webViewerInstance.Core;
-    
+
     // Update annotation color
     if (webViewerInstance.Core.Annotations?.Color) {
       annotation.StrokeColor = new webViewerInstance.Core.Annotations.Color(
@@ -625,7 +861,12 @@ const getAvailablePeers = () => {
       );
       annotationManager.redrawAnnotation(annotation);
     }
-    
+
+    // Set custom data on annotation so it's preserved in XFDF
+    annotation.setCustomData('reason', reason);
+    annotation.setCustomData('authorId', userId);
+    annotation.setCustomData('authorName', userName);
+
     // Export and broadcast with reason
     annotationManager.exportAnnotations({ annotationList: [annotation], widgets: false })
       .then((xfdf: string) => {
@@ -634,15 +875,16 @@ const getAvailablePeers = () => {
           xfdf,
           pageNumber,
           user: userName,
+          userId: userId, // Include userId for reliable tracking
           reason: reason,
           reasonLabel: reasonData.label,
           color: reasonData.colorRgb,
           contents: highlightedText
         };
-        
+
         console.log('📡 Broadcasting highlight with reason:', highlightData);
         broadcastHighlight(highlightData);
-        
+
         // Your existing callback
         if (onHighlightAdd) {
           onHighlightAdd({
@@ -671,66 +913,118 @@ const getAvailablePeers = () => {
         })
 
 
-// ✅ Only trigger struggle detection for confusion highlights
-if (reason === 'confusion') {
-  
-  // Update peer status in Agent 2
-  agent2_collaborationOrchestrator.updatePeerStatus(
-    userId,
-    `section-page-${pageNumber}`,
-    30
-  )
-  
-// ✅ Check if user is REALLY struggling before triggering agents
-// Small delay to ensure session is updated with new highlight
-setTimeout(() => {
-  const session = interactionCollector.getCurrentSession()
-  const sectionInteraction = session?.sectionInteractions.get(`section-page-${pageNumber}`)
-  
-  if (sectionInteraction) {
-    const confusionCount = sectionInteraction.confusionHighlights
-    const timeSpent = sectionInteraction.totalTimeSpent
-    const revisits = sectionInteraction.visitCount
-    
-    console.log(`📊 Section stats: ${confusionCount} confusion highlights, ${timeSpent}ms spent, ${revisits} visits`)
-    
-    // ✅ Only trigger struggle detection if MULTIPLE signals
-    const shouldTrigger = 
-    confusionCount >= 3 ||  // ✅ Changed: 3+ confusion highlights
-    (confusionCount >= 2 && timeSpent > 120000) ||  // 2 confusion + 2+ minutes
-    (confusionCount >= 2 && revisits >= 2)  // 2 confusion + revisited
-    
-    if (shouldTrigger) {
-      console.log(`⚠️ [STRUGGLE DETECTED] User ${userName} is struggling with section ${pageNumber}`)
-      
-      // Determine severity based on signals
-      let severity: 'low' | 'medium' | 'high' = 'low'
-      if (confusionCount >= 3 || revisits >= 3) {
-        severity = 'high'
-      } else if (confusionCount >= 2 || timeSpent > 180000) {
-        severity = 'medium'
-      }
-      
-      aiCoordinationCore.routeAgentEvent('agent1', 'struggle-detected', {
-        userId: userId,
-        userName: userName,
-        sectionId: `section-page-${pageNumber}`,
-        sectionName: `Section Page ${pageNumber}`,
-        severity: severity,
-        indicators: {
-          confusionHighlights: confusionCount,
-          stuckMarkers: 0,
-          revisitCount: revisits - 1,
-          timeSpent: timeSpent,
-          understandingScore: sectionInteraction.understandingScore
+        // ✅ Handle both confusion and understood highlights
+        if (reason === 'confusion') {
+          // ✅ Check if user is REALLY struggling before triggering agents
+          // Small delay to ensure session is updated with new highlight
+          setTimeout(() => {
+            const session = interactionCollector.getCurrentSession()
+            const sectionInteraction = session?.sectionInteractions.get(`section-page-${pageNumber}`)
+
+            if (sectionInteraction) {
+              const confusionCount = sectionInteraction.confusionHighlights
+              const timeSpent = sectionInteraction.totalTimeSpent
+              const revisits = sectionInteraction.visitCount
+
+              console.log(`📊 Section stats: ${confusionCount} confusion highlights, ${timeSpent}ms spent, ${revisits} visits`)
+
+              // ✅ Only trigger struggle detection if MULTIPLE signals
+              const shouldTrigger =
+                confusionCount >= 3 ||  // ✅ Changed: 3+ confusion highlights
+                (confusionCount >= 2 && timeSpent > 120000) ||  // 2 confusion + 2+ minutes
+                (confusionCount >= 2 && revisits >= 2)  // 2 confusion + revisited
+
+              if (shouldTrigger) {
+                console.log(`⚠️ [STRUGGLE DETECTED] User ${userName} is struggling with section ${pageNumber}`)
+
+                // Update peer status in Agent 2 ONLY when actually struggling
+                agent2_collaborationOrchestrator.updatePeerStatus(
+                  userId,
+                  `section-page-${pageNumber}`,
+                  30
+                )
+
+                // Determine severity based on signals
+                let severity: 'low' | 'medium' | 'high' = 'low'
+                if (confusionCount >= 3 || revisits >= 3) {
+                  severity = 'high'
+                } else if (confusionCount >= 2 || timeSpent > 180000) {
+                  severity = 'medium'
+                }
+
+                aiCoordinationCore.routeAgentEvent('agent1', 'struggle-detected', {
+                  userId: userId,
+                  userName: userName,
+                  sectionId: `section-page-${pageNumber}`,
+                  sectionName: `Section Page ${pageNumber}`,
+                  severity: severity,
+                  indicators: {
+                    confusionHighlights: confusionCount,
+                    stuckMarkers: 0,
+                    revisitCount: revisits - 1,
+                    timeSpent: timeSpent,
+                    understandingScore: sectionInteraction.understandingScore
+                  }
+                })
+              } else {
+                console.log(`ℹ️ Confusion tracked but not enough signals yet (${confusionCount} highlights)`)
+              }
+            }
+          }, 100)
+        } else if (reason === 'understood') {
+          // ✅ FIX: Update peer status when user marks "understood"
+          // Small delay to ensure session is updated with new highlight
+          setTimeout(() => {
+            const session = interactionCollector.getCurrentSession()
+            const sectionInteraction = session?.sectionInteractions.get(`section-page-${pageNumber}`)
+
+            if (sectionInteraction) {
+              // Mark user as proficient in this section (understandingScore > 70)
+              // The understandingScore is calculated based on understoodHighlights
+              const understandingScore = sectionInteraction.understandingScore
+              
+              console.log(`✅ [UNDERSTOOD] User ${userName} marked section ${pageNumber} as understood (score: ${understandingScore})`)
+
+              // Update peer status in Agent 2 to mark as proficient
+              // This makes them available to help others struggling with the same section
+              agent2_collaborationOrchestrator.updatePeerStatus(
+                userId,
+                `section-page-${pageNumber}`,
+                Math.max(understandingScore, 75) // Ensure at least 75 to be marked as proficient
+              )
+
+              // ✅ FIX: Check for struggling users in this section and notify them
+              // Find all peers who are struggling with this section
+              const strugglingPeers = agent2_collaborationOrchestrator.getStrugglingPeers(`section-page-${pageNumber}`)
+
+              if (strugglingPeers.length > 0) {
+                console.log(`🤝 [PEER MATCHING] Found ${strugglingPeers.length} struggling user(s) - triggering match notifications`)
+                
+                // Trigger notifications for each struggling user
+                // This will cause the coordination core to check for helpers and notify both users
+                strugglingPeers.forEach((strugglingPeer) => {
+                  // Re-trigger struggle detection to check for available helpers (including the new one)
+                  aiCoordinationCore.routeAgentEvent('agent1', 'struggle-detected', {
+                    userId: strugglingPeer.userId,
+                    userName: strugglingPeer.userName,
+                    sectionId: `section-page-${pageNumber}`,
+                    sectionName: `Section Page ${pageNumber}`,
+                    severity: 'medium',
+                    indicators: {
+                      confusionHighlights: 0,
+                      stuckMarkers: 0,
+                      revisitCount: 0,
+                      timeSpent: 0,
+                      understandingScore: strugglingPeer.understandingScore || 30
+                    }
+                  })
+                })
+              } else {
+                console.log(`🤝 [PEER MATCHING] User ${userName} is now available to help in section ${pageNumber} (no struggling users found yet)`)
+              }
+            }
+          }, 100)
         }
-      })
-    } else {
-      console.log(`ℹ️ Confusion tracked but not enough signals yet (${confusionCount} highlights)`)
-    }
-  }
-}, 100)  // ✅ Add this closing for setTimeout
-}
 
 
         aiCoordinationCore.routeUserAction('highlight-added', {
@@ -743,7 +1037,7 @@ setTimeout(() => {
 
 
 
-    
+
     // Close selector
     setShowReasonSelector(false);
     setPendingHighlight(null);
@@ -761,30 +1055,44 @@ setTimeout(() => {
   useEffect(() => {
     const handleNotification = (e: any) => {
       const notification = e.detail
-      
+
       console.log(`🔔 [Event] Notification received:`, {
         title: notification.title,
         targetUserId: notification.targetUserId,
         currentUserId: userId
       })
-      
+
       // ✅ CRITICAL: Filter at event level - only add if for this user
       if (notification.targetUserId && notification.targetUserId !== userId) {
         console.log(`❌ [Event] BLOCKED - Not for user ${userId}`)
         return  // Don't even add to state
       }
-      
+
       if (notification.targetUserIds && !notification.targetUserIds.includes(userId)) {
         console.log(`❌ [Event] BLOCKED - Not in target group`)
         return
       }
-      
-      console.log(`✅ [Event] ACCEPTED - Adding to notifications`)
-      setSmartNotifications(prev => [...prev, notification])
+
+      // ✅ FIX: Check if this notification was already dismissed
+      // Only add if not already dismissed
+      if (!dismissedNotifications.has(notification.id)) {
+        console.log(`✅ [Event] ACCEPTED - Adding to notifications`)
+        setSmartNotifications(prev => {
+          // Also check for duplicates in the current list
+          const exists = prev.some(n => n.id === notification.id)
+          if (exists) {
+            console.log(`⏭️ [Event] Notification ${notification.id} already in list, skipping`)
+            return prev
+          }
+          return [...prev, notification]
+        })
+      } else {
+        console.log(`⏭️ [Event] Notification ${notification.id} was dismissed, skipping`)
+      }
     }
-    
+
     window.addEventListener('agent7:notification', handleNotification)
-    
+
     return () => {
       window.removeEventListener('agent7:notification', handleNotification)
     }
@@ -795,21 +1103,21 @@ setTimeout(() => {
   useEffect(() => {
     if (documentId && userId && userName) {
       console.log('🚀 [LitSense] Initializing AI Multi-Agent System...')
-      
+
       // Initialize multi-agent system
       aiCoordinationCore.initialize()
-      
+
       // Start session
       const sessionId = interactionCollector.startSession(userId, userName, documentId)
-      
+
       // Start journey tracking for Agent 5
       agent5_storyboardCurator.startJourney(userId, sessionId)
-      
+
       // Register peer for Agent 2
       agent2_collaborationOrchestrator.registerPeer(userId, userName)
-      
+
       console.log('✅ [LitSense] All agents activated!')
-      
+
       // Emit socket event if connected
       if (socketInstance) {
         socketInstance.emit('peer-joined', {
@@ -819,7 +1127,7 @@ setTimeout(() => {
         })
       }
     }
-    
+
     return () => {
       console.log('🛑 [LitSense] Shutting down agents...')
       agent5_storyboardCurator.endJourney()
@@ -836,30 +1144,138 @@ setTimeout(() => {
     const initSocket = async () => {
       // Initialize Socket.io server first
       await fetch('/api/socketio')
-      
+
       // Then connect client
       const { io } = await import('socket.io-client')
       const socket = io('http://localhost:3000')  // Use port 3000 (server.js)
-      
+
       socket.on('connect', () => {
         console.log('✅ Socket.io connected:', socket.id)
-        
+        console.log('✅ Socket.io userId:', userId)
+        console.log('✅ Socket.io userName:', userName)
+        console.log('✅ Socket.io documentId:', documentId)
+
         // Join document room
-        socket.emit('join-document', { documentId, userName, userId })
-        
+        // socket.emit('join-document', { documentId, userName, userId })
+        // console.log('📤 [Socket] Emitted join-document:', { documentId, userName, userId })
+        // Join document room - ✅ ENSURE userId IS STRING
+socket.emit('join-document', { 
+  documentId, 
+  userName, 
+  userId: String(userId)  // ✅ Convert to string
+})
+console.log('📤 [Socket] Emitted join-document:', { 
+  documentId, 
+  userName, 
+  userId: String(userId) 
+})
+
         // Register local peer
         agent2_collaborationOrchestrator.registerPeer(userId, userName)
+
+        // ✅ IMPORTANT: Set socketInstance so it can be used for invitations
+        setSocketInstance(socket)
+        console.log('✅ [Socket] socketInstance set')
       })
-      
+
+      socket.on('disconnect', () => {
+        console.log('❌ Socket.io disconnected')
+        setSocketInstance(null)
+      })
+
+      socket.on('connect_error', (error) => {
+        console.error('❌ Socket.io connection error:', error)
+        toast.error('Connection error', {
+          description: 'Failed to connect to server. Please check if server is running.'
+        })
+      })
+
+
+
+      // Listen for peer chat invitations - Show visible notification
+      socket.on('peer-chat-invitation', (data: {
+        fromUserId: string
+        fromUserName: string
+        toUserId: string
+        toUserName: string
+        sectionId: string
+        documentId: string
+      }) => {
+        console.log('📨 [Invitation] Received from:', data.fromUserName)
+        console.log('📨 [Invitation] Full data:', data)
+        console.log('📨 [Invitation] Current userId:', userId)
+        console.log('📨 [Invitation] Target userId:', data.toUserId)
+        console.log('📨 [Invitation] Match?', String(data.toUserId) === String(userId))
+        
+        // Only show notification if this invitation is for the current user
+        if (String(data.toUserId) !== String(userId)) {
+          console.log(`⚠️ [Invitation] Not for current user (${userId}), ignoring. Target: ${data.toUserId}`)
+          console.log(`⚠️ [Invitation] Type check - data.toUserId: "${String(data.toUserId)}" vs userId: "${String(userId)}"`)
+          return
+        }
+        
+        console.log('✅ [Invitation] This invitation is for me! Showing notification...')
+        
+        // Add notification to smartNotifications
+        const invitationId = `invitation-${data.fromUserId}-${Date.now()}`
+        setSmartNotifications(prev => [...prev, {
+          id: invitationId,
+          type: 'peer-invitation',
+          title: `💬 Chat Invitation from ${data.fromUserName}`,
+          message: `${data.fromUserName} wants to connect and chat about this section.`,
+          targetUserId: userId,
+          sectionId: data.sectionId,
+          invitationData: data,
+          actionButton: {
+            label: 'Connect',
+            action: 'accept-invitation'
+          },
+          secondaryButton: {
+            label: 'Later',
+            action: 'dismiss-invitation'
+          }
+        }])
+        
+        console.log(`✅ [Invitation] Notification added for ${data.fromUserName}`)
+      })
+
+      // Listen for accepted invitations
+      socket.on('peer-chat-accepted', (data: {
+        fromUserId: string
+        fromUserName: string
+        toUserId: string
+        toUserName: string
+        sectionId: string
+        documentId?: string
+      }) => {
+        console.log('✅ [Invitation] Accepted by:', data.toUserName)
+        
+        // Open chat for inviter (User A)
+        setPeerChatData({
+          peerId: data.toUserId,
+          peerName: data.toUserName,
+          sectionId: data.sectionId
+        })
+        setPeerChatOpen(true)
+        
+        // Show success notification
+        toast.success(`${data.toUserName} accepted your chat invitation!`)
+      })
+
+
+
+
+
+
       // ✅ CRITICAL: Listen for users-update from server
       socket.on('users-update', (users: any) => {
         console.log('👥 Users update received from server:', users)
-        
+
         // Deduplicate users by userId
         const uniqueUsers = Array.from(
           new Map(users.map((user: any) => [user.userId, user])).values()
         )
-        
+
         const activeCollaborators: Collaborator[] = uniqueUsers.map((user: any) => ({
           id: user.userId,
           name: user.userName,
@@ -877,32 +1293,32 @@ setTimeout(() => {
             canDelete: false
           }
         }))
-        
+
         console.log('✅ Setting collaborators from Socket.io (deduplicated):', activeCollaborators)
         setCollaborators(activeCollaborators)
       })
-      
+
       socket.on('assignment-updated', (data) => {
         console.log('📥 Assignment update received:', data)
         setSectionAssignments(data.assignments)
       })
-  
+
       socket.on('peer-joined', (data) => {
         console.log('👥 Peer joined:', data.userName)
         agent2_collaborationOrchestrator.registerPeer(data.userId, data.userName)
       })
-      
+
       socket.on('peer-left', (data) => {
         console.log('👋 Peer left:', data.userName)
         // Update will come via users-update event
       })
-      
+
       setSocketInstance(socket)
-      ;(window as any).io = socket
+        ; (window as any).io = socket
     }
-    
+
     initSocket()
-    
+
     return () => {
       if (socketInstance) {
         socketInstance.emit('leave-document', { documentId, userId })
@@ -929,255 +1345,283 @@ setTimeout(() => {
   }, [sectionAssignments, highlightAssignedSections])
 
   // Initialize eye tracking
-// Initialize eye tracking
-useEffect(() => {
-  const initEyeTracking = async () => {
-    const success = await eyeTracker.initialize()
-    if (success) {
-      // Style the webcam video preview
-      setTimeout(() => {
-        const videoElement = document.getElementById('webgazerVideoFeed')
-        if (videoElement) {
-          videoElement.style.position = 'fixed'
-          videoElement.style.bottom = '80px' // Bottom right
-          videoElement.style.right = '20px'
-          videoElement.style.width = '120px' // Smaller
-          videoElement.style.height = '90px'
-          videoElement.style.zIndex = '1000'
-          videoElement.style.borderRadius = '50%' // Circular!
-          videoElement.style.boxShadow = '0 4px 12px rgba(0,0,0,0.2)'
-          videoElement.style.border = '3px solid #10b981'
-          videoElement.style.objectFit = 'cover'
-        }
-      
-        const canvas = document.getElementById('webgazerFaceOverlay')
-        if (canvas) {
-          canvas.style.display = 'none' // Hide the face tracking overlay
-        }
-      
-        const faceBox = document.getElementById('webgazerFaceFeedbackBox')
-        if (faceBox) {
-          faceBox.style.display = 'none'
-        }
-      }, 1000)
+  // Initialize eye tracking
+  useEffect(() => {
+    const initEyeTracking = async () => {
+      const success = await eyeTracker.initialize()
+      if (success) {
+        // Style the webcam video preview
+        setTimeout(() => {
+          const videoElement = document.getElementById('webgazerVideoFeed')
+          if (videoElement) {
+            videoElement.style.position = 'fixed'
+            videoElement.style.bottom = '80px' // Bottom right
+            videoElement.style.right = '20px'
+            videoElement.style.width = '120px' // Smaller
+            videoElement.style.height = '90px'
+            videoElement.style.zIndex = '1000'
+            videoElement.style.borderRadius = '50%' // Circular!
+            videoElement.style.boxShadow = '0 4px 12px rgba(0,0,0,0.2)'
+            videoElement.style.border = '3px solid #10b981'
+            videoElement.style.objectFit = 'cover'
+          }
 
-      // Show calibration modal after 2 seconds
-      setTimeout(() => {
-        setShowEyeCalibration(true)
-      }, 2000)
+          const canvas = document.getElementById('webgazerFaceOverlay')
+          if (canvas) {
+            canvas.style.display = 'none' // Hide the face tracking overlay
+          }
+
+          const faceBox = document.getElementById('webgazerFaceFeedbackBox')
+          if (faceBox) {
+            faceBox.style.display = 'none'
+          }
+        }, 1000)
+
+        // Show calibration modal after 2 seconds
+        setTimeout(() => {
+          setShowEyeCalibration(true)
+        }, 2000)
+      }
     }
-  }
-  
-  initEyeTracking()
-  
-  return () => {
-    eyeTracker.end()
-  }
-}, [])
+
+    initEyeTracking()
+
+    return () => {
+      eyeTracker.end()
+    }
+  }, [])
 
 
 
 
-useEffect(() => {
-  if (incomingHighlights.length > 0 && webViewerInstance?.Core) {
-    const { annotationManager } = webViewerInstance.Core;
-    
-    incomingHighlights.forEach(async (highlight) => {
-      try {
-        console.log('📥 Importing XFDF highlight:', highlight);
-        await annotationManager.importAnnotations(highlight.xfdf, { imported: true });
-        console.log('✅ XFDF highlight imported successfully!');
-      } catch (error) {
-        console.error('❌ Error importing XFDF:', error);
-      }
-    });
-    
-    clearIncomingHighlights();
-  }
-}, [incomingHighlights, webViewerInstance, clearIncomingHighlights]);
+  useEffect(() => {
+    if (incomingHighlights.length > 0 && webViewerInstance?.Core) {
+      const { annotationManager } = webViewerInstance.Core;
 
-// Update eye tracking page when PDF page changes
-useEffect(() => {
-  if (eyeTrackingEnabled) {
-    eyeTracker.updatePage(currentPage)
-  }
-}, [currentPage, eyeTrackingEnabled])
-
-// Join document and track collaborators
-// useEffect(() => {
-//   const joinDocument = async () => {
-//     try {
-//       const response = await fetch('/api/socket', {
-//         method: 'POST',
-//         headers: { 'Content-Type': 'application/json' },
-//         body: JSON.stringify({
-//           action: 'join-document',
-//           documentId,
-//           userId,
-//           userName
-//         })
-//       })
-      
-//       if (response.ok) {
-//         const data = await response.json()
-//         console.log('✅ Joined document, active users:', data.activeUsers)
-        
-//         // Immediately update collaborators with the join response
-//         if (data.activeUsers && data.activeUsers.length > 0) {
-//           const activeCollaborators: Collaborator[] = data.activeUsers.map((user: any) => ({
-//             id: user.userId,
-//             name: user.userName,
-//             avatar: `/api/placeholder/32/32`,
-//             status: 'online' as const,
-//             userId: user.userId,
-//             isCurrentUser: user.userId === userId,
-//             role: 'viewer',
-//             activity: 'viewing',
-//             lastActivity: new Date().toISOString(),
-//             permissions: {
-//               canView: true,
-//               canEdit: false,
-//               canInvite: false,
-//               canDelete: false
-//             }
-//           }))
+      incomingHighlights.forEach(async (highlight) => {
+        try {
+          console.log('📥 Importing XFDF highlight:', highlight);
+          await annotationManager.importAnnotations(highlight.xfdf, { imported: true });
           
-//           console.log('👥 Setting collaborators from join:', activeCollaborators)
-//           setCollaborators(activeCollaborators)
-//         }
-//       }
-//     } catch (error) {
-//       console.error('Error joining document:', error)
-//     }
-//   }
-
-//   const fetchActiveUsers = async () => {
-//     try {
-//       const response = await fetch('/api/socket', {
-//         method: 'POST',
-//         headers: { 'Content-Type': 'application/json' },
-//         body: JSON.stringify({
-//           action: 'get-active-users',
-//           documentId,
-//           userId,
-//           userName
-//         })
-//       })
-      
-//       if (response.ok) {
-//         const data = await response.json()
-//         console.log('🔄 Polling active users:', data.activeUsers)
-        
-//         if (data.success && data.activeUsers && data.activeUsers.length > 0) {
-//           const activeCollaborators: Collaborator[] = data.activeUsers.map((user: any) => ({
-//             id: user.userId,
-//             name: user.userName,
-//             avatar: `/api/placeholder/32/32`,
-//             status: 'online' as const,
-//             userId: user.userId,
-//             isCurrentUser: user.userId === userId,
-//             role: 'viewer',
-//             activity: 'viewing',
-//             lastActivity: new Date().toISOString(),
-//             permissions: {
-//               canView: true,
-//               canEdit: false,
-//               canInvite: false,
-//               canDelete: false
-//             }
-//           }))
+          // Set custom data on imported annotations if not already set by XFDF
+          // This ensures the annotation listener can access reason and authorId
+          if (highlight.reason || highlight.user || highlight.userId) {
+            const allAnnotations = annotationManager.getAnnotationsList();
+            const importedAnnotations = allAnnotations.filter((ann: any) => {
+              const isHighlight = ann.Subject === 'Highlight' || ann.Subject === 'highlight';
+              const isCorrectPage = ann.PageNumber === highlight.pageNumber;
+              const hasNoReason = !ann.getCustomData('reason');
+              return isHighlight && isCorrectPage && hasNoReason;
+            });
+            
+            // Set custom data on the most recently imported annotation
+            if (importedAnnotations.length > 0) {
+              const annotation = importedAnnotations[importedAnnotations.length - 1];
+              if (highlight.reason) {
+                annotation.setCustomData('reason', highlight.reason);
+              }
+              // Use userId if available, otherwise fall back to user name
+              const authorId = highlight.userId || highlight.user;
+              if (authorId) {
+                annotation.setCustomData('authorId', authorId);
+                annotation.setCustomData('authorName', highlight.user || authorId);
+              }
+              annotationManager.redrawAnnotation(annotation);
+            }
+          }
           
-//           console.log('👥 Updating collaborators from poll:', activeCollaborators)
-//           setCollaborators(activeCollaborators)
-//         }
-//       }
-//     } catch (error) {
-//       console.error('Error fetching active users:', error)
-//     }
-//   }
+          console.log('✅ XFDF highlight imported successfully!');
+        } catch (error) {
+          console.error('❌ Error importing XFDF:', error);
+        }
+      });
 
-//   // Join first
-//   joinDocument()
-  
-//   // Then poll every 3 seconds
-//   const interval = setInterval(fetchActiveUsers, 3000)
+      clearIncomingHighlights();
+    }
+  }, [incomingHighlights, webViewerInstance, clearIncomingHighlights]);
 
-//   return () => {
-//     clearInterval(interval)
-//     // Leave document when component unmounts
-//     fetch('/api/socket', {
-//       method: 'POST',
-//       headers: { 'Content-Type': 'application/json' },
-//       body: JSON.stringify({
-//         action: 'leave-document',
-//         documentId,
-//         userId
-//       })
-//     }).catch(error => {
-//       console.error('Error leaving document:', error)
-//     })
-//   }
-// }, [documentId, userId, userName, currentUserRole])
+  // Update eye tracking page when PDF page changes
+  useEffect(() => {
+    if (eyeTrackingEnabled) {
+      eyeTracker.updatePage(currentPage)
+    }
+  }, [currentPage, eyeTrackingEnabled])
+
+  // Join document and track collaborators
+  // useEffect(() => {
+  //   const joinDocument = async () => {
+  //     try {
+  //       const response = await fetch('/api/socket', {
+  //         method: 'POST',
+  //         headers: { 'Content-Type': 'application/json' },
+  //         body: JSON.stringify({
+  //           action: 'join-document',
+  //           documentId,
+  //           userId,
+  //           userName
+  //         })
+  //       })
+
+  //       if (response.ok) {
+  //         const data = await response.json()
+  //         console.log('✅ Joined document, active users:', data.activeUsers)
+
+  //         // Immediately update collaborators with the join response
+  //         if (data.activeUsers && data.activeUsers.length > 0) {
+  //           const activeCollaborators: Collaborator[] = data.activeUsers.map((user: any) => ({
+  //             id: user.userId,
+  //             name: user.userName,
+  //             avatar: `/api/placeholder/32/32`,
+  //             status: 'online' as const,
+  //             userId: user.userId,
+  //             isCurrentUser: user.userId === userId,
+  //             role: 'viewer',
+  //             activity: 'viewing',
+  //             lastActivity: new Date().toISOString(),
+  //             permissions: {
+  //               canView: true,
+  //               canEdit: false,
+  //               canInvite: false,
+  //               canDelete: false
+  //             }
+  //           }))
+
+  //           console.log('👥 Setting collaborators from join:', activeCollaborators)
+  //           setCollaborators(activeCollaborators)
+  //         }
+  //       }
+  //     } catch (error) {
+  //       console.error('Error joining document:', error)
+  //     }
+  //   }
+
+  //   const fetchActiveUsers = async () => {
+  //     try {
+  //       const response = await fetch('/api/socket', {
+  //         method: 'POST',
+  //         headers: { 'Content-Type': 'application/json' },
+  //         body: JSON.stringify({
+  //           action: 'get-active-users',
+  //           documentId,
+  //           userId,
+  //           userName
+  //         })
+  //       })
+
+  //       if (response.ok) {
+  //         const data = await response.json()
+  //         console.log('🔄 Polling active users:', data.activeUsers)
+
+  //         if (data.success && data.activeUsers && data.activeUsers.length > 0) {
+  //           const activeCollaborators: Collaborator[] = data.activeUsers.map((user: any) => ({
+  //             id: user.userId,
+  //             name: user.userName,
+  //             avatar: `/api/placeholder/32/32`,
+  //             status: 'online' as const,
+  //             userId: user.userId,
+  //             isCurrentUser: user.userId === userId,
+  //             role: 'viewer',
+  //             activity: 'viewing',
+  //             lastActivity: new Date().toISOString(),
+  //             permissions: {
+  //               canView: true,
+  //               canEdit: false,
+  //               canInvite: false,
+  //               canDelete: false
+  //             }
+  //           }))
+
+  //           console.log('👥 Updating collaborators from poll:', activeCollaborators)
+  //           setCollaborators(activeCollaborators)
+  //         }
+  //       }
+  //     } catch (error) {
+  //       console.error('Error fetching active users:', error)
+  //     }
+  //   }
+
+  //   // Join first
+  //   joinDocument()
+
+  //   // Then poll every 3 seconds
+  //   const interval = setInterval(fetchActiveUsers, 3000)
+
+  //   return () => {
+  //     clearInterval(interval)
+  //     // Leave document when component unmounts
+  //     fetch('/api/socket', {
+  //       method: 'POST',
+  //       headers: { 'Content-Type': 'application/json' },
+  //       body: JSON.stringify({
+  //         action: 'leave-document',
+  //         documentId,
+  //         userId
+  //       })
+  //     }).catch(error => {
+  //       console.error('Error leaving document:', error)
+  //     })
+  //   }
+  // }, [documentId, userId, userName, currentUserRole])
 
 
-// // Register all collaborators with Agent 2 whenever collaborators list changes
-// useEffect(() => {
-//   if (collaborators.length > 0) {
-//     console.log('🤝 Registering all collaborators with Agent 2...')
-    
-//     collaborators.forEach(collab => {
-//       // Safety check: only register if userId exists
-//       if (collab.userId && collab.name) {
-//         agent2_collaborationOrchestrator.registerPeer(collab.userId, collab.name)
-        
-//         // Mock: Set understanding scores (in real system, this would come from actual data)
-//         // For testing, let's say current user is struggling, others are proficient
-//         const mockScore = collab.userId === userId ? 30 : 85
-//         agent2_collaborationOrchestrator.updatePeerStatus(
-//           collab.userId,
-//           `section-page-${currentPage}`,
-//           mockScore
-//         )
-//       }
-//     })
-    
-//     console.log('✅ All collaborators registered with Agent 2!')
-//   }
-// }, [collaborators, userId, currentPage])
+  // // Register all collaborators with Agent 2 whenever collaborators list changes
+  // useEffect(() => {
+  //   if (collaborators.length > 0) {
+  //     console.log('🤝 Registering all collaborators with Agent 2...')
+
+  //     collaborators.forEach(collab => {
+  //       // Safety check: only register if userId exists
+  //       if (collab.userId && collab.name) {
+  //         agent2_collaborationOrchestrator.registerPeer(collab.userId, collab.name)
+
+  //         // Mock: Set understanding scores (in real system, this would come from actual data)
+  //         // For testing, let's say current user is struggling, others are proficient
+  //         const mockScore = collab.userId === userId ? 30 : 85
+  //         agent2_collaborationOrchestrator.updatePeerStatus(
+  //           collab.userId,
+  //           `section-page-${currentPage}`,
+  //           mockScore
+  //         )
+  //       }
+  //     })
+
+  //     console.log('✅ All collaborators registered with Agent 2!')
+  //   }
+  // }, [collaborators, userId, currentPage])
 
 
 
-// Register all collaborators with Agent 2 whenever collaborators list changes
-useEffect(() => {
-  if (collaborators.length > 0) {
-    console.log('🤝 Registering all collaborators with Agent 2...')
-    console.log('👥 Collaborators to register:', collaborators)
-    
-    collaborators.forEach(collab => {
-      // Safety check: only register if userId exists
-      if (collab.userId && collab.name) {
-        console.log(`  ✅ Registering: ${collab.name} (${collab.userId})`)
-        agent2_collaborationOrchestrator.registerPeer(collab.userId, collab.name)
-        
-        // Mock: Set understanding scores (in real system, this would come from actual data)
-        // For testing, let's say current user is struggling, others are proficient
-        const mockScore = collab.userId === userId ? 30 : 85
-        const sectionId = `section-page-${currentPage}`
-        
-        console.log(`  📊 Setting ${collab.name} score: ${mockScore} for ${sectionId}`)
-        agent2_collaborationOrchestrator.updatePeerStatus(
-          collab.userId,
-          sectionId,
-          mockScore
-        )
-      }
-    })
-    
-    // Debug: Check what Agent 2 knows
-    console.log('🔍 Agent 2 peer profiles:', agent2_collaborationOrchestrator.getPeerStatus(userId))
-    console.log('✅ All collaborators registered with Agent 2!')
-  }
-}, [collaborators, userId, currentPage])
+  // Register all collaborators with Agent 2 whenever collaborators list changes
+  useEffect(() => {
+    if (collaborators.length > 0) {
+      console.log('🤝 Registering all collaborators with Agent 2...')
+      console.log('👥 Collaborators to register:', collaborators)
+
+      collaborators.forEach(collab => {
+        // Safety check: only register if userId exists
+        if (collab.userId && collab.name) {
+          console.log(`  ✅ Registering: ${collab.name} (${collab.userId})`)
+          agent2_collaborationOrchestrator.registerPeer(collab.userId, collab.name)
+
+          // Mock: Set understanding scores (in real system, this would come from actual data)
+          // For testing, let's say current user is struggling, others are proficient
+          const mockScore = collab.userId === userId ? 30 : 85
+          const sectionId = `section-page-${currentPage}`
+
+          console.log(`  📊 Setting ${collab.name} score: ${mockScore} for ${sectionId}`)
+          agent2_collaborationOrchestrator.updatePeerStatus(
+            collab.userId,
+            sectionId,
+            mockScore
+          )
+        }
+      })
+
+      // Debug: Check what Agent 2 knows
+      console.log('🔍 Agent 2 peer profiles:', agent2_collaborationOrchestrator.getPeerStatus(userId))
+      console.log('✅ All collaborators registered with Agent 2!')
+    }
+  }, [collaborators, userId, currentPage])
 
 
 
@@ -1195,15 +1639,15 @@ useEffect(() => {
             userName
           })
         })
-        
+
         if (response.ok) {
           const data = await response.json()
           if (data.success && data.messages) {
             setAllMessages(data.messages)
-            
+
             // Calculate unread messages for each user
             const unreadCounts = new Map<string, number>()
-            
+
             data.messages.forEach((msg: any) => {
               // Only count messages sent to current user (not by current user)
               if (msg.recipientId === userId && msg.userId !== userId) {
@@ -1212,7 +1656,7 @@ useEffect(() => {
                 unreadCounts.set(senderId, currentCount + 1)
               }
             })
-            
+
             setUnreadMessages(unreadCounts)
           }
         }
@@ -1232,7 +1676,7 @@ useEffect(() => {
   const getConversationMessages = (collaboratorId: string) => {
     const conversationMessages = allMessages.filter((msg: any) => {
       return (msg.userId === userId && msg.recipientId === collaboratorId) ||
-             (msg.userId === collaboratorId && msg.recipientId === userId)
+        (msg.userId === collaboratorId && msg.recipientId === userId)
     })
     console.log('Conversation messages for', collaboratorId, ':', conversationMessages)
     return conversationMessages
@@ -1245,7 +1689,7 @@ useEffect(() => {
       newMap.set(collaboratorId, !newMap.get(collaboratorId))
       return newMap
     })
-    
+
     // Clear unread messages when opening chat
     if (!inlineChats.get(collaboratorId)) {
       setUnreadMessages(prev => {
@@ -1274,7 +1718,7 @@ useEffect(() => {
           }
         })
       })
-      
+
       if (response.ok) {
         setNewMessage('')
         // Message will be updated via the polling effect
@@ -1306,7 +1750,7 @@ useEffect(() => {
           }
         })
       })
-      
+
       if (response.ok) {
         setShowInviteModal(false)
         setInviteEmail('')
@@ -1326,22 +1770,22 @@ useEffect(() => {
   const maxActivityFailures = 10;
   let lastActivityUpdate = 0;
   const activityThrottleMs = 5000; // Only update every 5 seconds
-  
+
   const updateActivity = async (activity: 'viewing' | 'editing' | 'idle') => {
     if (activityFailureCount >= maxActivityFailures) return;
-    
+
     // Throttle activity updates
     const now = Date.now();
     if (now - lastActivityUpdate < activityThrottleMs) {
       return;
     }
     lastActivityUpdate = now;
-    
+
     // Skip activity updates if required data is missing
     if (!documentId || !userId) {
       return;
     }
-    
+
     try {
       const response = await fetch('/api/socket', {
         method: 'POST',
@@ -1353,11 +1797,11 @@ useEffect(() => {
           activity
         })
       });
-      
+
       if (!response.ok) {
         throw new Error(`HTTP error! status: ${response.status}`);
       }
-      
+
       activityFailureCount = 0;
     } catch (error) {
       activityFailureCount++;
@@ -1382,17 +1826,19 @@ useEffect(() => {
           newRole
         })
       })
-      
+
       if (response.ok) {
         // Update local state
-        setCollaborators(prev => prev.map(c => 
-          c.userId === collaboratorId 
-            ? { ...c, role: newRole, permissions: {
+        setCollaborators(prev => prev.map(c =>
+          c.userId === collaboratorId
+            ? {
+              ...c, role: newRole, permissions: {
                 canView: true,
                 canEdit: newRole === 'editor' || newRole === 'admin',
                 canInvite: newRole === 'admin',
                 canDelete: newRole === 'admin'
-              }}
+              }
+            }
             : c
         ))
       }
@@ -1404,7 +1850,7 @@ useEffect(() => {
   // Remove collaborator
   const removeCollaborator = async (collaboratorId: string) => {
     if (!confirm('Are you sure you want to remove this collaborator?')) return
-    
+
     try {
       const response = await fetch('/api/socket', {
         method: 'POST',
@@ -1416,7 +1862,7 @@ useEffect(() => {
           targetUserId: collaboratorId
         })
       })
-      
+
       if (response.ok) {
         setCollaborators(prev => prev.filter(c => c.userId !== collaboratorId))
       }
@@ -1478,23 +1924,23 @@ useEffect(() => {
     try {
       if (webViewerInstance) {
         const { documentViewer, annotationManager } = webViewerInstance.Core
-        
+
         // Get the PDF data with annotations
         const data = await documentViewer.getDocument().getFileData({
           // Include annotations in the downloaded PDF
           downloadType: 'pdf'
         })
-        
+
         const blob = new Blob([data], { type: 'application/pdf' })
         const url = URL.createObjectURL(blob)
-        
+
         const link = document.createElement('a')
         link.href = url
         link.download = `document-${documentId}-annotated.pdf`
         document.body.appendChild(link)
         link.click()
         document.body.removeChild(link)
-        
+
         URL.revokeObjectURL(url)
       }
     } catch (error) {
@@ -1510,17 +1956,17 @@ useEffect(() => {
       if (webViewerInstance) {
         const { annotationManager } = webViewerInstance.Core
         const xfdfString = await annotationManager.exportAnnotations()
-        
+
         const blob = new Blob([xfdfString], { type: 'application/xml' })
         const url = URL.createObjectURL(blob)
-        
+
         const link = document.createElement('a')
         link.href = url
         link.download = `annotations-${documentId}.xfdf`
         document.body.appendChild(link)
         link.click()
         document.body.removeChild(link)
-        
+
         URL.revokeObjectURL(url)
       }
     } catch (error) {
@@ -1613,7 +2059,7 @@ useEffect(() => {
     }
 
     const { documentViewer } = webViewerInstance.Core
-    
+
     if (!documentViewer) {
       console.error('❌ Document viewer not available')
       toast.error('Document viewer not available')
@@ -1622,10 +2068,10 @@ useEffect(() => {
 
     try {
       console.log('🚀 Jumping to section:', section.heading.text, 'on page', section.startPage)
-      
+
       // Set the current page to the section's start page
       documentViewer.setCurrentPage(section.startPage)
-      
+
       toast.success(`Jumped to: ${section.heading.text}`)
     } catch (error) {
       console.error('❌ Error jumping to section:', error)
@@ -1665,16 +2111,16 @@ useEffect(() => {
     // Enhanced comment handling system using Apryse's annotation events
     const handleAnnotationInteraction = (event: any) => {
       console.log('🎯 Annotation interaction event:', event);
-      
+
       // Check if this is an annotation click event from Apryse
       if (event.type === 'annotationSelected' || event.type === 'annotationClicked') {
         const annotation = event.detail?.annotation || event.annotation;
         console.log('🎯 Annotation clicked:', annotation);
-        
+
         if (annotation && webViewerInstance && webViewerInstance.Core) {
           try {
             const { annotationManager } = webViewerInstance.Core;
-            
+
             // Show the text selection popup for highlights
             if (annotation.Subject === 'Highlight' || annotation.Subject === 'highlight') {
               // Get highlighted text
@@ -1697,7 +2143,7 @@ useEffect(() => {
               } catch (error) {
                 console.log('Error getting highlighted text:', error);
               }
-              
+
               if (highlightedText.trim()) {
                 console.log('🎯 Showing popup for highlighted text:', highlightedText);
                 setSelectedText(highlightedText);
@@ -1705,7 +2151,7 @@ useEffect(() => {
                 setShowTextSelectionPopup(true);
               }
             }
-            
+
             // Try to show comments using WebViewer's built-in method
             if (typeof annotationManager.showAnnotationComments === 'function') {
               annotationManager.showAnnotationComments(annotation);
@@ -1743,7 +2189,7 @@ useEffect(() => {
         z-index: 10000;
         min-width: 300px;
       `;
-      
+
       commentPanel.innerHTML = `
         <h3>Annotation Options</h3>
         <textarea 
@@ -1755,14 +2201,14 @@ useEffect(() => {
           <button class="delete" onclick="deleteAnnotation(this)" style="background: #dc3545; color: white;">🗑️ Delete</button>
         </div>
       `;
-      
+
       // Add save function to window
-      (window as any).saveComment = function(button: any) {
+      (window as any).saveComment = function (button: any) {
         const textarea = button.parentElement.previousElementSibling;
         const comment = textarea.value;
         if (comment.trim()) {
           console.log('Saving comment:', comment, 'for annotation:', annotation.Id);
-          
+
           // Track for contextual AI
           if (onAnnotationAdd) {
             const aiAnnotation = {
@@ -1801,7 +2247,7 @@ useEffect(() => {
             text: comment,
             sectionId: `section-page-${annotation.PageNumber || 1}`
           })
-          
+
           // Here you can implement saving the comment to your backend
           // For now, just close the panel
           commentPanel.remove();
@@ -1809,7 +2255,7 @@ useEffect(() => {
       };
 
       // Add delete function to window
-      (window as any).deleteAnnotation = function(button: any) {
+      (window as any).deleteAnnotation = function (button: any) {
         const confirmDelete = confirm('Are you sure you want to delete this annotation?');
         if (confirmDelete && webViewerInstance && webViewerInstance.Core) {
           const { annotationManager } = webViewerInstance.Core;
@@ -1822,9 +2268,9 @@ useEffect(() => {
           console.log('✅ Annotation deleted successfully');
         }
       };
-      
+
       document.body.appendChild(commentPanel);
-      
+
       // Close panel when clicking outside
       const closeOnOutsideClick = (e: any) => {
         if (!commentPanel.contains(e.target)) {
@@ -1832,7 +2278,7 @@ useEffect(() => {
           document.removeEventListener('click', closeOnOutsideClick);
         }
       };
-      
+
       setTimeout(() => {
         document.addEventListener('click', closeOnOutsideClick);
       }, 100);
@@ -1841,22 +2287,22 @@ useEffect(() => {
     // Add event listeners for annotation interactions using Apryse events
     if (webViewerInstance && webViewerInstance.Core) {
       const { documentViewer, annotationManager } = webViewerInstance.Core;
-      
+
       // Listen for annotation selection events
       documentViewer.addEventListener('annotationSelected', handleAnnotationInteraction);
       documentViewer.addEventListener('annotationClicked', handleAnnotationInteraction);
-      
+
       // Also listen for annotation manager events
       annotationManager.addEventListener('annotationSelected', handleAnnotationInteraction);
       annotationManager.addEventListener('annotationClicked', handleAnnotationInteraction);
-      
+
       console.log('✅ Apryse annotation event listeners added');
     }
-    
+
     // Fallback: generic click events for non-Apryse annotations
     const handleGenericClick = (event: any) => {
       const target = event.target;
-      
+
       // Check if clicked on an Apryse highlight element
       if (target && (
         target.classList.contains('Annotation') ||
@@ -1867,17 +2313,17 @@ useEffect(() => {
         target.closest('[data-element="highlight"]')
       )) {
         console.log('🎯 Generic click on annotation element:', target);
-        
+
         // Try to find the annotation ID
-        let annotationId = target.getAttribute('data-annotation-id') || 
-                          target.closest('[data-annotation-id]')?.getAttribute('data-annotation-id');
-        
+        let annotationId = target.getAttribute('data-annotation-id') ||
+          target.closest('[data-annotation-id]')?.getAttribute('data-annotation-id');
+
         // If no ID found, try to get from Apryse's internal structure
         if (!annotationId && webViewerInstance && webViewerInstance.Core) {
           try {
             const { annotationManager } = webViewerInstance.Core;
             const annotations = annotationManager.getAnnotationsList();
-            
+
             // Find annotation by checking if click is within its bounds
             for (const annotation of annotations) {
               if (annotation.Subject === 'Highlight' || annotation.Subject === 'highlight') {
@@ -1890,15 +2336,15 @@ useEffect(() => {
             console.log('Error finding annotation ID:', error);
           }
         }
-        
+
         if (annotationId && webViewerInstance && webViewerInstance.Core) {
           try {
             const { annotationManager } = webViewerInstance.Core;
             const annotation = annotationManager.getAnnotationById(annotationId);
-            
+
             if (annotation) {
               console.log('🎯 Found annotation for generic click:', annotation);
-              
+
               // Show popup for highlights
               if (annotation.Subject === 'Highlight' || annotation.Subject === 'highlight') {
                 let highlightedText = '';
@@ -1918,7 +2364,7 @@ useEffect(() => {
                 } catch (error) {
                   console.log('Error getting highlighted text:', error);
                 }
-                
+
                 if (highlightedText.trim()) {
                   console.log('🎯 Showing popup for highlighted text via generic click:', highlightedText);
                   setSelectedText(highlightedText);
@@ -1933,7 +2379,7 @@ useEffect(() => {
         }
       }
     };
-    
+
     document.addEventListener('click', handleGenericClick);
     document.addEventListener('dblclick', handleGenericClick);
 
@@ -1947,11 +2393,11 @@ useEffect(() => {
         annotationManager.removeEventListener('annotationClicked', handleAnnotationInteraction);
         console.log('✅ Apryse annotation event listeners removed');
       }
-      
+
       // Remove fallback event listeners
       document.removeEventListener('click', handleGenericClick);
       document.removeEventListener('dblclick', handleGenericClick);
-      
+
       // Clean up global function
       delete (window as any).saveComment;
     };
@@ -1964,12 +2410,12 @@ useEffect(() => {
         console.log('⚠️ WebViewer not initialized yet')
         return 'CAPTION_ONLY'
       }
-      
+
       const { documentViewer, annotationManager } = webViewerInstance.Core
       const pageNumber = documentViewer.getCurrentPage()
-      
+
       console.log('🔍 Attempting to extract actual page content from page:', pageNumber)
-      
+
       try {
         // Get the actual page canvas from Apryse WebViewer
         const pageCanvas = await new Promise<HTMLCanvasElement>((resolve, reject) => {
@@ -1977,16 +2423,16 @@ useEffect(() => {
             // Use Apryse's built-in page rendering to canvas
             const canvas = document.createElement('canvas')
             const ctx = canvas.getContext('2d')
-            
+
             if (!ctx) {
               reject(new Error('Could not get canvas context'))
               return
             }
-            
+
             // Set standard canvas dimensions
             canvas.width = 800
             canvas.height = 1000
-            
+
             try {
               // Try to get page information using correct Apryse API
               const doc = documentViewer.getDocument()
@@ -1997,37 +2443,37 @@ useEffect(() => {
                     canvas.width = Math.max(pageInfo.width, 800)
                     canvas.height = Math.max(pageInfo.height, 1000)
                   }
-                  
+
                   // Try to load the page and render it
                   doc.loadPageText(pageNumber).then(() => {
                     // Create a representation of the page
                     console.log('✅ Page information loaded, creating page representation')
-                    
+
                     ctx.fillStyle = '#ffffff'
                     ctx.fillRect(0, 0, canvas.width, canvas.height)
-                    
+
                     ctx.fillStyle = '#333333'
                     ctx.font = 'bold 24px Arial'
                     ctx.fillText(`Page ${pageNumber}`, 30, 50)
-                    
+
                     ctx.font = '16px Arial'
                     ctx.fillText('PDF Content - Ready for AI Analysis', 30, 80)
                     ctx.fillText(`Document: ${documentId}`, 30, 110)
-                    
+
                     // Draw a content area representing the page
                     ctx.strokeStyle = '#cccccc'
                     ctx.lineWidth = 1
                     ctx.strokeRect(30, 140, canvas.width - 60, canvas.height - 180)
-                    
+
                     ctx.fillStyle = '#f8f9fa'
                     ctx.fillRect(31, 141, canvas.width - 62, canvas.height - 182)
-                    
+
                     // Add some visual elements to represent content
                     ctx.fillStyle = '#666666'
                     ctx.font = '14px Arial'
                     ctx.fillText('Page content rendered for Vision AI analysis', 50, 170)
                     ctx.fillText('This represents the actual PDF page content', 50, 195)
-                    
+
                     // Draw lines to simulate text content
                     for (let i = 0; i < 20; i++) {
                       ctx.strokeStyle = '#e0e0e0'
@@ -2037,16 +2483,16 @@ useEffect(() => {
                       ctx.lineTo(canvas.width - 80, 220 + i * 25)
                       ctx.stroke()
                     }
-                    
+
                     console.log('✅ Page representation created successfully')
                     resolve(canvas)
-                    
+
                   }).catch(() => {
                     // Fallback if page loading fails
                     console.log('⚠️ Page loading failed, using basic fallback')
                     createBasicFallback()
                   })
-                  
+
                 }).catch(() => {
                   // Fallback if page info fails
                   console.log('⚠️ Page info loading failed, using basic fallback')
@@ -2061,7 +2507,7 @@ useEffect(() => {
               console.log('⚠️ Apryse API error, using basic fallback:', apiError)
               createBasicFallback()
             }
-            
+
             // Fallback function for when Apryse APIs don't work
             function createBasicFallback() {
               if (!ctx) {
@@ -2069,39 +2515,39 @@ useEffect(() => {
                 resolve(canvas)
                 return
               }
-              
+
               ctx.fillStyle = '#ffffff'
               ctx.fillRect(0, 0, canvas.width, canvas.height)
-              
+
               ctx.fillStyle = '#333333'
               ctx.font = 'bold 20px Arial'
               ctx.fillText(`Page ${pageNumber} - PDF Content`, 30, 50)
-              
+
               ctx.font = '16px Arial'
               ctx.fillText('Ready for AI Vision Analysis', 30, 80)
               ctx.fillText('(Page content representation)', 30, 105)
-              
+
               // Create a visual representation
               ctx.strokeStyle = '#666666'
               ctx.lineWidth = 2
               ctx.strokeRect(30, 130, canvas.width - 60, canvas.height - 160)
-              
+
               ctx.fillStyle = '#f5f5f5'
               ctx.fillRect(31, 131, canvas.width - 62, canvas.height - 162)
-              
+
               resolve(canvas)
             }
-            
+
           } catch (error) {
             console.error('Error in page canvas creation:', error)
             reject(error)
           }
         })
-        
+
         // Convert canvas to base64 image
         const imageDataUrl = pageCanvas.toDataURL('image/png', 0.9)
         console.log('🖼️ Successfully captured page as image, size:', imageDataUrl.length)
-        
+
         // Check if this looks like a valid image data URL
         if (imageDataUrl && imageDataUrl.startsWith('data:image/png')) {
           console.log('✅ Valid image data extracted for Vision AI analysis')
@@ -2110,24 +2556,24 @@ useEffect(() => {
           console.log('⚠️ Invalid image data, falling back to caption analysis')
           return 'CAPTION_ONLY'
         }
-        
+
       } catch (canvasError) {
         console.error('❌ Canvas extraction failed:', canvasError)
-        
+
         // Method 2: Fallback to caption-based analysis
         console.log('🔄 Canvas extraction failed, falling back to caption analysis')
-        
+
         // Check if this looks like a figure caption
         const lowerText = selectedText.toLowerCase()
-        if (lowerText.includes('figure') || lowerText.includes('fig') || 
-            lowerText.includes('chart') || lowerText.includes('diagram') ||
-            lowerText.includes('shows') || lowerText.includes('depicts')) {
-          
+        if (lowerText.includes('figure') || lowerText.includes('fig') ||
+          lowerText.includes('chart') || lowerText.includes('diagram') ||
+          lowerText.includes('shows') || lowerText.includes('depicts')) {
+
           console.log('📊 Figure detected, but using caption analysis fallback')
           return 'CAPTION_ONLY' // Special flag for caption-only analysis
         }
       }
-      
+
       return null
     } catch (error) {
       console.error('❌ Error in extractImageFromPDF:', error)
@@ -2139,16 +2585,16 @@ useEffect(() => {
   const extractDocumentMetadata = async () => {
     try {
       console.log('📄 Extracting document metadata and content...')
-      
+
       if (webViewerInstance && webViewerInstance.Core) {
         const { documentViewer } = webViewerInstance.Core
         const doc = documentViewer.getDocument()
-        
+
         if (doc) {
           // Extract text content from first few pages for analysis
           let fullText = ''
           const pageCount = Math.min(documentViewer.getPageCount(), 10) // First 10 pages
-          
+
           for (let i = 1; i <= pageCount; i++) {
             try {
               // Note: getPageText might not be available in all versions
@@ -2168,24 +2614,24 @@ useEffect(() => {
               console.log(`Error loading page ${i}:`, error)
             }
           }
-          
+
           console.log('📝 Extracted text length:', fullText.length)
           setDocumentContent(fullText)
-          
+
           // Try to extract title and authors from the first page
           if (fullText) {
             const lines = fullText.split('\n').filter(line => line.trim().length > 0)
-            
+
             // First non-empty line is likely the title
             const potentialTitle = lines.find(line => line.trim().length > 10)
             if (potentialTitle) {
               setDocumentTitle(potentialTitle.trim())
             }
-            
+
             // Look for author patterns in first few lines
             const authorPattern = /^[A-Z][a-z]+\s+[A-Z][a-z]+|Dr\.|Prof\.|Ph\.D/
-            const potentialAuthors = lines.slice(1, 5).find(line => 
-              authorPattern.test(line) || 
+            const potentialAuthors = lines.slice(1, 5).find(line =>
+              authorPattern.test(line) ||
               (line.includes(',') && line.split(',').length <= 5)
             )
             if (potentialAuthors) {
@@ -2196,21 +2642,21 @@ useEffect(() => {
       }
     } catch (error) {
       console.error('❌ Error extracting document metadata:', error)
-      
+
       // Fallback: Use extract-metadata API
       try {
         const response = await fetch(documentUrl)
         const blob = await response.blob()
         const file = new File([blob], 'document.pdf', { type: 'application/pdf' })
-        
+
         const formData = new FormData()
         formData.append('file', file)
-        
+
         const metadataResponse = await fetch('/api/extract-metadata', {
           method: 'POST',
           body: formData
         })
-        
+
         if (metadataResponse.ok) {
           const data = await metadataResponse.json()
           if (data.success && data.metadata) {
@@ -2320,7 +2766,7 @@ ${documentContent}
       }
 
       const data = await response.json();
-      
+
       // Create a mock AdvancedSummary from the AI summary response
       const mockAdvancedSummary: AdvancedSummary = {
         tldr: data.summary?.abstract || data.summary?.summary || 'Summary generated successfully',
@@ -2384,18 +2830,18 @@ ${documentContent}
     try {
       webViewerInstance?.Core?.documentViewer?.setCurrentPage(p);
       setCurrentPage(p);
-    } catch {}
+    } catch { }
   };
 
   // Initialize WebViewer
   useEffect(() => {
     if (!viewer.current) return;
-  
+
     import('@pdftron/webviewer').then((module) => {
       const WebViewer = module.default
       WebViewer(
         {
-              path: '/webviewer/lib', // required for asset loading
+          path: '/webviewer/lib', // required for asset loading
           initialDoc: currentDocumentUrl,
           licenseKey: 'demo:1755219174158:606dde5b03000000004697f8591ea5d9e505e44c124bc6be7fc53870e2', // or your license key
         },
@@ -2403,7 +2849,7 @@ ${documentContent}
       ).then((instance: any) => {
         const { documentViewer, annotationManager } = instance.Core;
         setWebViewerInstance(instance);
-        
+
         // ⭐ Make Apryse comment section scrollable ⭐
         const addCommentPanelStyles = () => {
           const style = document.createElement('style');
@@ -2469,71 +2915,103 @@ ${documentContent}
           document.head.appendChild(style);
           console.log('✅ Apryse comment panel styles added for scrolling');
         };
-        
+
         // Call the function to apply styles
         addCommentPanelStyles();
-        
+
         // Set user information for annotations
         if (annotationManager) {
           annotationManager.setCurrentUser(userName);
         }
-        
+
         // Listen for annotation events
         annotationManager.addEventListener('annotationChanged', (annotations: any[], action: string, info: any) => {
           console.log('🎯 ANNOTATION EVENT:', { action, info, annotationsCount: annotations.length });
-          
+
           if (action === 'add' && annotations && annotations.length > 0) {
             const annotation = annotations[0]; // Get from annotations array
             console.log('🎯 NEW ANNOTATION ADDED:', annotation.Subject, annotation);
-            
-// ✅ PREVENT FEEDBACK LOOP: Only process annotations created by current user
-if (annotation.Author !== userName) {
-  console.log('👥 Received annotation from another user:', annotation.Author)
-  
-  // If it's a confusion highlight, update their peer status
-  const customData = annotation.getCustomData('reason')
-  if (customData === 'confusion') {
-    const authorId = annotation.getCustomData('authorId') || annotation.Author
-    const annotationPage = annotation.PageNumber || 1
-    const sectionId = `section-page-${annotationPage}`
-    
-    agent2_collaborationOrchestrator.updatePeerStatus(
-      authorId,
-      sectionId,
-      30
-    )
-    console.log('🤝 Updated peer status for remote user:', annotation.Author)
-    
-    // ALSO trigger struggle detection so Agent 2 can find matches
-    aiCoordinationCore.routeAgentEvent('agent1', 'struggle-detected', {
-      sectionId: sectionId,
-      sectionName: `Section Page ${annotationPage}`,
-      severity: 'medium',
-      indicators: {
-        confusionHighlights: 1,
-        stuckMarkers: 0,
-        revisitCount: 0,
-        timeSpent: 0,
-        understandingScore: 30
-      }
-    })
-  }
-  
-  return // Exit early to prevent feedback loop
-}
-            
+
+            // ✅ PREVENT FEEDBACK LOOP: Only process annotations created by current user
+            if (annotation.Author !== userName) {
+              console.log('👥 Received annotation from another user:', annotation.Author)
+
+              // If it's a confusion highlight, track it and only trigger struggle detection when there are 3+
+              const customData = annotation.getCustomData('reason')
+              if (customData === 'confusion') {
+                const authorId = annotation.getCustomData('authorId') || annotation.Author
+                const annotationPage = annotation.PageNumber || 1
+                const sectionId = `section-page-${annotationPage}`
+
+                // Track confusion highlights per user per section
+                setUserConfusionHighlights(prev => {
+                  const newMap = new Map(prev)
+                  if (!newMap.has(authorId)) {
+                    newMap.set(authorId, new Map())
+                  }
+                  const userSections = newMap.get(authorId)!
+                  const currentCount = userSections.get(sectionId) || 0
+                  const newCount = currentCount + 1
+                  userSections.set(sectionId, newCount)
+                  
+                  console.log(`📊 User ${annotation.Author} now has ${newCount} confusion highlights in ${sectionId}`)
+                  
+                  // Only trigger struggle detection when there are 3+ confusion highlights
+                  if (newCount >= 3) {
+                    console.log(`⚠️ [STRUGGLE DETECTED] User ${annotation.Author} is struggling with section ${annotationPage} (${newCount} confusion highlights)`)
+                    
+                    agent2_collaborationOrchestrator.updatePeerStatus(
+                      authorId,
+                      sectionId,
+                      30
+                    )
+                    console.log('🤝 Updated peer status for remote user:', annotation.Author)
+
+                    // Determine severity based on confusion count
+                    let severity: 'low' | 'medium' | 'high' = 'low'
+                    if (newCount >= 3) {
+                      severity = 'high'
+                    } else if (newCount >= 2) {
+                      severity = 'medium'
+                    }
+
+                    aiCoordinationCore.routeAgentEvent('agent1', 'struggle-detected', {
+                      userId: authorId,
+                      userName: annotation.Author,
+                      sectionId: sectionId,
+                      sectionName: `Section Page ${annotationPage}`,
+                      severity: severity,
+                      indicators: {
+                        confusionHighlights: newCount,
+                        stuckMarkers: 0,
+                        revisitCount: 0,
+                        timeSpent: 0,
+                        understandingScore: 30
+                      }
+                    })
+                  } else {
+                    console.log(`ℹ️ Confusion tracked but not enough signals yet (${newCount} highlights, need 3+)`)
+                  }
+                  
+                  return newMap
+                })
+              }
+
+              return // Exit early to prevent feedback loop
+            }
+
             // Track all annotation types for contextual AI
             const sectionId = `page-${annotation.PageNumber}-section`;
-            const location = { 
-              page: annotation.PageNumber, 
-              x: annotation.X || 0, 
-              y: annotation.Y || 0 
+            const location = {
+              page: annotation.PageNumber,
+              x: annotation.X || 0,
+              y: annotation.Y || 0
             };
-            
+
             // Handle different annotation types
             if (annotation.Subject === 'Highlight' || annotation.Subject === 'highlight') {
               console.log('🎯 HIGHLIGHT DETECTED - PROCESSING...');
-              
+
               // Get the highlighted text from the annotation using Apryse's official method
               let highlightedText = '';
               try {
@@ -2541,45 +3019,45 @@ if (annotation.Author !== userName) {
                 if (annotation.getQuads && typeof annotation.getQuads === 'function') {
                   const quads = annotation.getQuads();
                   console.log('📍 Annotation quads:', quads);
-                  
+
                   if (quads && quads.length > 0) {
                     // Extract text for each quad and combine
                     const textsUnderHighlight = quads.map((quad: any) => {
-                      const selectionStartPoint = { 
-                        x: quad.x1, 
-                        y: quad.y1, 
-                        pageNumber: annotation.PageNumber 
+                      const selectionStartPoint = {
+                        x: quad.x1,
+                        y: quad.y1,
+                        pageNumber: annotation.PageNumber
                       };
-                      const selectionEndPoint = { 
-                        x: quad.x3, 
-                        y: quad.y3, 
-                        pageNumber: annotation.PageNumber 
+                      const selectionEndPoint = {
+                        x: quad.x3,
+                        y: quad.y3,
+                        pageNumber: annotation.PageNumber
                       };
-                      
+
                       // Select the text within the quad
                       documentViewer.select(selectionStartPoint, selectionEndPoint);
-                      
+
                       // Retrieve the selected text
                       const selectedText = documentViewer.getSelectedText();
-                      
+
                       // Clear the selection to avoid visual artifacts
                       documentViewer.clearSelection();
-                      
+
                       return selectedText;
                     });
-                    
+
                     // Combine all texts
                     highlightedText = textsUnderHighlight.filter((text: string) => text && text.trim()).join(' ');
                   }
                 }
-                
+
                 // Fallback: try to get from annotation contents
                 if (!highlightedText && annotation.Contents) {
                   highlightedText = annotation.Contents;
                 }
-                
+
                 console.log('🎨 HIGHLIGHTED TEXT CAPTURED:', highlightedText);
-                
+
                 // Store the highlighted text
                 const selection = {
                   text: highlightedText,
@@ -2587,7 +3065,7 @@ if (annotation.Author !== userName) {
                   pageNumber: annotation.PageNumber,
                   position: { x: annotation.X || 0, y: annotation.Y || 0 }
                 };
-                
+
                 setCapturedSelections(prev => {
                   const newSelections = [...prev, selection];
                   console.log('📚 HIGHLIGHT SELECTIONS:', newSelections);
@@ -2600,51 +3078,51 @@ if (annotation.Author !== userName) {
                   console.log('✅ NEW SELECTIONS ARRAY:', newSelections); // ✅ Added this
                   return newSelections;
                 });
-                
+
                 setLastSelectedText(highlightedText);
-                
-              // 🚀 SOCKET.IO REAL-TIME BROADCAST - XFDF VERSION
-              // console.log('🔥 Broadcasting XFDF highlight via Socket.io');
 
-              // annotationManager.exportAnnotations({ annotList: [annotation], widgets: false })
-              //   .then((xfdf: string) => {
-              //     const highlightData = {
-              //       documentId,
-              //       xfdf,
-              //       pageNumber: annotation.PageNumber,
-              //       user: userName
-              //     };
-                  
-              //     broadcastHighlight(highlightData);
+                // 🚀 SOCKET.IO REAL-TIME BROADCAST - XFDF VERSION
+                // console.log('🔥 Broadcasting XFDF highlight via Socket.io');
 
-              //     // Keep your existing callback
-              //     if (onHighlightAdd) {
-              //       onHighlightAdd({
-              //         id: annotation.Id,
-              //         text: highlightedText,
-              //         page: annotation.PageNumber,
-              //         position: {
-              //           x: annotation.X || 0,
-              //           y: annotation.Y || 0
-              //         },
-              //         author: userName,
-              //         authorId: userId,
-              //         timestamp: new Date().toISOString()
-              //       })
-              //     }
-              //   });  // ← YES, this closing }); is needed!
+                // annotationManager.exportAnnotations({ annotList: [annotation], widgets: false })
+                //   .then((xfdf: string) => {
+                //     const highlightData = {
+                //       documentId,
+                //       xfdf,
+                //       pageNumber: annotation.PageNumber,
+                //       user: userName
+                //     };
+
+                //     broadcastHighlight(highlightData);
+
+                //     // Keep your existing callback
+                //     if (onHighlightAdd) {
+                //       onHighlightAdd({
+                //         id: annotation.Id,
+                //         text: highlightedText,
+                //         page: annotation.PageNumber,
+                //         position: {
+                //           x: annotation.X || 0,
+                //           y: annotation.Y || 0
+                //         },
+                //         author: userName,
+                //         authorId: userId,
+                //         timestamp: new Date().toISOString()
+                //       })
+                //     }
+                //   });  // ← YES, this closing }); is needed!
 
 
-// 🚀 SOCKET.IO REAL-TIME BROADCAST - WITH REASON SELECTOR
-console.log('🎨 Highlight created, showing reason selector');
+                // 🚀 SOCKET.IO REAL-TIME BROADCAST - WITH REASON SELECTOR
+                console.log('🎨 Highlight created, showing reason selector');
 
-setPendingHighlight({
-  annotation,
-  highlightedText,
-  documentId,
-  pageNumber: annotation.PageNumber
-});
-setShowReasonSelector(true);
+                setPendingHighlight({
+                  annotation,
+                  highlightedText,
+                  documentId,
+                  pageNumber: annotation.PageNumber
+                });
+                setShowReasonSelector(true);
 
 
 
@@ -2656,15 +3134,15 @@ setShowReasonSelector(true);
                   setSelectionPosition({ x: annotation.X, y: annotation.Y });
                   setShowTextSelectionPopup(true);
                   console.log('🎯 Popup shown for highlighted text:', highlightedText);
-                  
+
                   // Track highlighting behavior for contextual AI
                   const sectionId = `page-${annotation.PageNumber}-section`;
-                  const location = { 
-                    page: annotation.PageNumber, 
-                    x: annotation.X || 0, 
-                    y: annotation.Y || 0 
+                  const location = {
+                    page: annotation.PageNumber,
+                    x: annotation.X || 0,
+                    y: annotation.Y || 0
                   };
-                  
+
                   console.log('🤖 [ContextualAI] Tracking highlight:', { sectionId, text: highlightedText, location });
                   //contextualAI.trackHighlight(sectionId, highlightedText, location);
                   // Add state at the top of your component (around line 178):
@@ -2679,33 +3157,33 @@ setShowReasonSelector(true);
                     setConfusionPopupShown(prev => new Set(prev).add(sectionId));
                   }
 
-                // Only show confusion popup if:
-                // 1. More than 3 highlights in this section
-                // 2. Haven't shown popup for this section yet
-                // 3. User created this highlight (not incoming from others)
-                if (newCount >= 3 && 
-                    !confusionPopupShown.has(sectionId) && 
+                  // Only show confusion popup if:
+                  // 1. More than 3 highlights in this section
+                  // 2. Haven't shown popup for this section yet
+                  // 3. User created this highlight (not incoming from others)
+                  if (newCount >= 3 &&
+                    !confusionPopupShown.has(sectionId) &&
                     annotation.Author === userName) {
-                  
-                  console.log(`🤔 Confusion detected in ${sectionId}: ${newCount} highlights`);
-                  
-                  // Show the popup (you'll need to create this state)
-                  setShowConfusionPopup(true);
-                  setConfusionSection(sectionId);
-                  
-                  // Mark this section as already shown
-                  setConfusionPopupShown(prev => new Set(prev).add(sectionId));
-                  
-                  // Also call original contextual AI if needed
-                  contextualAI.trackHighlight(sectionId, highlightedText, location);
+
+                    console.log(`🤔 Confusion detected in ${sectionId}: ${newCount} highlights`);
+
+                    // Show the popup (you'll need to create this state)
+                    setShowConfusionPopup(true);
+                    setConfusionSection(sectionId);
+
+                    // Mark this section as already shown
+                    setConfusionPopupShown(prev => new Set(prev).add(sectionId));
+
+                    // Also call original contextual AI if needed
+                    contextualAI.trackHighlight(sectionId, highlightedText, location);
+                  }
                 }
-                }
-                
+
               } catch (error) {
                 console.log('Error getting highlighted text:', error);
                 highlightedText = 'Highlighted content';
               }
-              
+
               // Extract highlight data for collaboration
               const highlightData = {
                 pageNumber: annotation.PageNumber,
@@ -2717,12 +3195,12 @@ setShowReasonSelector(true);
                 text: highlightedText,
                 annotationId: annotation.Id
               };
-              
+
               // Notify parent component
               if (onHighlightAdd) {
                 onHighlightAdd(highlightData);
               }
-              
+
               // Also notify parent component for contextual AI tracking
               if (onAnnotationAdd) {
                 const aiAnnotation = {
@@ -2741,7 +3219,7 @@ setShowReasonSelector(true);
                 onAnnotationAdd(aiAnnotation);
                 console.log('🎯 [ApryseWebViewer] Highlight annotation sent to parent:', aiAnnotation);
               }
-              
+
               // Manual highlight tracking for demo
               console.log('🎨 [ApryseWebViewer] Highlight created successfully:', {
                 id: annotation.Id,
@@ -2749,7 +3227,7 @@ setShowReasonSelector(true);
                 page: annotation.PageNumber,
                 position: { x: annotation.X, y: annotation.Y }
               });
-              
+
               // Update activity to editing
               updateActivity('editing');
             } else {
@@ -2760,44 +3238,44 @@ setShowReasonSelector(true);
             }
           }
         });
-        
+
         documentViewer.addEventListener('documentLoaded', () => {
           console.log('🎉 DOCUMENT LOADED EVENT FIRED!')
           console.log('📊 Total pages:', documentViewer.getPageCount())
-          
+
           documentViewer.setFitMode(documentViewer.FitMode.FitWidth);
           setIsLoading(false);
           setTotalPages(documentViewer.getPageCount());
-          
+
           // ✅ ADD: Extract PDF sections/headings
           setTimeout(async () => {
             try {
               console.log('⏰ TIMEOUT TRIGGERED - About to extract headings')
               console.log('📄 Document viewer available?', !!documentViewer)
               console.log('📝 Annotation manager available?', !!annotationManager)
-              
+
               setExtractingHeadings(true)
               console.log('🔍 Starting heading extraction...')
-              
+
               const extractor = new PDFHeadingExtractor(
                 documentViewer,
                 annotationManager
               )
-              
+
               // Extract common research paper sections
               const sections = await extractor.extractCommonSections()
-              
+
               // If no sections found, create test sections based on your actual PDF
               const finalSections = sections.length > 0 ? sections : [
                 {
-                  heading: { 
-                    id: 'marvista', 
-                    text: 'What Marvista (by Salesforce Research) is:', 
-                    level: 1, 
-                    page: 1, 
-                    boundingBox: { x1: 0, y1: 0, x2: 0, y2: 0 }, 
-                    fontSize: 16, 
-                    fontWeight: 'bold' 
+                  heading: {
+                    id: 'marvista',
+                    text: 'What Marvista (by Salesforce Research) is:',
+                    level: 1,
+                    page: 1,
+                    boundingBox: { x1: 0, y1: 0, x2: 0, y2: 0 },
+                    fontSize: 16,
+                    fontWeight: 'bold'
                   },
                   startPage: 1,
                   endPage: 1,
@@ -2805,14 +3283,14 @@ setShowReasonSelector(true);
                   subsections: []
                 },
                 {
-                  heading: { 
-                    id: 'care', 
-                    text: 'CARE (Collaborative AI-Assisted Reading Environment):', 
-                    level: 1, 
-                    page: 1, 
-                    boundingBox: { x1: 0, y1: 0, x2: 0, y2: 0 }, 
-                    fontSize: 16, 
-                    fontWeight: 'bold' 
+                  heading: {
+                    id: 'care',
+                    text: 'CARE (Collaborative AI-Assisted Reading Environment):',
+                    level: 1,
+                    page: 1,
+                    boundingBox: { x1: 0, y1: 0, x2: 0, y2: 0 },
+                    fontSize: 16,
+                    fontWeight: 'bold'
                   },
                   startPage: 1,
                   endPage: 2,
@@ -2820,14 +3298,14 @@ setShowReasonSelector(true);
                   subsections: []
                 },
                 {
-                  heading: { 
-                    id: 'paperplain', 
-                    text: 'Paper Plain CHI 23:', 
-                    level: 1, 
-                    page: 2, 
-                    boundingBox: { x1: 0, y1: 0, x2: 0, y2: 0 }, 
-                    fontSize: 16, 
-                    fontWeight: 'bold' 
+                  heading: {
+                    id: 'paperplain',
+                    text: 'Paper Plain CHI 23:',
+                    level: 1,
+                    page: 2,
+                    boundingBox: { x1: 0, y1: 0, x2: 0, y2: 0 },
+                    fontSize: 16,
+                    fontWeight: 'bold'
                   },
                   startPage: 2,
                   endPage: 2,
@@ -2835,10 +3313,10 @@ setShowReasonSelector(true);
                   subsections: []
                 }
               ]
-              
+
               setPdfSections(finalSections)
               console.log('📚 Final sections:', finalSections)
-              
+
               if (sections.length > 0) {
                 toast.success(`Found ${sections.length} sections in the paper!`)
               }
@@ -2849,23 +3327,23 @@ setShowReasonSelector(true);
               setExtractingHeadings(false)
             }
           }, 2000)
-          
+
           // Extract document metadata after the document loads
           setTimeout(() => {
             extractDocumentMetadata()
           }, 2000) // Wait 2 seconds for document to fully load
-          
+
           // Simple text selection capture system
           console.log('Setting up text selection capture...');
-          
+
           // Function to capture and store selected text
           // Function to capture and store selected text
           const captureSelectedText = (text: string, pageNum?: number) => {
             if (!text || !text.trim()) return;
-            
+
             const trimmedText = text.trim();
             console.log('🔍 CAPTURED TEXT:', trimmedText);
-            
+
             // Store the text with timestamp
             const selection = {
               text: trimmedText,
@@ -2873,32 +3351,32 @@ setShowReasonSelector(true);
               pageNumber: pageNum || currentPage,
               position: { x: 0, y: 0 }
             };
-            
+
             // Add to captured selections array - DIRECTLY UPDATE STATE
             setCapturedSelections(prev => {
               const newSelections = [...prev, selection];
               console.log('✅ ADDED TO SELECTIONS:', newSelections.length);
               return newSelections;
             });
-            
+
             setLastSelectedText(trimmedText);
             console.log('✅ Text captured and stored successfully!');
           };
-            
-            // Track mouse position for popup positioning
-            const handleMouseMove = (event: MouseEvent) => {
-              setMousePosition({ x: event.clientX, y: event.clientY });
-            };
-            document.addEventListener('mousemove', handleMouseMove);
+
+          // Track mouse position for popup positioning
+          const handleMouseMove = (event: MouseEvent) => {
+            setMousePosition({ x: event.clientX, y: event.clientY });
+          };
+          document.addEventListener('mousemove', handleMouseMove);
 
           // Method 1: Apryse text selection event
           try {
             documentViewer.addEventListener('textSelectionChanged', (quads: any, text: string, pageNumber: number) => {
               console.log('🎯 TEXT SELECTED:', text);
-              
+
               if (text && text.trim()) {
                 const trimmedText = text.trim();
-                
+
                 // Create selection object
                 const selection = {
                   text: trimmedText,
@@ -2906,7 +3384,7 @@ setShowReasonSelector(true);
                   pageNumber: pageNumber || currentPage,
                   position: { x: 0, y: 0 }
                 };
-                
+
                 // Save to state - ONLY ONCE
                 setCapturedSelections(prev => {
                   const updated = [...prev, selection];
@@ -2914,12 +3392,12 @@ setShowReasonSelector(true);
                   console.log('✅ Latest:', selection.text.substring(0, 50));
                   return updated;
                 });
-                
+
                 // Show popup
                 setSelectedText(trimmedText);
                 setSelectionPosition({ x: mousePosition.x, y: mousePosition.y });
                 setShowTextSelectionPopup(true);
-                
+
               } else {
                 console.log('❌ No text in selection');
               }
@@ -2935,7 +3413,7 @@ setShowReasonSelector(true);
             if (selection && selection.toString().trim()) {
               const selectedText = selection.toString().trim();
               console.log('🎯 Fallback selection:', selectedText);
-              
+
               setSelectedText(selectedText);
               setSelectionPosition({ x: mousePosition.x, y: mousePosition.y });
               setShowTextSelectionPopup(true);
@@ -2945,24 +3423,24 @@ setShowReasonSelector(true);
           // Add fallback selection listener
           document.addEventListener('mouseup', handleDocumentSelection);
           console.log('✅ Document selection fallback listener added');
-          
+
           // Add page change tracking for contextual AI
           try {
             let pageStartTime = Date.now();
             let currentPageNumber = 1;
-            
+
             documentViewer.addEventListener('pageNumberUpdated', (currentPage: number, previousPage: number) => {
               console.log('📄 Page changed from', previousPage, 'to', currentPage);
-              
+
               // Track time spent on previous page
               if (previousPage && previousPage !== currentPage) {
                 const timeSpent = Date.now() - pageStartTime;
                 const sectionId = `page-${previousPage}-section`;
                 const location = { page: previousPage, x: 0, y: 0 };
-                
+
                 console.log('⏰ [ContextualAI] Tracking time spent on page', previousPage, ':', timeSpent, 'ms');
                 contextualAI.trackTimeSpent(sectionId, timeSpent, location);
-                
+
                 // Track revisit if returning to a previously visited page
                 if (previousPage < currentPage) {
                   console.log('🔄 [ContextualAI] Tracking revisit to page', currentPage);
@@ -2970,11 +3448,11 @@ setShowReasonSelector(true);
                   contextualAI.trackRevisit(revisitSectionId, { page: currentPage, x: 0, y: 0 });
                 }
               }
-              
+
               // Reset timer for new page
               pageStartTime = Date.now();
               currentPageNumber = currentPage;
-              
+
               if (onPageChange) {
                 onPageChange(currentPage);
               }
@@ -2993,7 +3471,7 @@ setShowReasonSelector(true);
           } catch (error) {
             console.log('❌ Error adding page change listener:', error);
           }
-          
+
           // Add scroll tracking for contextual AI
           try {
             const viewerElement = documentViewer.getViewerElement();
@@ -3011,23 +3489,23 @@ setShowReasonSelector(true);
           } catch (error) {
             console.log('❌ Error adding scroll listener:', error);
           }
-          
+
           // Method 2: Global selection capture
           const captureGlobalSelection = () => {
             setTimeout(() => {
               const selection = window.getSelection();
               const selectedText = selection?.toString();
-              
+
               if (selectedText && selectedText.trim()) {
                 console.log('🌐 Global selection captured:', selectedText);
-                
+
                 // Check if it's within the PDF viewer
                 const viewerElement = documentViewer.getViewerElement();
                 if (viewerElement && selection && selection.rangeCount > 0) {
                   const range = selection.getRangeAt(0);
                   const container = range.commonAncestorContainer;
                   const element = container.nodeType === Node.TEXT_NODE ? container.parentElement : container;
-                  
+
                   if (viewerElement.contains(element)) {
                     console.log('✅ Selection is within PDF viewer');
                     captureSelectedText(selectedText);
@@ -3040,38 +3518,38 @@ setShowReasonSelector(true);
               }
             }, 200); // Longer delay to ensure selection is complete
           };
-          
+
           // Add multiple event listeners for better coverage
           document.addEventListener('mouseup', captureGlobalSelection);
           document.addEventListener('selectionchange', captureGlobalSelection);
-          
+
           // Add listener to viewer element if available
           const viewerElement = documentViewer.getViewerElement();
           if (viewerElement) {
             viewerElement.addEventListener('mouseup', captureGlobalSelection);
             console.log('✅ Viewer element listeners added');
           }
-          
-          console.log('✅ Text selection capture system ready!');
-          
 
-          
+          console.log('✅ Text selection capture system ready!');
+
+
+
           // Add click listener for existing highlights
           annotationManager.addEventListener('annotationSelected', (annotations: any[]) => {
             if (annotations && annotations.length > 0) {
               const annotation = annotations[0];
               if (annotation.Subject === 'Highlight' || annotation.Subject === 'highlight') {
-                console.log('🖱️ Highlight clicked:', annotation);   
-                  // ✅ ADD THIS DEBUG CODE HERE:
-                  console.log('🔍 WORKING highlight annotation details:');
-                  console.log('- Type:', annotation.constructor.name);
-                  console.log('- Subject:', annotation.Subject);
-                  console.log('- StrokeColor:', annotation.StrokeColor);
-                  console.log('- FillColor:', annotation.FillColor);
-                  console.log('- Full object:', annotation);
-                  
-                 
-                
+                console.log('🖱️ Highlight clicked:', annotation);
+                // ✅ ADD THIS DEBUG CODE HERE:
+                console.log('🔍 WORKING highlight annotation details:');
+                console.log('- Type:', annotation.constructor.name);
+                console.log('- Subject:', annotation.Subject);
+                console.log('- StrokeColor:', annotation.StrokeColor);
+                console.log('- FillColor:', annotation.FillColor);
+                console.log('- Full object:', annotation);
+
+
+
                 // Get the text from the clicked highlight using Apryse's official method
                 let highlightedText = '';
                 try {
@@ -3079,43 +3557,43 @@ setShowReasonSelector(true);
                   if (annotation.getQuads && typeof annotation.getQuads === 'function') {
                     const quads = annotation.getQuads();
                     console.log('🖱️ Clicked annotation quads:', quads);
-                    
+
                     if (quads && quads.length > 0) {
                       // Extract text for each quad and combine
                       const textsUnderHighlight = quads.map((quad: any) => {
-                        const selectionStartPoint = { 
-                          x: quad.x1, 
-                          y: quad.y1, 
-                          pageNumber: annotation.PageNumber 
+                        const selectionStartPoint = {
+                          x: quad.x1,
+                          y: quad.y1,
+                          pageNumber: annotation.PageNumber
                         };
-                        const selectionEndPoint = { 
-                          x: quad.x3, 
-                          y: quad.y3, 
-                          pageNumber: annotation.PageNumber 
+                        const selectionEndPoint = {
+                          x: quad.x3,
+                          y: quad.y3,
+                          pageNumber: annotation.PageNumber
                         };
-                        
+
                         // Select the text within the quad
                         documentViewer.select(selectionStartPoint, selectionEndPoint);
-                        
+
                         // Retrieve the selected text
                         const selectedText = documentViewer.getSelectedText();
-                        
+
                         // Clear the selection to avoid visual artifacts
                         documentViewer.clearSelection();
-                        
+
                         return selectedText;
                       });
-                      
+
                       // Combine all texts
                       highlightedText = textsUnderHighlight.filter((text: string) => text && text.trim()).join(' ');
                     }
                   }
-                  
+
                   // Fallback: try to get from annotation contents
                   if (!highlightedText && annotation.Contents) {
                     highlightedText = annotation.Contents;
                   }
-                  
+
                   // if (highlightedText.trim()) {
                   //   console.log('📝 Clicked highlight text:', highlightedText);
                   //   setSelectedText(highlightedText);
@@ -3126,10 +3604,10 @@ setShowReasonSelector(true);
 
                   if (highlightedText.trim()) {
                     console.log('📝 Clicked highlight text:', highlightedText);
-                    
+
                     // 🔄 SOCKET.IO HIGHLIGHT CLICK BROADCAST
                     console.log('🔄 Broadcasting highlight CLICK via Socket.io');
-                    
+
                     const clickData = {
                       documentId,
                       action: 'click',
@@ -3143,9 +3621,9 @@ setShowReasonSelector(true);
                       user: userName,
                       timestamp: new Date().toISOString()
                     }
-                    
+
                     broadcastHighlight(clickData);
-                    
+
                     setSelectedText(highlightedText);
                     setSelectionPosition({ x: annotation.X, y: annotation.Y });
                     setShowTextSelectionPopup(true);
@@ -3156,7 +3634,7 @@ setShowReasonSelector(true);
               }
             }
           });
-          
+
           // Load collaboration highlights
           if (collaborationHighlights.length > 0) {
             collaborationHighlights.forEach(highlight => {
@@ -3171,7 +3649,7 @@ setShowReasonSelector(true);
                 highlightAnnotation.Color = highlight.color;
                 highlightAnnotation.Contents = highlight.text;
                 highlightAnnotation.Author = highlight.userName;
-                
+
                 annotationManager.addAnnotation(highlightAnnotation);
                 annotationManager.redrawAnnotation(highlightAnnotation);
               } catch (error) {
@@ -3181,30 +3659,30 @@ setShowReasonSelector(true);
           }
           // Load saved annotations (comments/highlights)
           loadAnnotations(annotationManager);
-          
+
           // Define the text extraction handler function AFTER WebViewer is initialized
           const handleTextExtractionRequest = async (event: CustomEvent) => {
             console.log('[WEBVIEWER] Text extraction request received:', event.detail)
             console.log('[WEBVIEWER] webViewerInstance exists:', !!instance)
             console.log('[WEBVIEWER] webViewerInstance.Core exists:', !!(instance && instance.Core))
-            
+
             if (instance && instance.Core) {
               console.log('[WEBVIEWER] ✅ WebViewer is initialized, attempting text extraction...')
               try {
                 const { documentViewer } = instance.Core
                 console.log('[WEBVIEWER] documentViewer:', documentViewer)
-                
+
                 const doc = documentViewer.getDocument()
                 console.log('[WEBVIEWER] Document object:', doc)
-                
+
                 if (doc) {
                   const pageCount = documentViewer.getPageCount()
                   console.log(`[WEBVIEWER] Total pages in document: ${pageCount}`)
-                  
+
                   let fullText = ''
                   const pagesToExtract = Math.min(pageCount, 10)
                   console.log(`[WEBVIEWER] Extracting text from ${pagesToExtract} pages...`)
-                  
+
                   for (let i = 1; i <= pagesToExtract; i++) {
                     try {
                       console.log(`[WEBVIEWER] Extracting page ${i}...`)
@@ -3221,15 +3699,15 @@ setShowReasonSelector(true);
                       fullText += `\n--- PAGE ${i} ---\n[ERROR: Could not extract text]\n`
                     }
                   }
-                  
+
                   console.log('[WEBVIEWER] Total extracted text length:', fullText.length)
-                  
+
                   // Dispatch event with extracted text
                   const responseEvent = new CustomEvent('text-extraction-response', {
-                    detail: { 
+                    detail: {
                       requestId: event.detail.requestId,
                       text: fullText,
-                      success: true 
+                      success: true
                     }
                   })
                   window.dispatchEvent(responseEvent)
@@ -3237,7 +3715,7 @@ setShowReasonSelector(true);
                 } else {
                   console.error('[WEBVIEWER] ❌ No document found')
                   const responseEvent = new CustomEvent('text-extraction-response', {
-                    detail: { 
+                    detail: {
                       requestId: event.detail.requestId,
                       text: '',
                       success: false,
@@ -3249,7 +3727,7 @@ setShowReasonSelector(true);
               } catch (error) {
                 console.error('[WEBVIEWER] ❌ Text extraction error:', error)
                 const responseEvent = new CustomEvent('text-extraction-response', {
-                  detail: { 
+                  detail: {
                     requestId: event.detail.requestId,
                     text: '',
                     success: false,
@@ -3261,7 +3739,7 @@ setShowReasonSelector(true);
             } else {
               console.error('[WEBVIEWER] ❌ WebViewer not initialized')
               const responseEvent = new CustomEvent('text-extraction-response', {
-                detail: { 
+                detail: {
                   requestId: event.detail.requestId,
                   text: '',
                   success: false,
@@ -3271,12 +3749,12 @@ setShowReasonSelector(true);
               window.dispatchEvent(responseEvent)
             }
           }
-          
+
           // Add event listener for text extraction requests AFTER WebViewer is fully initialized
           window.addEventListener('extract-text-request', handleTextExtractionRequest as unknown as EventListener)
           console.log('[WEBVIEWER] ✅ Event listener added after initialization')
         });
-        
+
         documentViewer.addEventListener('documentLoadFailed', (error: any) => {
           setError('Failed to load PDF document.');
           setIsLoading(false);
@@ -3290,80 +3768,80 @@ setShowReasonSelector(true);
 
 
   // Real-time annotation sync - Listen for other users' highlights
-useEffect(() => {
-  if (!webViewerInstance || !documentId || !userId) return
+  useEffect(() => {
+    if (!webViewerInstance || !documentId || !userId) return
 
-  console.log('🔄 Starting real-time annotation sync...')
+    console.log('🔄 Starting real-time annotation sync...')
 
-  const syncAnnotations = async () => {
-    try {
-      const response = await fetch('/api/socket', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          action: 'get-annotations',
-          documentId,
-          userId
-        })
-      })
-      
-      if (response.ok) {
-        const data = await response.json()
-        if (data.success && data.annotations && data.annotations.length > 0) {
-          const { annotationManager, Annotations } = webViewerInstance.Core
-          
-          data.annotations.forEach((annot: any) => {
-            // Skip your own annotations
-            if (annot.userId === userId) return
-            
-            // Check if annotation already exists
-            const existing = annotationManager.getAnnotationById(annot.id)
-            if (!existing) {
-              // Add other users' annotations
-              const highlight = new Annotations.HighlightAnnotation()
-              highlight.Id = annot.id
-              highlight.PageNumber = annot.pageNumber
-              highlight.X = annot.x
-              highlight.Y = annot.y
-              highlight.Width = annot.width
-              highlight.Height = annot.height
-              
-              // Parse color
-              const colorMatch = annot.color?.match(/rgb\((\d+),\s*(\d+),\s*(\d+)\)/)
-              if (colorMatch) {
-                highlight.StrokeColor = new Annotations.Color(
-                  parseInt(colorMatch[1]),
-                  parseInt(colorMatch[2]),
-                  parseInt(colorMatch[3])
-                )
-              } else {
-                highlight.StrokeColor = new Annotations.Color(255, 255, 0) // Yellow default
-              }
-              
-              highlight.Author = annot.userName
-              highlight.Contents = annot.text
-              
-              annotationManager.addAnnotation(highlight, { imported: true })
-              annotationManager.redrawAnnotation(highlight)
-              
-              console.log('✅ Added collaborator annotation from', annot.userName)
-            }
+    const syncAnnotations = async () => {
+      try {
+        const response = await fetch('/api/socket', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            action: 'get-annotations',
+            documentId,
+            userId
           })
+        })
+
+        if (response.ok) {
+          const data = await response.json()
+          if (data.success && data.annotations && data.annotations.length > 0) {
+            const { annotationManager, Annotations } = webViewerInstance.Core
+
+            data.annotations.forEach((annot: any) => {
+              // Skip your own annotations
+              if (annot.userId === userId) return
+
+              // Check if annotation already exists
+              const existing = annotationManager.getAnnotationById(annot.id)
+              if (!existing) {
+                // Add other users' annotations
+                const highlight = new Annotations.HighlightAnnotation()
+                highlight.Id = annot.id
+                highlight.PageNumber = annot.pageNumber
+                highlight.X = annot.x
+                highlight.Y = annot.y
+                highlight.Width = annot.width
+                highlight.Height = annot.height
+
+                // Parse color
+                const colorMatch = annot.color?.match(/rgb\((\d+),\s*(\d+),\s*(\d+)\)/)
+                if (colorMatch) {
+                  highlight.StrokeColor = new Annotations.Color(
+                    parseInt(colorMatch[1]),
+                    parseInt(colorMatch[2]),
+                    parseInt(colorMatch[3])
+                  )
+                } else {
+                  highlight.StrokeColor = new Annotations.Color(255, 255, 0) // Yellow default
+                }
+
+                highlight.Author = annot.userName
+                highlight.Contents = annot.text
+
+                annotationManager.addAnnotation(highlight, { imported: true })
+                annotationManager.redrawAnnotation(highlight)
+
+                console.log('✅ Added collaborator annotation from', annot.userName)
+              }
+            })
+          }
         }
+      } catch (error) {
+        console.error('Failed to sync annotations:', error)
       }
-    } catch (error) {
-      console.error('Failed to sync annotations:', error)
     }
-  }
 
-  // Initial sync
-  syncAnnotations()
-  
-  // Poll every 3 seconds
-  const interval = setInterval(syncAnnotations, 3000)
+    // Initial sync
+    syncAnnotations()
 
-  return () => clearInterval(interval)
-}, [webViewerInstance, documentId, userId])
+    // Poll every 3 seconds
+    const interval = setInterval(syncAnnotations, 3000)
+
+    return () => clearInterval(interval)
+  }, [webViewerInstance, documentId, userId])
 
   // Add global keyboard listener for deleting highlights
   useEffect(() => {
@@ -3385,7 +3863,7 @@ useEffect(() => {
     };
 
     document.addEventListener('keydown', handleKeyDown);
-    
+
     return () => {
       document.removeEventListener('keydown', handleKeyDown);
     };
@@ -3449,46 +3927,46 @@ useEffect(() => {
 
 
 
-// === Extract PDF headings when the document finishes loading ===
-useEffect(() => {
-  if (!webViewerInstance?.Core) return;
-  const { documentViewer, annotationManager } = webViewerInstance.Core;
+  // === Extract PDF headings when the document finishes loading ===
+  useEffect(() => {
+    if (!webViewerInstance?.Core) return;
+    const { documentViewer, annotationManager } = webViewerInstance.Core;
 
-  const onDocLoaded = async () => {
-    setExtractingHeadings(true);
-    try {
-      // The extractor constructor takes (documentViewer, annotationManager)
-      const extractor = new PDFHeadingExtractor(documentViewer, annotationManager);
-      // Try the smarter path first
-      const sections = await extractor.extractCommonSections();
-      console.log('✅ Extracted sections:', sections);
-      setPdfSections(sections || []);
-    } catch (err) {
-      console.error('❌ Error extracting headings:', err);
-      setPdfSections([]);
-    } finally {
-      setExtractingHeadings(false);
+    const onDocLoaded = async () => {
+      setExtractingHeadings(true);
+      try {
+        // The extractor constructor takes (documentViewer, annotationManager)
+        const extractor = new PDFHeadingExtractor(documentViewer, annotationManager);
+        // Try the smarter path first
+        const sections = await extractor.extractCommonSections();
+        console.log('✅ Extracted sections:', sections);
+        setPdfSections(sections || []);
+      } catch (err) {
+        console.error('❌ Error extracting headings:', err);
+        setPdfSections([]);
+      } finally {
+        setExtractingHeadings(false);
+      }
+    };
+
+    documentViewer.addEventListener('documentLoaded', onDocLoaded);
+    return () => {
+      documentViewer.removeEventListener('documentLoaded', onDocLoaded);
+    };
+  }, [webViewerInstance]);
+
+
+
+
+
+
+
+  // Highlight sections when assignments change
+  useEffect(() => {
+    if (sectionAssignments.length > 0) {
+      highlightAssignedSections()
     }
-  };
-
-  documentViewer.addEventListener('documentLoaded', onDocLoaded);
-  return () => {
-    documentViewer.removeEventListener('documentLoaded', onDocLoaded);
-  };
-}, [webViewerInstance]);
-
-
-
-
-
-
-
-// Highlight sections when assignments change
-useEffect(() => {
-  if (sectionAssignments.length > 0) {
-    highlightAssignedSections()
-  }
-}, [sectionAssignments, highlightAssignedSections])
+  }, [sectionAssignments, highlightAssignedSections])
 
 
 
@@ -3527,7 +4005,7 @@ useEffect(() => {
     try {
       const annotations = annotationManager.getAnnotationsList()
       const xfdfString = await annotationManager.exportAnnotations()
-      
+
       await fetch('/api/annotations', {
         method: 'POST',
         headers: {
@@ -3550,11 +4028,11 @@ useEffect(() => {
     console.log('Event type:', event.type)
     console.log('Event detail:', event.detail)
     console.log('Event target:', event.target)
-    
+
     try {
       // Try different ways to get selected text from WebViewer
       let selectedText = ''
-      
+
       // Method 1: Try event.detail.selectedText
       if (event.detail?.selectedText) {
         selectedText = event.detail.selectedText
@@ -3568,44 +4046,44 @@ useEffect(() => {
         const selection = window.getSelection()
         selectedText = selection?.toString() || ''
       }
-      
+
       console.log('Selected text from WebViewer:', selectedText)
-      
+
       if (selectedText && selectedText.trim()) {
         const trimmedText = selectedText.trim()
-        
+
         // Check if selection contains mathematical content
         if (isMathematicalContent(trimmedText)) {
           console.log('Mathematical content detected!')
-          
+
           setIsProcessing(true)
           setProcessingProgress(0)
-          
+
           try {
             // Step 1: Analyze selection
             setProcessingMessage('Analyzing mathematical content...')
             setProcessingProgress(20)
             await new Promise(resolve => setTimeout(resolve, 300))
-            
+
             // Step 2: Extract context
             setProcessingMessage('Extracting surrounding context...')
             setProcessingProgress(40)
             const context = extractContextAroundSelection(trimmedText)
             setEquationContext(context)
             await new Promise(resolve => setTimeout(resolve, 300))
-            
+
             // Step 3: Prepare for AI
             setProcessingMessage('Preparing content for AI analysis...')
             setProcessingProgress(60)
             setSelectedEquation(trimmedText)
             await new Promise(resolve => setTimeout(resolve, 300))
-            
+
             // Step 4: Show explainer
             setProcessingMessage('Opening math explainer...')
             setProcessingProgress(80)
             setShowMathExplainer(true)
             await new Promise(resolve => setTimeout(resolve, 200))
-            
+
             setProcessingProgress(100)
             setProcessingMessage('Ready!')
             setTimeout(() => {
@@ -3613,7 +4091,7 @@ useEffect(() => {
               setProcessingMessage('')
               setProcessingProgress(0)
             }, 1000)
-            
+
           } catch (error) {
             console.error('Error in math processing:', error)
             setProcessingMessage('Error processing selection')
@@ -3623,16 +4101,16 @@ useEffect(() => {
               setProcessingProgress(0)
             }, 2000)
           }
-          
+
           document.body.style.cursor = 'default'
-          
+
           // Remove WebViewer text selection listener
           if (webViewerInstance && webViewerInstance.Core) {
             const { documentViewer } = webViewerInstance.Core
             documentViewer.removeEventListener('textSelectionChanged', handleWebViewerTextSelection)
             console.log('WebViewer text selection listener removed')
           }
-          
+
           console.log('Mathematical content selected:', trimmedText)
         } else {
           console.log('Text is not mathematical')
@@ -3653,49 +4131,49 @@ useEffect(() => {
   const handleDocumentSelection = useCallback(async () => {
     // return
     console.log('Document selection fallback triggered')
-          
+
     try {
       // Get selected text from document
       const selection = window.getSelection()
       const selectedText = selection?.toString() || ''
-      
+
       console.log('Selected text from document:', selectedText)
-      
+
       if (selectedText && selectedText.trim()) {
         const trimmedText = selectedText.trim()
-        
+
         // Check if selection contains mathematical content
         if (isMathematicalContent(trimmedText)) {
           console.log('Mathematical content detected via fallback!')
-          
+
           setIsProcessing(true)
           setProcessingProgress(0)
-          
+
           try {
             // Step 1: Analyze selection
             setProcessingMessage('Analyzing mathematical content...')
             setProcessingProgress(20)
             await new Promise(resolve => setTimeout(resolve, 300))
-            
+
             // Step 2: Extract context
             setProcessingMessage('Extracting surrounding context...')
             setProcessingProgress(40)
             const context = extractContextAroundSelection(trimmedText)
             setEquationContext(context)
             await new Promise(resolve => setTimeout(resolve, 300))
-            
+
             // Step 3: Prepare for AI
             setProcessingMessage('Preparing content for AI analysis...')
             setProcessingProgress(60)
             setSelectedEquation(trimmedText)
             await new Promise(resolve => setTimeout(resolve, 300))
-            
+
             // Step 4: Show explainer
             setProcessingMessage('Opening math explainer...')
             setProcessingProgress(80)
             setShowMathExplainer(true)
             await new Promise(resolve => setTimeout(resolve, 200))
-            
+
             setProcessingProgress(100)
             setProcessingMessage('Ready!')
             setTimeout(() => {
@@ -3703,7 +4181,7 @@ useEffect(() => {
               setProcessingMessage('')
               setProcessingProgress(0)
             }, 1000)
-            
+
           } catch (error) {
             console.error('Error in math processing:', error)
             setProcessingMessage('Error processing selection')
@@ -3713,9 +4191,9 @@ useEffect(() => {
               setProcessingProgress(0)
             }, 2000)
           }
-          
+
           document.body.style.cursor = 'default'
-          
+
           // Remove all listeners
           if (webViewerInstance && webViewerInstance.Core) {
             const { documentViewer } = webViewerInstance.Core
@@ -3724,7 +4202,7 @@ useEffect(() => {
           }
           document.removeEventListener('mouseup', handleDocumentSelection)
           console.log('Document selection fallback listener removed')
-          
+
           console.log('Mathematical content selected via fallback:', trimmedText)
         } else {
           console.log('Text is not mathematical via fallback')
@@ -3741,17 +4219,17 @@ useEffect(() => {
     // Try to get surrounding text for context
     const selection = window.getSelection()
     if (!selection || selection.rangeCount === 0) return ''
-    
+
     const range = selection.getRangeAt(0)
     const container = range.commonAncestorContainer
-    
+
     if (container.nodeType === Node.TEXT_NODE) {
       const text = container.textContent || ''
       const start = Math.max(0, range.startOffset - 100)
       const end = Math.min(text.length, range.endOffset + 100)
       return text.substring(start, end).trim()
     }
-    
+
     return 'Mathematical content selected from document'
   }
   const addNewTab = (title: string, url: string) => {
@@ -3763,7 +4241,7 @@ useEffect(() => {
     }
     setOpenTabs(prev => prev.map(tab => ({ ...tab, active: false })).concat(newTab))
     setActiveTab(newTab.id)
-    
+
     // Load the new document in WebViewer
     if (webViewerInstance && webViewerInstance.loadDocument) {
       webViewerInstance.loadDocument(url)
@@ -3772,7 +4250,7 @@ useEffect(() => {
 
   const handleCopyCollaborationLink = async () => {
     const collabUrl = `${window.location.origin}/document/${documentId}?collab=true`
-    
+
     try {
       await navigator.clipboard.writeText(collabUrl)
       toast.success('Collaboration link copied! Share it to collaborate in real-time.')
@@ -3783,7 +4261,7 @@ useEffect(() => {
       toast.error('Failed to copy link')
     }
   }
-  
+
   const closeTab = (tabId: string) => {
     setOpenTabs(prev => {
       const filtered = prev.filter(tab => tab.id !== tabId)
@@ -3799,14 +4277,14 @@ useEffect(() => {
       return filtered
     })
   }
-  
+
   const switchTab = (tabId: string) => {
-    setOpenTabs(prev => prev.map(tab => ({ 
-      ...tab, 
-      active: tab.id === tabId 
+    setOpenTabs(prev => prev.map(tab => ({
+      ...tab,
+      active: tab.id === tabId
     })))
     setActiveTab(tabId)
-    
+
     // Load the selected tab's document
     const selectedTab = openTabs.find(tab => tab.id === tabId)
     if (selectedTab && webViewerInstance && webViewerInstance.loadDocument) {
@@ -3829,15 +4307,15 @@ useEffect(() => {
           <CardContent>
             <p className="text-gray-700 mb-4">{error}</p>
             <div className="flex gap-2">
-              <Button 
-                onClick={() => window.location.reload()} 
+              <Button
+                onClick={() => window.location.reload()}
                 size="sm"
                 className="bg-blue-600 hover:bg-blue-700 transition-colors"
               >
                 Retry Loading
               </Button>
-              <Button 
-                variant="outline" 
+              <Button
+                variant="outline"
                 size="sm"
                 onClick={handleDownloadOriginal}
                 className="hover:bg-blue-50 hover:border-blue-300 transition-colors"
@@ -3863,44 +4341,44 @@ useEffect(() => {
     // Radar
     const radarData = [
       { axis: 'Significance', score: advSummary.reviewerScores.significance },
-      { axis: 'Originality',  score: advSummary.reviewerScores.originality  },
-      { axis: 'Technical',    score: advSummary.reviewerScores.technical    },
-      { axis: 'Clarity',      score: advSummary.reviewerScores.clarity      },
+      { axis: 'Originality', score: advSummary.reviewerScores.originality },
+      { axis: 'Technical', score: advSummary.reviewerScores.technical },
+      { axis: 'Clarity', score: advSummary.reviewerScores.clarity },
     ];
 
     // Delta bars
     const deltas = advSummary.resultsMatrix
       .filter(r => typeof r.deltaPct === 'number' && isFinite(r.deltaPct as number))
       .map(r => ({ name: `${r.dataset} • ${r.metric}`, delta: Number((r.deltaPct as number).toFixed(1)) }))
-      .sort((a,b) => b.delta - a.delta)
+      .sort((a, b) => b.delta - a.delta)
       .slice(0, 8);
 
     // Heatmap model
     const metrics = Array.from(new Set(advSummary.resultsMatrix.map(r => r.metric)));
-    const rows: Record<string, Record<string, number|null>> = {};
+    const rows: Record<string, Record<string, number | null>> = {};
     advSummary.resultsMatrix.forEach(r => {
       rows[r.dataset] = rows[r.dataset] || {};
       rows[r.dataset][r.metric] = Number.isFinite(r.value) ? r.value : null;
     });
-    const heatData = Object.entries(rows).map(([dataset, m]) => ({ dataset, ...metrics.reduce((a, k) => ({...a, [k]: m[k] ?? null}), {}) }));
+    const heatData = Object.entries(rows).map(([dataset, m]) => ({ dataset, ...metrics.reduce((a, k) => ({ ...a, [k]: m[k] ?? null }), {}) }));
     const vals = advSummary.resultsMatrix.map(r => r.value).filter(v => Number.isFinite(v)) as number[];
     const vMin = vals.length ? Math.min(...vals) : 0;
     const vMax = vals.length ? Math.max(...vals) : 1;
-    const heatColor = (v: number|null) => {
+    const heatColor = (v: number | null) => {
       if (v == null) return '#f3f4f6';
       const t = Math.max(0, Math.min(1, (v - vMin) / (vMax - vMin + 1e-9)));
-      const r = Math.round(120 + 100*t), g = Math.round(140 - 60*t), b = Math.round(255 - 80*t);
+      const r = Math.round(120 + 100 * t), g = Math.round(140 - 60 * t), b = Math.round(255 - 80 * t);
       return `rgb(${r},${g},${b})`;
     };
 
     // Sparklines (first 4 groups)
-    const groups: Record<string, {idx:number; val:number; label:string}[]> = {};
+    const groups: Record<string, { idx: number; val: number; label: string }[]> = {};
     advSummary.resultsMatrix.forEach((r, i) => {
       const key = `${r.dataset} • ${r.metric}`;
       groups[key] = groups[key] || [];
-      groups[key].push({ idx: i+1, val: r.value, label: r.model });
+      groups[key].push({ idx: i + 1, val: r.value, label: r.model });
     });
-    const sparkList = Object.entries(groups).slice(0,4);
+    const sparkList = Object.entries(groups).slice(0, 4);
 
     return (
       <div className="space-y-4">
@@ -3913,7 +4391,7 @@ useEffect(() => {
                 <RadarChart data={radarData}>
                   <PolarGrid />
                   <PolarAngleAxis dataKey="axis" />
-                  <PolarRadiusAxis domain={[0,5]} />
+                  <PolarRadiusAxis domain={[0, 5]} />
                   <Radar dataKey="score" stroke="#6366f1" fill="#6366f1" fillOpacity={0.35} />
                 </RadarChart>
               </ResponsiveContainer>
@@ -3928,9 +4406,9 @@ useEffect(() => {
                   <CartesianGrid strokeDasharray="3 3" />
                   <XAxis dataKey="name" tick={{ fontSize: 11 }} interval={0} height={60} />
                   <YAxis unit="%" />
-                  <Tooltip formatter={(v:any)=>[`${v}%`,'Δ']} />
+                  <Tooltip formatter={(v: any) => [`${v}%`, 'Δ']} />
                   <Legend />
-                  <Bar dataKey="delta" name="Δ%" radius={[4,4,0,0]} />
+                  <Bar dataKey="delta" name="Δ%" radius={[4, 4, 0, 0]} />
                 </BarChart>
               </ResponsiveContainer>
             </CardContent>
@@ -3949,13 +4427,13 @@ useEffect(() => {
                 </tr>
               </thead>
               <tbody>
-                {heatData.map((row:any, i:number) => (
+                {heatData.map((row: any, i: number) => (
                   <tr key={i} className="border-t">
                     <td className="p-2 font-medium">{row.dataset}</td>
                     {metrics.map(m => (
                       <td key={m} className="p-1">
                         <div className="rounded-md h-7 w-20 flex items-center justify-center text-[11px] font-semibold"
-                             style={{ background: heatColor(row[m]), color: '#111827' }}>
+                          style={{ background: heatColor(row[m]), color: '#111827' }}>
                           {row[m] == null ? '—' : Number(row[m]).toFixed(3)}
                         </div>
                       </td>
@@ -3978,7 +4456,7 @@ useEffect(() => {
                     <CartesianGrid strokeDasharray="3 3" />
                     <XAxis dataKey="idx" hide />
                     <YAxis />
-                    <Tooltip labelFormatter={(i)=>pts[(i as number)-1]?.label} />
+                    <Tooltip labelFormatter={(i) => pts[(i as number) - 1]?.label} />
                     <Line type="monotone" dataKey="val" stroke="#0ea5e9" dot={false} />
                   </LineChart>
                 </ResponsiveContainer>
@@ -4023,7 +4501,7 @@ useEffect(() => {
               <span className="text-sm font-medium">{processingProgress}%</span>
             </div>
             <div className="mt-2 w-full bg-blue-700 rounded-full h-1">
-              <div 
+              <div
                 className="bg-white h-1 rounded-full transition-all duration-300 ease-out"
                 style={{ width: `${processingProgress}%` }}
               ></div>
@@ -4043,108 +4521,108 @@ useEffect(() => {
       {/* Academic Sidebar */}
 
       <div className="w-72 bg-gradient-to-b from-slate-50 to-white border-r border-slate-200/60 flex flex-col h-full shadow-sm">
-  {/* Document Info - Improved */}
-  <div className="p-4 border-b border-slate-200/60 bg-white/80 backdrop-blur-sm">
-  <div className="flex items-center gap-2 mb-2">
-  <div className="w-6 h-6 bg-gradient-to-br from-blue-500 to-indigo-600 rounded-lg flex items-center justify-center shadow-sm flex-shrink-0">
-    <FileText className="w-3 h-3 text-white" />
-  </div>
-  <div className="flex-1 min-w-0">
-    <h3 className="font-medium text-xs text-slate-800 truncate leading-tight">
-      {documentTitle || 'Academic Paper'}
-    </h3>
-    <p className="text-[10px] text-slate-500 truncate">
-      {documentAuthors ? documentAuthors.split(',')[0] : 'Document Analysis'}
-    </p>
-  </div>
-      {/* Replace PDF Button - Enhanced */}
-      <input
-        ref={fileInputRef}
-        type="file"
-        accept="application/pdf"
-        style={{ display: 'none' }}
-        onChange={async e => {
-          if (e.target.files && e.target.files[0]) {
-            const file = e.target.files[0];
-            let publicUrl = '';
-            try {
-              const formData = new FormData();
-              formData.append('file', file);
-              const uploadRes = await fetch('/api/upload', {
-                method: 'POST',
-                body: formData
-              });
-              if (uploadRes.ok) {
-                const uploadData = await uploadRes.json();
-                publicUrl = uploadData.document.url;
-              } else {
-                throw new Error('Upload failed');
-              }
-            } catch (err) {
-              console.error('Failed to upload PDF', err);
-              return;
-            }
-            const cacheBustedUrl = publicUrl + (publicUrl.includes('?') ? '&' : '?') + 't=' + Date.now();
-            
-            // Add as new tab instead of replacing current
-            addNewTab(file.name, cacheBustedUrl);
-            
-            // Update backend reference
-            lastLoadedBackendPdfUrlRef.current = publicUrl;
-            try {
-              await fetch('/api/socket', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                  action: 'pdf-replaced',
-                  documentId,
-                  pdfUrl: publicUrl,
-                  userId,
-                  userName
-                })
-              });
-            } catch (err) {
-              console.error('Failed to notify backend of PDF replacement', err);
-            }
-          }
-        }}
-      />
-      <Button
-        size="icon"
-        variant="ghost"
-        className="h-7 w-7 hover:bg-blue-50 rounded-xl border border-slate-200/60 transition-all duration-200 hover:shadow-sm flex-shrink-0"
-        onClick={() => fileInputRef.current && fileInputRef.current.click()}
-        title="Add Document"
-      >
-        <Plus className="w-3.5 h-3.5 text-blue-600" />
-      </Button>
-    </div>
-    
+        {/* Document Info - Improved */}
+        <div className="p-4 border-b border-slate-200/60 bg-white/80 backdrop-blur-sm">
+          <div className="flex items-center gap-2 mb-2">
+            <div className="w-6 h-6 bg-gradient-to-br from-blue-500 to-indigo-600 rounded-lg flex items-center justify-center shadow-sm flex-shrink-0">
+              <FileText className="w-3 h-3 text-white" />
+            </div>
+            <div className="flex-1 min-w-0">
+              <h3 className="font-medium text-xs text-slate-800 truncate leading-tight">
+                {documentTitle || 'Academic Paper'}
+              </h3>
+              <p className="text-[10px] text-slate-500 truncate">
+                {documentAuthors ? documentAuthors.split(',')[0] : 'Document Analysis'}
+              </p>
+            </div>
+            {/* Replace PDF Button - Enhanced */}
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept="application/pdf"
+              style={{ display: 'none' }}
+              onChange={async e => {
+                if (e.target.files && e.target.files[0]) {
+                  const file = e.target.files[0];
+                  let publicUrl = '';
+                  try {
+                    const formData = new FormData();
+                    formData.append('file', file);
+                    const uploadRes = await fetch('/api/upload', {
+                      method: 'POST',
+                      body: formData
+                    });
+                    if (uploadRes.ok) {
+                      const uploadData = await uploadRes.json();
+                      publicUrl = uploadData.document.url;
+                    } else {
+                      throw new Error('Upload failed');
+                    }
+                  } catch (err) {
+                    console.error('Failed to upload PDF', err);
+                    return;
+                  }
+                  const cacheBustedUrl = publicUrl + (publicUrl.includes('?') ? '&' : '?') + 't=' + Date.now();
+
+                  // Add as new tab instead of replacing current
+                  addNewTab(file.name, cacheBustedUrl);
+
+                  // Update backend reference
+                  lastLoadedBackendPdfUrlRef.current = publicUrl;
+                  try {
+                    await fetch('/api/socket', {
+                      method: 'POST',
+                      headers: { 'Content-Type': 'application/json' },
+                      body: JSON.stringify({
+                        action: 'pdf-replaced',
+                        documentId,
+                        pdfUrl: publicUrl,
+                        userId,
+                        userName
+                      })
+                    });
+                  } catch (err) {
+                    console.error('Failed to notify backend of PDF replacement', err);
+                  }
+                }
+              }}
+            />
+            <Button
+              size="icon"
+              variant="ghost"
+              className="h-7 w-7 hover:bg-blue-50 rounded-xl border border-slate-200/60 transition-all duration-200 hover:shadow-sm flex-shrink-0"
+              onClick={() => fileInputRef.current && fileInputRef.current.click()}
+              title="Add Document"
+            >
+              <Plus className="w-3.5 h-3.5 text-blue-600" />
+            </Button>
+          </div>
 
 
-    {/* Socket.io Connection Status */}
-    <div className="px-4 py-2 border-b border-slate-200/60">
-      <div className="flex items-center justify-between">
-        <div className="flex items-center space-x-2">
-          <div className={`w-2 h-2 rounded-full ${isConnected ? 'bg-green-500' : 'bg-red-500'}`} />
-          <span className="text-xs text-slate-600 font-medium">
-            {isConnected ? 'Live' : 'Offline'}
-          </span>
-        </div>
-        
-        {isConnected && (
-  <div className="flex items-center space-x-1">
-    <Users className="w-3 h-3 text-blue-600" />
-    <span className="text-xs text-slate-500">
-      {collaborators.filter(c => c.status === 'online').length} user{collaborators.filter(c => c.status === 'online').length !== 1 ? 's' : ''}
-    </span>
-  </div>
-)}
-      </div>
-    </div>
 
-{/* Socket.io Connection Status */}
-{/* <div className="px-4 py-2 border-b border-slate-200/60">
+          {/* Socket.io Connection Status */}
+          <div className="px-4 py-2 border-b border-slate-200/60">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center space-x-2">
+                <div className={`w-2 h-2 rounded-full ${isConnected ? 'bg-green-500' : 'bg-red-500'}`} />
+                <span className="text-xs text-slate-600 font-medium">
+                  {isConnected ? 'Live' : 'Offline'}
+                </span>
+              </div>
+
+              {isConnected && (
+                <div className="flex items-center space-x-1">
+                  <Users className="w-3 h-3 text-blue-600" />
+                  <span className="text-xs text-slate-500">
+                    {collaborators.filter(c => c.status === 'online').length} user{collaborators.filter(c => c.status === 'online').length !== 1 ? 's' : ''}
+                  </span>
+                </div>
+              )}
+            </div>
+          </div>
+
+          {/* Socket.io Connection Status */}
+          {/* <div className="px-4 py-2 border-b border-slate-200/60">
       <div className="flex items-center justify-between">
         <div className="flex items-center space-x-2">
           <div className={`w-2 h-2 rounded-full ${isConnected ? 'bg-green-500' : 'bg-red-500'}`} />
@@ -4171,745 +4649,745 @@ useEffect(() => {
     </div> */}
 
 
-    {/* Quick Actions - Glass Style */}
-    <div className="flex gap-2">
-      <div className="relative flex-1">
-        <Button 
-          variant="outline" 
-          size="sm" 
-          className="w-full h-8 text-xs px-2 download-button border-slate-200/60 hover:bg-blue-50/80 hover:border-blue-300/60 transition-all duration-200 backdrop-blur-sm bg-white/60 rounded-xl"
-          onClick={() => setShowDownloadMenu(!showDownloadMenu)}
-        >
-          <Download className="w-3 h-3 mr-1.5" />
-          <span className="font-medium">Download</span>
-          <ChevronDown className="w-3 h-3 ml-auto" />
-        </Button>
-        
-        {/* Enhanced Download Menu */}
-        {showDownloadMenu && (
-          <div className="absolute top-full left-0 mt-2 w-48 bg-white/95 backdrop-blur-md border border-slate-200/60 rounded-xl shadow-lg z-20 download-menu ring-1 ring-black/5">
-            <div className="py-2">
-              <button onClick={handleDownloadOriginal} className="w-full px-3 py-2 text-left text-xs hover:bg-blue-50/80 flex items-center gap-2 rounded-lg mx-2 transition-colors">
-                <FileDown className="w-3.5 h-3.5 text-blue-600" />
-                <div className="flex-1">
-                  <div className="font-medium text-slate-900">Original PDF</div>
-                  <div className="text-slate-500">Download source file</div>
+          {/* Quick Actions - Glass Style */}
+          <div className="flex gap-2">
+            <div className="relative flex-1">
+              <Button
+                variant="outline"
+                size="sm"
+                className="w-full h-8 text-xs px-2 download-button border-slate-200/60 hover:bg-blue-50/80 hover:border-blue-300/60 transition-all duration-200 backdrop-blur-sm bg-white/60 rounded-xl"
+                onClick={() => setShowDownloadMenu(!showDownloadMenu)}
+              >
+                <Download className="w-3 h-3 mr-1.5" />
+                <span className="font-medium">Download</span>
+                <ChevronDown className="w-3 h-3 ml-auto" />
+              </Button>
+
+              {/* Enhanced Download Menu */}
+              {showDownloadMenu && (
+                <div className="absolute top-full left-0 mt-2 w-48 bg-white/95 backdrop-blur-md border border-slate-200/60 rounded-xl shadow-lg z-20 download-menu ring-1 ring-black/5">
+                  <div className="py-2">
+                    <button onClick={handleDownloadOriginal} className="w-full px-3 py-2 text-left text-xs hover:bg-blue-50/80 flex items-center gap-2 rounded-lg mx-2 transition-colors">
+                      <FileDown className="w-3.5 h-3.5 text-blue-600" />
+                      <div className="flex-1">
+                        <div className="font-medium text-slate-900">Original PDF</div>
+                        <div className="text-slate-500">Download source file</div>
+                      </div>
+                    </button>
+                    <button onClick={handleDownloadWithAnnotations} className="w-full px-3 py-2 text-left text-xs hover:bg-blue-50/80 flex items-center gap-2 rounded-lg mx-2 transition-colors">
+                      <NotebookPen className="w-3.5 h-3.5 text-green-600" />
+                      <div className="flex-1">
+                        <div className="font-medium text-slate-900">With Annotations</div>
+                        <div className="text-slate-500">Include highlights & notes</div>
+                      </div>
+                    </button>
+                    <button onClick={handleDownloadAnnotations} className="w-full px-3 py-2 text-left text-xs hover:bg-blue-50/80 flex items-center gap-2 rounded-lg mx-2 transition-colors">
+                      <FileText className="w-3.5 h-3.5 text-purple-600" />
+                      <div className="flex-1">
+                        <div className="font-medium text-slate-900">Annotations Only</div>
+                        <div className="text-slate-500">Export XFDF file</div>
+                      </div>
+                    </button>
+                  </div>
                 </div>
-              </button>
-              <button onClick={handleDownloadWithAnnotations} className="w-full px-3 py-2 text-left text-xs hover:bg-blue-50/80 flex items-center gap-2 rounded-lg mx-2 transition-colors">
-                <NotebookPen className="w-3.5 h-3.5 text-green-600" />
-                <div className="flex-1">
-                  <div className="font-medium text-slate-900">With Annotations</div>
-                  <div className="text-slate-500">Include highlights & notes</div>
+              )}
+            </div>
+
+            <div className="relative flex-1">
+              <Button
+                variant="outline"
+                size="sm"
+                className="w-full h-8 text-xs px-2 share-button border-slate-200/60 hover:bg-green-50/80 hover:border-green-300/60 transition-all duration-200 backdrop-blur-sm bg-white/60 rounded-xl"
+                onClick={() => setShowShareMenu(!showShareMenu)}
+              >
+                <Share2 className="w-3 h-3 mr-1.5" />
+                <span className="font-medium">Share</span>
+                <ChevronDown className="w-3 h-3 ml-auto" />
+              </Button>
+
+              {/* Enhanced Share Menu */}
+              {showShareMenu && (
+                <div className="absolute top-full right-0 mt-2 w-48 bg-white/95 backdrop-blur-md border border-slate-200/60 rounded-xl shadow-lg z-20 share-menu ring-1 ring-black/5">
+                  <div className="py-2">
+                    <button onClick={handleCopyLink} className="w-full px-3 py-2 text-left text-xs hover:bg-green-50/80 flex items-center gap-2 rounded-lg mx-2 transition-colors">
+                      {copied ? <Check className="w-3.5 h-3.5 text-green-600" /> : <Copy className="w-3.5 h-3.5 text-blue-600" />}
+                      <div className="flex-1">
+                        <div className="font-medium text-slate-900">{copied ? 'Copied!' : 'Copy Link'}</div>
+                        <div className="text-slate-500">Share document URL</div>
+                      </div>
+                    </button>
+                    <button onClick={handleEmailShare} className="w-full px-3 py-2 text-left text-xs hover:bg-green-50/80 flex items-center gap-2 rounded-lg mx-2 transition-colors">
+                      <Mail className="w-3.5 h-3.5 text-orange-600" />
+                      <div className="flex-1">
+                        <div className="font-medium text-slate-900">Email</div>
+                        <div className="text-slate-500">Send via email</div>
+                      </div>
+                    </button>
+
+                    <button
+                      onClick={handleCopyCollaborationLink}
+                      className="w-full px-3 py-2 text-left text-xs hover:bg-purple-50/80 flex items-center gap-2 rounded-lg mx-2 transition-colors"
+                    >
+                      <Users className="w-3.5 h-3.5 text-purple-600" />
+                      <div className="flex-1">
+                        <div className="font-medium text-slate-900">Copy Collab Link</div>
+                        <div className="text-slate-500">Real-time co-reading</div>
+                      </div>
+                    </button>
+
+                    <button onClick={handleDirectShare} className="w-full px-3 py-2 text-left text-xs hover:bg-green-50/80 flex items-center gap-2 rounded-lg mx-2 transition-colors">
+                      <ExternalLink className="w-3.5 h-3.5 text-purple-600" />
+                      <div className="flex-1">
+                        <div className="font-medium text-slate-900">Share</div>
+                        <div className="text-slate-500">Native sharing</div>
+                      </div>
+                    </button>
+                    <div className="border-t border-slate-200/60 mt-2 pt-2">
+                      <button onClick={() => setShowInviteModal(true)} className="w-full px-3 py-2 text-left text-xs hover:bg-green-50/80 flex items-center gap-2 rounded-lg mx-2 transition-colors">
+                        <UserPlus className="w-3.5 h-3.5 text-indigo-600" />
+                        <div className="flex-1">
+                          <div className="font-medium text-slate-900">Invite</div>
+                          <div className="text-slate-500">Add collaborators</div>
+                        </div>
+                      </button>
+                    </div>
+                  </div>
                 </div>
-              </button>
-              <button onClick={handleDownloadAnnotations} className="w-full px-3 py-2 text-left text-xs hover:bg-blue-50/80 flex items-center gap-2 rounded-lg mx-2 transition-colors">
-                <FileText className="w-3.5 h-3.5 text-purple-600" />
-                <div className="flex-1">
-                  <div className="font-medium text-slate-900">Annotations Only</div>
-                  <div className="text-slate-500">Export XFDF file</div>
-                </div>
-              </button>
+              )}
             </div>
           </div>
-        )}
-      </div>
+        </div>
 
-      <div className="relative flex-1">
-        <Button 
-          variant="outline" 
-          size="sm" 
-          className="w-full h-8 text-xs px-2 share-button border-slate-200/60 hover:bg-green-50/80 hover:border-green-300/60 transition-all duration-200 backdrop-blur-sm bg-white/60 rounded-xl"
-          onClick={() => setShowShareMenu(!showShareMenu)}
-        >
-          <Share2 className="w-3 h-3 mr-1.5" />
-          <span className="font-medium">Share</span>
-          <ChevronDown className="w-3 h-3 ml-auto" />
-        </Button>
-        
-        {/* Enhanced Share Menu */}
-        {showShareMenu && (
-          <div className="absolute top-full right-0 mt-2 w-48 bg-white/95 backdrop-blur-md border border-slate-200/60 rounded-xl shadow-lg z-20 share-menu ring-1 ring-black/5">
-            <div className="py-2">
-              <button onClick={handleCopyLink} className="w-full px-3 py-2 text-left text-xs hover:bg-green-50/80 flex items-center gap-2 rounded-lg mx-2 transition-colors">
-                {copied ? <Check className="w-3.5 h-3.5 text-green-600" /> : <Copy className="w-3.5 h-3.5 text-blue-600" />}
-                <div className="flex-1">
-                  <div className="font-medium text-slate-900">{copied ? 'Copied!' : 'Copy Link'}</div>
-                  <div className="text-slate-500">Share document URL</div>
-                </div>
-              </button>
-              <button onClick={handleEmailShare} className="w-full px-3 py-2 text-left text-xs hover:bg-green-50/80 flex items-center gap-2 rounded-lg mx-2 transition-colors">
-                <Mail className="w-3.5 h-3.5 text-orange-600" />
-                <div className="flex-1">
-                  <div className="font-medium text-slate-900">Email</div>
-                  <div className="text-slate-500">Send via email</div>
-                </div>
-              </button>
+        {/* Enhanced Team Section */}
+        <div className="px-4 py-3 border-b border-slate-200/60">
+          <div className="flex items-center justify-between mb-3">
+            <div className="flex items-center gap-2">
+              <h4 className="font-semibold text-xs text-slate-700 uppercase tracking-wide">Team</h4>
+              <div className="w-2 h-2 rounded-full bg-green-400 animate-pulse ring-2 ring-green-100"></div>
+            </div>
+            <Badge variant="secondary" className="bg-green-100/80 text-green-700 text-xs px-2 py-0.5 h-5 font-medium rounded-full border border-green-200/60">
+              {collaborators.filter(c => c.status === 'online').length}
+            </Badge>
+          </div>
 
-              <button 
-                onClick={handleCopyCollaborationLink} 
-                className="w-full px-3 py-2 text-left text-xs hover:bg-purple-50/80 flex items-center gap-2 rounded-lg mx-2 transition-colors"
+          {showCollaborators && (
+            <div className="space-y-2">
+              {/* Your Sections - Always visible with Jump */}
+              {sectionAssignments.filter(a => a.userId === userId).length > 0 && (
+                <div className="px-3 py-2 bg-blue-50 border-l-4 border-blue-500 rounded-r-lg mb-3">
+                  <div className="text-xs font-semibold text-blue-900 mb-2">Your Sections:</div>
+                  <div className="space-y-1">
+                    {sectionAssignments
+                      .filter(a => a.userId === userId)
+                      .map(assignment => {
+                        const section = pdfSections.find(s => s.heading.id === assignment.sectionId)
+                        return section ? (
+                          <div key={assignment.sectionId} className="text-xs text-blue-700 flex items-center justify-between gap-2">
+                            <span className="truncate flex-1">• {section.heading.text}</span>
+                            <button
+                              onClick={() => {
+                                if (webViewerInstance?.Core?.documentViewer) {
+                                  const { documentViewer } = webViewerInstance.Core
+
+                                  isJumpingRef.current = true
+                                  documentViewer.setCurrentPage(section.startPage)
+
+                                  setTimeout(() => {
+                                    isJumpingRef.current = false
+                                    setCurrentPage(section.startPage)
+                                  }, 500)
+
+                                  console.log(`✅ Jumped to page ${section.startPage}`)
+                                }
+                              }}
+                              className="text-blue-600 hover:text-blue-800 underline text-xs font-medium flex-shrink-0"
+                            >
+                              Jump
+                            </button>
+                          </div>
+                        ) : null
+                      })}
+                  </div>
+                </div>
+              )}
+
+              {/* Team Reading Progress - Collapsible */}
+              <div className="mb-3">
+                <button
+                  onClick={() => setShowTeamProgress(!showTeamProgress)}
+                  className="w-full flex items-center justify-between text-xs font-semibold text-slate-700 uppercase tracking-wide hover:text-slate-900 py-1 px-2 hover:bg-slate-50 rounded transition-colors"
+                >
+                  <span>Team Reading Progress</span>
+                  {showTeamProgress ? (
+                    <ChevronDown className="w-4 h-4" />
+                  ) : (
+                    <ChevronRight className="w-4 h-4" />
+                  )}
+                </button>
+
+                {showTeamProgress && sectionAssignments.length > 0 && (
+                  <div
+                    key={`team-progress-${collaborators.length}-${sectionAssignments.length}`}
+                    className="mt-2 px-3 py-2 bg-purple-50 border-l-4 border-purple-500 rounded-r-lg space-y-2"
+                  >
+                    {collaborators.filter(c => c.status === 'online').map(collab => {
+                      const userAssignments = sectionAssignments.filter(a => a.userId === collab.id)
+                      if (userAssignments.length === 0) return null
+
+                      return (
+                        <div key={collab.id} className="mb-2 last:mb-0">
+                          <div className="flex items-center gap-2 mb-1">
+                            <div
+                              className="w-2 h-2 rounded-full"
+                              style={{ backgroundColor: (collab as any).color || '#6b7280' }}
+                            />
+                            <span className="text-xs font-medium text-purple-800">{collab.name}:</span>
+                          </div>
+                          <div className="space-y-1">
+                            {userAssignments.map(assignment => {
+                              const section = pdfSections.find(s => s.heading.id === assignment.sectionId)
+                              return section ? (
+                                <div key={assignment.sectionId} className="ml-4">
+                                  <div className="flex items-center gap-2 text-xs text-purple-700">
+                                    {assignment.status === 'completed' && <CheckCircle className="w-3 h-3 text-green-600" />}
+                                    {assignment.status === 'reading' && <Eye className="w-3 h-3 text-blue-600" />}
+                                    {assignment.status === 'assigned' && <AlertCircle className="w-3 h-3 text-amber-600" />}
+                                    <span className="truncate flex-1">• {section.heading.text}</span>
+                                    <span className="text-[10px] text-purple-600 font-medium">{assignment.progress}%</span>
+                                    <button
+                                      onClick={() => {
+                                        if (webViewerInstance?.Core?.documentViewer) {
+                                          const { documentViewer } = webViewerInstance.Core
+
+                                          isJumpingRef.current = true
+                                          documentViewer.setCurrentPage(section.startPage)
+
+                                          setTimeout(() => {
+                                            isJumpingRef.current = false
+                                            setCurrentPage(section.startPage)
+                                          }, 500)
+
+                                          console.log(`✅ Jumped to page ${section.startPage}`)
+                                        }
+                                      }}
+                                      className="text-[10px] text-blue-600 hover:text-blue-800 underline font-medium flex-shrink-0"
+                                    >
+                                      Jump
+                                    </button>
+                                  </div>
+                                </div>
+                              ) : null
+                            })}
+                          </div>
+                        </div>
+                      )
+                    })}
+                  </div>
+                )}
+              </div>
+
+              {/* Regular Team Members List */}
+              {collaborators.slice(0, 4).map((collaborator) => {
+                const userAssignments = sectionAssignments.filter(a => a.userId === collaborator.id)
+
+                return (
+                  <div key={collaborator.id} className="group">
+                    <div className="flex items-center gap-3 p-2 rounded-xl hover:bg-slate-50/80 transition-all duration-200 cursor-pointer ring-1 ring-transparent hover:ring-slate-200/60">
+                      <div className="relative flex-shrink-0">
+                        <div className={`w-7 h-7 rounded-xl flex items-center justify-center text-xs font-semibold transition-all duration-200
+                  ${collaborator.isCurrentUser
+                            ? 'bg-gradient-to-br from-blue-500 via-purple-500 to-pink-500 text-white shadow-sm ring-2 ring-purple-100'
+                            : 'bg-slate-200 text-slate-700 ring-2 ring-slate-100'
+                          }`}>
+                          {collaborator.name.split(' ').map(n => n[0]).join('')}
+                        </div>
+                        {collaborator.status === 'online' && (
+                          <div className="absolute -bottom-0.5 -right-0.5 w-2.5 h-2.5 rounded-full bg-green-400 ring-2 ring-white shadow-sm" />
+                        )}
+                      </div>
+
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-2">
+                          <span className="text-xs font-medium text-slate-900 truncate">
+                            {collaborator.name}
+                          </span>
+                          {collaborator.isCurrentUser && (
+                            <Badge variant="outline" className="text-xs px-1.5 py-0 h-4 rounded-full border-blue-200 text-blue-700 bg-blue-50">You</Badge>
+                          )}
+                        </div>
+
+                        {/* Show assigned sections count */}
+                        {userAssignments.length > 0 && (
+                          <div className="text-xs text-slate-500 mt-0.5">
+                            {userAssignments.length} section{userAssignments.length !== 1 ? 's' : ''} assigned
+                          </div>
+                        )}
+                      </div>
+
+                      {!collaborator.isCurrentUser && (
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          className="opacity-0 group-hover:opacity-100 h-6 w-6 p-0 flex-shrink-0 rounded-lg transition-all duration-200"
+                          onClick={() => toggleInlineChat(collaborator.userId!)}
+                        >
+                          <MessageSquare className="h-3 w-3 text-slate-400 hover:text-blue-600" />
+                        </Button>
+                      )}
+                    </div>
+
+                    {/* Show assigned sections when expanded */}
+                    {userAssignments.length > 0 && (
+                      <div className="ml-10 mt-1 space-y-1">
+                        {userAssignments.map(assignment => {
+                          const section = pdfSections.find(s => s.heading.id === assignment.sectionId)
+                          return section ? (
+                            <div key={assignment.sectionId} className="text-xs text-slate-600 truncate">
+                              • {section.heading.text}
+                            </div>
+                          ) : null
+                        })}
+                      </div>
+                    )}
+                  </div>
+                )
+              })}
+            </div>
+          )}
+        </div>
+        {/* Enhanced Stats Cards */}
+        <div className="px-4 py-3">
+          <div className="grid grid-cols-2 gap-3">
+            <div className="bg-gradient-to-br from-blue-50/80 to-indigo-50/60 rounded-xl p-3 text-center border border-blue-100/60 ring-1 ring-blue-100/30 hover:shadow-sm transition-all duration-200 cursor-pointer">
+              <div className="text-xl font-bold bg-gradient-to-r from-blue-600 to-indigo-600 bg-clip-text text-transparent">
+                {totalPages || 0}
+              </div>
+              <div className="text-xs text-slate-600 uppercase tracking-wide font-medium">Pages</div>
+            </div>
+            <div className="bg-gradient-to-br from-purple-50/80 to-pink-50/60 rounded-xl p-3 text-center border border-purple-100/60 ring-1 ring-purple-100/30 hover:shadow-sm transition-all duration-200 cursor-pointer">
+              <div className="text-xl font-bold bg-gradient-to-r from-purple-600 to-pink-600 bg-clip-text text-transparent">
+                {capturedSelections.length}
+              </div>
+              <div className="text-xs text-slate-600 uppercase tracking-wide font-medium">Notes</div>
+            </div>
+          </div>
+        </div>
+
+        {/* Enhanced Tools */}
+        <div className="px-4 py-3 flex-1 overflow-y-auto" style={{ maxHeight: 'calc(100vh - 500px)' }}>
+          <h4 className="font-semibold text-xs text-slate-700 uppercase tracking-wide mb-3">Tools</h4>
+
+          <div className="space-y-2">
+            {/* AI Tools Group */}
+            <div className="space-y-2">
+              <button
+                onClick={() => setShowScreenCapture(true)}
+                className="group w-full rounded-xl border border-blue-200/60 bg-gradient-to-r from-blue-50/60 to-cyan-50/40 hover:from-blue-100/80 hover:to-cyan-100/60 p-3 text-left shadow-sm transition-all duration-200 hover:shadow-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2"
               >
-                <Users className="w-3.5 h-3.5 text-purple-600" />
-                <div className="flex-1">
-                  <div className="font-medium text-slate-900">Copy Collab Link</div>
-                  <div className="text-slate-500">Real-time co-reading</div>
+                <div className="flex items-center gap-3">
+                  <div className="rounded-lg ring-1 ring-blue-200/60 bg-white/60 p-2">
+                    <Camera className="h-4 w-4 text-blue-600" />
+                  </div>
+                  <div className="flex-1">
+                    <div className="text-sm font-medium text-blue-800">Snip & Analyze</div>
+                    <div className="text-xs text-blue-600 mt-0.5">Extract figures, run AI summary</div>
+                  </div>
+                  <ChevronRight className="h-4 w-4 text-blue-500 group-hover:translate-x-0.5 transition-transform" />
                 </div>
               </button>
 
-              <button onClick={handleDirectShare} className="w-full px-3 py-2 text-left text-xs hover:bg-green-50/80 flex items-center gap-2 rounded-lg mx-2 transition-colors">
-                <ExternalLink className="w-3.5 h-3.5 text-purple-600" />
-                <div className="flex-1">
-                  <div className="font-medium text-slate-900">Share</div>
-                  <div className="text-slate-500">Native sharing</div>
+              <button
+                onClick={() => {
+                  console.log('═══════════════════════════════════════════════════');
+                  console.log('🎬 RESEARCH STORYBOARD BUTTON CLICKED!');
+                  console.log('═══════════════════════════════════════════════════');
+                  console.log('📊 Current capturedSelections state:', capturedSelections.length);
+                  console.log('📝 Current selections:', capturedSelections.slice(0, 3));
+
+                  // CRITICAL: Get fresh highlights from WebViewer RIGHT NOW
+                  const freshHighlights: Array<{
+                    text: string;
+                    timestamp: number;
+                    page: number;
+                  }> = [];
+
+                  if (webViewerInstance && webViewerInstance.Core) {
+                    const { annotationManager } = webViewerInstance.Core;
+                    const annotations = annotationManager.getAnnotationsList();
+
+                    console.log('🔍 Total annotations in WebViewer:', annotations.length);
+
+                    annotations.forEach((annotation: any, idx: number) => {
+                      if (annotation.Subject === 'Highlight' || annotation.Subject === 'highlight') {
+                        const text = annotation.Contents || 'Highlighted text';
+                        const highlight = {
+                          text: text,
+                          timestamp: Date.now() - (annotations.length - idx) * 1000, // Stagger timestamps
+                          page: annotation.PageNumber || currentPage
+                        };
+
+                        console.log(`  ✅ Adding highlight ${idx + 1}:`, {
+                          text: text.substring(0, 50) + '...',
+                          textLength: text.length,
+                          timestamp: highlight.timestamp,
+                          page: highlight.page
+                        });
+
+                        freshHighlights.push(highlight);
+                      }
+                    });
+                  } else {
+                    console.warn('⚠️ WebViewer instance not available!');
+                  }
+
+                  // ALSO include any text selections from state (avoiding duplicates)
+                  console.log('\n📚 Processing state selections...');
+                  capturedSelections.forEach((sel, idx) => {
+                    const selTimestamp = typeof sel.timestamp === 'string'
+                      ? new Date(sel.timestamp).getTime()
+                      : (typeof sel.timestamp === 'number' ? sel.timestamp : Date.now());
+
+                    // Check if this selection is already in freshHighlights (avoid duplicates)
+                    const isDuplicate = freshHighlights.some(h =>
+                      h.text === sel.text && Math.abs(h.timestamp - selTimestamp) < 5000
+                    );
+
+                    if (!isDuplicate) {
+                      const highlight = {
+                        text: sel.text,
+                        timestamp: selTimestamp,
+                        page: sel.pageNumber || currentPage
+                      };
+
+                      freshHighlights.push(highlight);
+
+                      console.log(`  ✅ Adding selection ${idx + 1}:`, {
+                        text: sel.text.substring(0, 50) + '...',
+                        textLength: sel.text.length,
+                        timestamp: highlight.timestamp,
+                        page: highlight.page
+                      });
+                    } else {
+                      console.log(`  ⏭️ Skipping duplicate selection ${idx + 1}`);
+                    }
+                  });
+
+                  console.log('\n📊 FINAL RESULTS:');
+                  console.log('  Total highlights collected:', freshHighlights.length);
+                  console.log('  Sample highlights:', freshHighlights.slice(0, 3).map(h => ({
+                    text: h.text.substring(0, 30) + '...',
+                    timestamp: h.timestamp,
+                    page: h.page
+                  })));
+
+                  // Update state BEFORE opening (convert back to the expected format)
+                  const stateFormat = freshHighlights.map((h, idx) => ({
+                    text: h.text,
+                    timestamp: new Date(h.timestamp).toISOString(),
+                    pageNumber: h.page,
+                    position: { x: 0, y: 0 }
+                  }));
+
+                  console.log('\n💾 Updating capturedSelections state...');
+                  console.log('  New state format:', stateFormat.slice(0, 2));
+                  setCapturedSelections(stateFormat);
+
+                  // Force a small delay to ensure state updates
+                  setTimeout(() => {
+                    console.log('\n🚀 OPENING STORYBOARD NOW!');
+                    console.log('  Passing', freshHighlights.length, 'highlights to storyboard');
+                    console.log('═══════════════════════════════════════════════════\n');
+                    setShowStoryboard(true);
+                  }, 100);
+                }}
+                className="group w-full rounded-xl border border-indigo-200/60 bg-gradient-to-r from-indigo-50/60 to-blue-50/40 hover:from-indigo-100/80 hover:to-blue-100/60 p-3 text-left shadow-sm transition-all duration-200 hover:shadow-md"
+              >
+                <div className="flex items-center gap-3">
+                  <div className="rounded-lg ring-1 ring-indigo-200/60 bg-white/60 p-2">
+                    <Activity className="h-4 w-4 text-indigo-600" />
+                  </div>
+                  <div className="flex-1">
+                    <div className="text-sm font-medium text-indigo-800">Research Storyboard</div>
+                    <div className="text-xs text-indigo-600 mt-0.5">View your reading journey ({capturedSelections.length} tracked)</div>
+                  </div>
+                  <ChevronRight className="h-4 w-4 text-indigo-500 group-hover:translate-x-0.5 transition-transform" />
                 </div>
               </button>
-              <div className="border-t border-slate-200/60 mt-2 pt-2">
-                <button onClick={() => setShowInviteModal(true)} className="w-full px-3 py-2 text-left text-xs hover:bg-green-50/80 flex items-center gap-2 rounded-lg mx-2 transition-colors">
-                  <UserPlus className="w-3.5 h-3.5 text-indigo-600" />
+
+              <button
+                onClick={() => setShowAIResearchPrerequisites(true)}
+                className="group w-full rounded-xl border border-purple-200/60 bg-gradient-to-r from-purple-50/60 to-pink-50/40 hover:from-purple-100/80 hover:to-pink-100/60 p-3 text-left shadow-sm transition-all duration-200 hover:shadow-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-purple-500 focus-visible:ring-offset-2"
+              >
+                <div className="flex items-center gap-3">
+                  <div className="rounded-lg ring-1 ring-purple-200/60 bg-white/60 p-2">
+                    <Brain className="h-4 w-4 text-purple-600" />
+                  </div>
                   <div className="flex-1">
-                    <div className="font-medium text-slate-900">Invite</div>
-                    <div className="text-slate-500">Add collaborators</div>
+                    <div className="text-sm font-medium text-purple-800">Prerequisites</div>
+                    <div className="text-xs text-purple-600 mt-0.5">Auto-map background readings</div>
+                  </div>
+                  <ChevronRight className="h-4 w-4 text-purple-500 group-hover:translate-x-0.5 transition-transform" />
+                </div>
+              </button>
+              <button
+                onClick={() => {
+                  if (eyeTrackingEnabled) {
+                    eyeTracker.pause()
+                    setEyeTrackingEnabled(false)
+                  } else {
+                    setShowEyeCalibration(true)
+                  }
+                }}
+                className="group w-full rounded-xl border border-green-200/60 bg-gradient-to-r from-green-50/60 to-emerald-50/40 hover:from-green-100/80 hover:to-emerald-100/60 p-3 text-left shadow-sm transition-all duration-200 hover:shadow-md"
+              >
+                <div className="flex items-center gap-3">
+                  <div className="rounded-lg ring-1 ring-green-200/60 bg-white/60 p-2">
+                    <Eye className="h-4 w-4 text-green-600" />
+                  </div>
+                  <div className="flex-1">
+                    <div className="text-sm font-medium text-green-800">
+                      {eyeTrackingEnabled ? 'Pause Eye Tracking' : 'Start Eye Tracking'}
+                    </div>
+                    <div className="text-xs text-green-600 mt-0.5">Track reading patterns</div>
+                  </div>
+                  <ChevronRight className="h-4 w-4 text-green-500 group-hover:translate-x-0.5 transition-transform" />
+                </div>
+              </button>
+
+              {eyeTrackingEnabled && (
+                <button
+                  onClick={() => setShowGazeHeatmap(!showGazeHeatmap)}
+                  className="group w-full rounded-xl border border-orange-200/60 bg-gradient-to-r from-orange-50/60 to-red-50/40 hover:from-orange-100/80 hover:to-red-100/60 p-3 text-left shadow-sm transition-all duration-200 hover:shadow-md"
+                >
+                  <div className="flex items-center gap-3">
+                    <div className="rounded-lg ring-1 ring-orange-200/60 bg-white/60 p-2">
+                      <Eye className="h-4 w-4 text-orange-600" />
+                    </div>
+                    <div className="flex-1">
+                      <div className="text-sm font-medium text-orange-800">
+                        {showGazeHeatmap ? 'Hide' : 'Show'} Gaze Heatmap
+                      </div>
+                      <div className="text-xs text-orange-600 mt-0.5">Visualize where you looked</div>
+                    </div>
                   </div>
                 </button>
-              </div>
+              )}
+
+              <button
+                onClick={() => {
+                  const gazePoints = eyeTracker.getGazePoints(currentPage)
+                  console.log('👁️ Gaze Points on current page:', gazePoints.length)
+                  console.log('Sample points:', gazePoints.slice(0, 10))
+                }}
+                className="group w-full rounded-xl border border-amber-200/60 bg-gradient-to-r from-amber-50/60 to-yellow-50/40 hover:from-amber-100/80 hover:to-yellow-100/60 p-3 text-left shadow-sm transition-all duration-200 hover:shadow-md"
+              >
+                <div className="flex items-center gap-3">
+                  <div className="rounded-lg ring-1 ring-amber-200/60 bg-white/60 p-2">
+                    <Activity className="h-4 w-4 text-amber-600" />
+                  </div>
+                  <div className="flex-1">
+                    <div className="text-sm font-medium text-amber-800">Check Gaze Data</div>
+                    <div className="text-xs text-amber-600 mt-0.5">View tracked points in console</div>
+                  </div>
+                </div>
+              </button>
+
+              <button
+                onClick={() => {
+                  const gazePoints = eyeTracker.getGazePoints(currentPage)
+                  console.log('👁️ Gaze Points on current page:', gazePoints.length)
+                  console.log('Sample points:', gazePoints.slice(0, 10))
+                }}
+                className="group w-full rounded-xl border border-amber-200/60 bg-gradient-to-r from-amber-50/60 to-yellow-50/40 hover:from-amber-100/80 hover:to-yellow-100/60 p-3 text-left shadow-sm transition-all duration-200 hover:shadow-md"
+              >
+                <div className="flex items-center gap-3">
+                  <div className="rounded-lg ring-1 ring-amber-200/60 bg-white/60 p-2">
+                    <Activity className="h-4 w-4 text-amber-600" />
+                  </div>
+                  <div className="flex-1">
+                    <div className="text-sm font-medium text-amber-800">Check Gaze Data</div>
+                    <div className="text-xs text-amber-600 mt-0.5">View tracked points in console</div>
+                  </div>
+                </div>
+              </button>
+
+              {/* ✅ FIXED Section Assignment Button */}
+              <button
+                onClick={() => {
+                  console.log('🎯 Section Assignments button clicked!')
+                  console.log('📚 Number of sections:', pdfSections.length)
+
+                  if (pdfSections.length === 0) {
+                    toast.error('No sections found. Please wait for PDF to load completely.')
+                    return
+                  }
+
+                  const newState = !showSectionAssignment
+                  console.log('🔄 showSectionAssignment changing from', showSectionAssignment, 'to', newState)
+                  setShowSectionAssignment(newState)
+
+                  // Check after 100ms if state actually changed
+                  setTimeout(() => {
+                    console.log('✅ showSectionAssignment after 100ms:', newState)
+                  }, 100)
+                }}
+                className="group w-full rounded-xl border border-rose-200/60 bg-gradient-to-r from-rose-50/60 to-pink-50/40 hover:from-rose-100/80 hover:to-pink-100/60 p-3 text-left shadow-sm transition-all duration-200 hover:shadow-md"
+              >
+                <div className="flex items-center gap-3">
+                  <div className="rounded-lg ring-1 ring-rose-200/60 bg-white/60 p-2">
+                    <Users className="h-4 w-4 text-rose-600" />
+                  </div>
+                  <div className="flex-1">
+                    <div className="text-sm font-medium text-rose-800">Section Assignments</div>
+                    <div className="text-xs text-rose-600 mt-0.5">
+                      {extractingHeadings ? 'Extracting sections...' : `Assign to collaborators (${pdfSections.length} sections)`}
+                    </div>
+                  </div>
+                </div>
+              </button>
+
+
+              {/* ✅ ADD THIS DEBUG BUTTON HERE */}
+              <button
+                onClick={() => {
+                  console.log('='.repeat(50))
+                  console.log('🔍 DEBUGGING SECTION ASSIGNMENT')
+                  console.log('='.repeat(50))
+                  console.log('📚 pdfSections length:', pdfSections.length)
+                  console.log('📚 pdfSections data:', pdfSections)
+                  console.log('📚 extractingHeadings:', extractingHeadings)
+                  console.log('📚 showSectionAssignment:', showSectionAssignment)
+                  console.log('='.repeat(50))
+                }}
+                className="w-full p-2 bg-yellow-100 text-yellow-900 text-xs rounded-lg mt-2"
+              >
+                🐛 DEBUG: Check pdfSections State
+              </button>
+
+            </div>
+
+            {/* Divider */}
+            <div className="border-t border-slate-200/60 my-3"></div>
+
+            {/* Navigation Tools */}
+            <div className="space-y-2">
+              <button
+                onClick={() => webViewerInstance?.UI.openElements(['searchPanel'])}
+                className="group w-full rounded-xl hover:bg-slate-50/80 p-3 text-left transition-all duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-500 focus-visible:ring-offset-2"
+              >
+                <div className="flex items-center gap-3">
+                  <div className="rounded-lg ring-1 ring-slate-200/60 bg-white/60 p-2">
+                    <Search className="h-4 w-4 text-slate-600" />
+                  </div>
+                  <div className="flex-1">
+                    <div className="text-sm font-medium text-slate-700">Search</div>
+                    <div className="text-xs text-slate-500 mt-0.5">Cmd/Ctrl + K</div>
+                  </div>
+                  <ChevronRight className="h-4 w-4 text-slate-400 group-hover:translate-x-0.5 transition-transform" />
+                </div>
+              </button>
+
+              <button
+                onClick={() => webViewerInstance?.UI.openElements(['outlinesPanel'])}
+                className="group w-full rounded-xl hover:bg-slate-50/80 p-3 text-left transition-all duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-500 focus-visible:ring-offset-2"
+              >
+                <div className="flex items-center gap-3">
+                  <div className="rounded-lg ring-1 ring-slate-200/60 bg-white/60 p-2">
+                    <Bookmark className="h-4 w-4 text-slate-600" />
+                  </div>
+                  <div className="flex-1">
+                    <div className="text-sm font-medium text-slate-700">Contents</div>
+                    <div className="text-xs text-slate-500 mt-0.5">Headings & figures</div>
+                  </div>
+                  <ChevronRight className="h-4 w-4 text-slate-400 group-hover:translate-x-0.5 transition-transform" />
+                </div>
+              </button>
+
+
+
+
+
+              <button
+                onClick={() => setShowInteractionAnalysis(true)}
+                className="group w-full rounded-xl hover:bg-slate-50/80 p-3 text-left transition-all duration-200"
+              >
+                <div className="flex items-center gap-3">
+                  <div className="rounded-lg ring-1 ring-slate-200/60 bg-white/60 p-2">
+                    <Activity className="h-4 w-4 text-slate-600" />
+                  </div>
+                  <div className="flex-1">
+                    <div className="text-sm font-medium text-slate-700">Analysis</div>
+                    <div className="text-xs text-slate-500 mt-0.5">View insights</div>
+                  </div>
+                  <ChevronRight className="h-4 w-4 text-slate-400 group-hover:translate-x-0.5 transition-transform" />
+                </div>
+              </button>
             </div>
           </div>
-        )}
+        </div>
       </div>
-    </div>
-  </div>
 
-  {/* Enhanced Team Section */}
-<div className="px-4 py-3 border-b border-slate-200/60">
-  <div className="flex items-center justify-between mb-3">
-    <div className="flex items-center gap-2">
-      <h4 className="font-semibold text-xs text-slate-700 uppercase tracking-wide">Team</h4>
-      <div className="w-2 h-2 rounded-full bg-green-400 animate-pulse ring-2 ring-green-100"></div>
-    </div>
-    <Badge variant="secondary" className="bg-green-100/80 text-green-700 text-xs px-2 py-0.5 h-5 font-medium rounded-full border border-green-200/60">
-      {collaborators.filter(c => c.status === 'online').length}
-    </Badge>
-  </div>
-  
-  {showCollaborators && (
-    <div className="space-y-2">
-      {/* Your Sections - Always visible with Jump */}
-      {sectionAssignments.filter(a => a.userId === userId).length > 0 && (
-        <div className="px-3 py-2 bg-blue-50 border-l-4 border-blue-500 rounded-r-lg mb-3">
-          <div className="text-xs font-semibold text-blue-900 mb-2">Your Sections:</div>
-          <div className="space-y-1">
-            {sectionAssignments
-              .filter(a => a.userId === userId)
-              .map(assignment => {
-                const section = pdfSections.find(s => s.heading.id === assignment.sectionId)
-                return section ? (
-                  <div key={assignment.sectionId} className="text-xs text-blue-700 flex items-center justify-between gap-2">
-                    <span className="truncate flex-1">• {section.heading.text}</span>
-                    <button
-onClick={() => {
-  if (webViewerInstance?.Core?.documentViewer) {
-    const { documentViewer } = webViewerInstance.Core
-    
-    isJumpingRef.current = true
-    documentViewer.setCurrentPage(section.startPage)
-    
-    setTimeout(() => {
-      isJumpingRef.current = false
-      setCurrentPage(section.startPage)
-    }, 500)
-    
-    console.log(`✅ Jumped to page ${section.startPage}`)
-  }
-}}
-  className="text-blue-600 hover:text-blue-800 underline text-xs font-medium flex-shrink-0"
->
-  Jump
-</button>
-                  </div>
-                ) : null
-              })}
+
+      {/* Section Assignment Panel - Slides out next to sidebar */}
+      {showSectionAssignment && pdfSections.length > 0 && (
+        <div className="fixed right-4 top-20 w-[420px] h-[calc(100vh-100px)] z-[9999]">
+          <div className="h-full bg-white rounded-lg shadow-2xl overflow-visible border border-gray-200">
+            <div className="flex items-center justify-between p-4 border-b bg-gradient-to-r from-rose-50 to-pink-50">
+              <div className="flex items-center gap-2">
+                <Users className="w-5 h-5 text-rose-600" />
+                <h3 className="font-bold text-lg text-rose-900">Section Assignments</h3>
+              </div>
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => setShowSectionAssignment(false)}
+                className="hover:bg-rose-100"
+              >
+                <X className="w-4 h-4" />
+              </Button>
+            </div>
+            <div className="overflow-y-auto" style={{ height: 'calc(100% - 73px)' }}>
+              <SectionAssignmentPanel
+                sections={pdfSections}
+                collaborators={(() => {
+                  // Create a Map to deduplicate by userId
+                  const uniqueCollabs = new Map()
+
+                  // Add current user first
+                  uniqueCollabs.set(userId, {
+                    id: userId,
+                    name: userName,
+                    color: '#3b82f6'
+                  })
+
+                  // Add other collaborators
+                  collaborators
+                    .filter(c => c.status === 'online' && c.id !== userId)
+                    .forEach((c, index) => {
+                      if (!uniqueCollabs.has(c.id)) {
+                        uniqueCollabs.set(c.id, {
+                          id: c.id,
+                          name: c.name,
+                          color: ['#10b981', '#8b5cf6', '#ef4444', '#f59e0b', '#06b6d4'][index % 5] || '#6b7280'
+                        })
+                      }
+                    })
+
+                  return Array.from(uniqueCollabs.values())
+                })()}
+                currentUserId={userId}
+                documentId={documentId}
+                socket={socketInstance}
+                onAssignmentChange={(assignments) => {
+                  console.log('📚 Section assignments updated:', assignments)
+                  setSectionAssignments(assignments)
+                }}
+                onJumpToSection={handleJumpToSection}
+              />
+            </div>
           </div>
         </div>
       )}
-
-      {/* Team Reading Progress - Collapsible */}
-      <div className="mb-3">
-        <button
-          onClick={() => setShowTeamProgress(!showTeamProgress)}
-          className="w-full flex items-center justify-between text-xs font-semibold text-slate-700 uppercase tracking-wide hover:text-slate-900 py-1 px-2 hover:bg-slate-50 rounded transition-colors"
-        >
-          <span>Team Reading Progress</span>
-          {showTeamProgress ? (
-            <ChevronDown className="w-4 h-4" />
-          ) : (
-            <ChevronRight className="w-4 h-4" />
-          )}
-        </button>
-        
-        {showTeamProgress && sectionAssignments.length > 0 && (
-  <div 
-    key={`team-progress-${collaborators.length}-${sectionAssignments.length}`}
-    className="mt-2 px-3 py-2 bg-purple-50 border-l-4 border-purple-500 rounded-r-lg space-y-2"
-  >
-    {collaborators.filter(c => c.status === 'online').map(collab => {
-      const userAssignments = sectionAssignments.filter(a => a.userId === collab.id)
-      if (userAssignments.length === 0) return null
-      
-      return (
-        <div key={collab.id} className="mb-2 last:mb-0">
-          <div className="flex items-center gap-2 mb-1">
-            <div
-              className="w-2 h-2 rounded-full"
-              style={{ backgroundColor: (collab as any).color || '#6b7280' }}
-            />
-            <span className="text-xs font-medium text-purple-800">{collab.name}:</span>
-          </div>
-          <div className="space-y-1">
-            {userAssignments.map(assignment => {
-              const section = pdfSections.find(s => s.heading.id === assignment.sectionId)
-              return section ? (
-                <div key={assignment.sectionId} className="ml-4">
-                <div className="flex items-center gap-2 text-xs text-purple-700">
-                  {assignment.status === 'completed' && <CheckCircle className="w-3 h-3 text-green-600" />}
-                  {assignment.status === 'reading' && <Eye className="w-3 h-3 text-blue-600" />}
-                  {assignment.status === 'assigned' && <AlertCircle className="w-3 h-3 text-amber-600" />}
-                  <span className="truncate flex-1">• {section.heading.text}</span>
-                  <span className="text-[10px] text-purple-600 font-medium">{assignment.progress}%</span>
-                  <button
-onClick={() => {
-  if (webViewerInstance?.Core?.documentViewer) {
-    const { documentViewer } = webViewerInstance.Core
-    
-    isJumpingRef.current = true
-    documentViewer.setCurrentPage(section.startPage)
-    
-    setTimeout(() => {
-      isJumpingRef.current = false
-      setCurrentPage(section.startPage)
-    }, 500)
-    
-    console.log(`✅ Jumped to page ${section.startPage}`)
-  }
-}}
-  className="text-[10px] text-blue-600 hover:text-blue-800 underline font-medium flex-shrink-0"
->
-  Jump
-</button>
-                </div>
-                </div>
-              ) : null
-            })}
-          </div>
-        </div>
-      )
-    })}
-  </div>
-)}
-      </div>
-
-      {/* Regular Team Members List */}
-      {collaborators.slice(0, 4).map((collaborator) => {
-        const userAssignments = sectionAssignments.filter(a => a.userId === collaborator.id)
-        
-        return (
-          <div key={collaborator.id} className="group">
-            <div className="flex items-center gap-3 p-2 rounded-xl hover:bg-slate-50/80 transition-all duration-200 cursor-pointer ring-1 ring-transparent hover:ring-slate-200/60">
-              <div className="relative flex-shrink-0">
-                <div className={`w-7 h-7 rounded-xl flex items-center justify-center text-xs font-semibold transition-all duration-200
-                  ${collaborator.isCurrentUser 
-                    ? 'bg-gradient-to-br from-blue-500 via-purple-500 to-pink-500 text-white shadow-sm ring-2 ring-purple-100' 
-                    : 'bg-slate-200 text-slate-700 ring-2 ring-slate-100'
-                  }`}>
-                  {collaborator.name.split(' ').map(n => n[0]).join('')}
-                </div>
-                {collaborator.status === 'online' && (
-                  <div className="absolute -bottom-0.5 -right-0.5 w-2.5 h-2.5 rounded-full bg-green-400 ring-2 ring-white shadow-sm" />
-                )}
-              </div>
-              
-              <div className="flex-1 min-w-0">
-                <div className="flex items-center gap-2">
-                  <span className="text-xs font-medium text-slate-900 truncate">
-                    {collaborator.name}
-                  </span>
-                  {collaborator.isCurrentUser && (
-                    <Badge variant="outline" className="text-xs px-1.5 py-0 h-4 rounded-full border-blue-200 text-blue-700 bg-blue-50">You</Badge>
-                  )}
-                </div>
-                
-                {/* Show assigned sections count */}
-                {userAssignments.length > 0 && (
-                  <div className="text-xs text-slate-500 mt-0.5">
-                    {userAssignments.length} section{userAssignments.length !== 1 ? 's' : ''} assigned
-                  </div>
-                )}
-              </div>
-              
-              {!collaborator.isCurrentUser && (
-                <Button 
-                  variant="ghost" 
-                  size="sm"
-                  className="opacity-0 group-hover:opacity-100 h-6 w-6 p-0 flex-shrink-0 rounded-lg transition-all duration-200"
-                  onClick={() => toggleInlineChat(collaborator.userId!)}
-                >
-                  <MessageSquare className="h-3 w-3 text-slate-400 hover:text-blue-600" />
-                </Button>
-              )}
-            </div>
-            
-            {/* Show assigned sections when expanded */}
-            {userAssignments.length > 0 && (
-              <div className="ml-10 mt-1 space-y-1">
-                {userAssignments.map(assignment => {
-                  const section = pdfSections.find(s => s.heading.id === assignment.sectionId)
-                  return section ? (
-                    <div key={assignment.sectionId} className="text-xs text-slate-600 truncate">
-                      • {section.heading.text}
-                    </div>
-                  ) : null
-                })}
-              </div>
-            )}
-          </div>
-        )
-      })}
-    </div>
-  )}
-</div>
-  {/* Enhanced Stats Cards */}
-  <div className="px-4 py-3">
-    <div className="grid grid-cols-2 gap-3">
-      <div className="bg-gradient-to-br from-blue-50/80 to-indigo-50/60 rounded-xl p-3 text-center border border-blue-100/60 ring-1 ring-blue-100/30 hover:shadow-sm transition-all duration-200 cursor-pointer">
-        <div className="text-xl font-bold bg-gradient-to-r from-blue-600 to-indigo-600 bg-clip-text text-transparent">
-          {totalPages || 0}
-        </div>
-        <div className="text-xs text-slate-600 uppercase tracking-wide font-medium">Pages</div>
-      </div>
-      <div className="bg-gradient-to-br from-purple-50/80 to-pink-50/60 rounded-xl p-3 text-center border border-purple-100/60 ring-1 ring-purple-100/30 hover:shadow-sm transition-all duration-200 cursor-pointer">
-        <div className="text-xl font-bold bg-gradient-to-r from-purple-600 to-pink-600 bg-clip-text text-transparent">
-          {capturedSelections.length}
-        </div>
-        <div className="text-xs text-slate-600 uppercase tracking-wide font-medium">Notes</div>
-      </div>
-    </div>
-  </div>
-
-  {/* Enhanced Tools */}
-  <div className="px-4 py-3 flex-1 overflow-y-auto" style={{ maxHeight: 'calc(100vh - 500px)' }}>
-    <h4 className="font-semibold text-xs text-slate-700 uppercase tracking-wide mb-3">Tools</h4>
-    
-    <div className="space-y-2">
-      {/* AI Tools Group */}
-      <div className="space-y-2">
-        <button
-          onClick={() => setShowScreenCapture(true)}
-          className="group w-full rounded-xl border border-blue-200/60 bg-gradient-to-r from-blue-50/60 to-cyan-50/40 hover:from-blue-100/80 hover:to-cyan-100/60 p-3 text-left shadow-sm transition-all duration-200 hover:shadow-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2"
-        >
-          <div className="flex items-center gap-3">
-            <div className="rounded-lg ring-1 ring-blue-200/60 bg-white/60 p-2">
-              <Camera className="h-4 w-4 text-blue-600" />
-            </div>
-            <div className="flex-1">
-              <div className="text-sm font-medium text-blue-800">Snip & Analyze</div>
-              <div className="text-xs text-blue-600 mt-0.5">Extract figures, run AI summary</div>
-            </div>
-            <ChevronRight className="h-4 w-4 text-blue-500 group-hover:translate-x-0.5 transition-transform" />
-          </div>
-        </button>
-
-        <button
-  onClick={() => {
-    console.log('═══════════════════════════════════════════════════');
-    console.log('🎬 RESEARCH STORYBOARD BUTTON CLICKED!');
-    console.log('═══════════════════════════════════════════════════');
-    console.log('📊 Current capturedSelections state:', capturedSelections.length);
-    console.log('📝 Current selections:', capturedSelections.slice(0, 3));
-    
-    // CRITICAL: Get fresh highlights from WebViewer RIGHT NOW
-    const freshHighlights: Array<{
-      text: string;
-      timestamp: number;
-      page: number;
-    }> = [];
-    
-    if (webViewerInstance && webViewerInstance.Core) {
-      const { annotationManager } = webViewerInstance.Core;
-      const annotations = annotationManager.getAnnotationsList();
-      
-      console.log('🔍 Total annotations in WebViewer:', annotations.length);
-      
-      annotations.forEach((annotation: any, idx: number) => {
-        if (annotation.Subject === 'Highlight' || annotation.Subject === 'highlight') {
-          const text = annotation.Contents || 'Highlighted text';
-          const highlight = {
-            text: text,
-            timestamp: Date.now() - (annotations.length - idx) * 1000, // Stagger timestamps
-            page: annotation.PageNumber || currentPage
-          };
-          
-          console.log(`  ✅ Adding highlight ${idx + 1}:`, {
-            text: text.substring(0, 50) + '...',
-            textLength: text.length,
-            timestamp: highlight.timestamp,
-            page: highlight.page
-          });
-          
-          freshHighlights.push(highlight);
-        }
-      });
-    } else {
-      console.warn('⚠️ WebViewer instance not available!');
-    }
-    
-    // ALSO include any text selections from state (avoiding duplicates)
-    console.log('\n📚 Processing state selections...');
-    capturedSelections.forEach((sel, idx) => {
-      const selTimestamp = typeof sel.timestamp === 'string' 
-        ? new Date(sel.timestamp).getTime()
-        : (typeof sel.timestamp === 'number' ? sel.timestamp : Date.now());
-      
-      // Check if this selection is already in freshHighlights (avoid duplicates)
-      const isDuplicate = freshHighlights.some(h => 
-        h.text === sel.text && Math.abs(h.timestamp - selTimestamp) < 5000
-      );
-      
-      if (!isDuplicate) {
-        const highlight = {
-          text: sel.text,
-          timestamp: selTimestamp,
-          page: sel.pageNumber || currentPage
-        };
-        
-        freshHighlights.push(highlight);
-        
-        console.log(`  ✅ Adding selection ${idx + 1}:`, {
-          text: sel.text.substring(0, 50) + '...',
-          textLength: sel.text.length,
-          timestamp: highlight.timestamp,
-          page: highlight.page
-        });
-      } else {
-        console.log(`  ⏭️ Skipping duplicate selection ${idx + 1}`);
-      }
-    });
-    
-    console.log('\n📊 FINAL RESULTS:');
-    console.log('  Total highlights collected:', freshHighlights.length);
-    console.log('  Sample highlights:', freshHighlights.slice(0, 3).map(h => ({
-      text: h.text.substring(0, 30) + '...',
-      timestamp: h.timestamp,
-      page: h.page
-    })));
-    
-    // Update state BEFORE opening (convert back to the expected format)
-    const stateFormat = freshHighlights.map((h, idx) => ({
-      text: h.text,
-      timestamp: new Date(h.timestamp).toISOString(),
-      pageNumber: h.page,
-      position: { x: 0, y: 0 }
-    }));
-    
-    console.log('\n💾 Updating capturedSelections state...');
-    console.log('  New state format:', stateFormat.slice(0, 2));
-    setCapturedSelections(stateFormat);
-    
-    // Force a small delay to ensure state updates
-    setTimeout(() => {
-      console.log('\n🚀 OPENING STORYBOARD NOW!');
-      console.log('  Passing', freshHighlights.length, 'highlights to storyboard');
-      console.log('═══════════════════════════════════════════════════\n');
-      setShowStoryboard(true);
-    }, 100);
-  }}
-  className="group w-full rounded-xl border border-indigo-200/60 bg-gradient-to-r from-indigo-50/60 to-blue-50/40 hover:from-indigo-100/80 hover:to-blue-100/60 p-3 text-left shadow-sm transition-all duration-200 hover:shadow-md"
->
-  <div className="flex items-center gap-3">
-    <div className="rounded-lg ring-1 ring-indigo-200/60 bg-white/60 p-2">
-      <Activity className="h-4 w-4 text-indigo-600" />
-    </div>
-    <div className="flex-1">
-      <div className="text-sm font-medium text-indigo-800">Research Storyboard</div>
-      <div className="text-xs text-indigo-600 mt-0.5">View your reading journey ({capturedSelections.length} tracked)</div>
-    </div>
-    <ChevronRight className="h-4 w-4 text-indigo-500 group-hover:translate-x-0.5 transition-transform" />
-  </div>
-</button>
-
-        <button
-          onClick={() => setShowAIResearchPrerequisites(true)}
-          className="group w-full rounded-xl border border-purple-200/60 bg-gradient-to-r from-purple-50/60 to-pink-50/40 hover:from-purple-100/80 hover:to-pink-100/60 p-3 text-left shadow-sm transition-all duration-200 hover:shadow-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-purple-500 focus-visible:ring-offset-2"
-        >
-          <div className="flex items-center gap-3">
-            <div className="rounded-lg ring-1 ring-purple-200/60 bg-white/60 p-2">
-              <Brain className="h-4 w-4 text-purple-600" />
-            </div>
-            <div className="flex-1">
-              <div className="text-sm font-medium text-purple-800">Prerequisites</div>
-              <div className="text-xs text-purple-600 mt-0.5">Auto-map background readings</div>
-            </div>
-            <ChevronRight className="h-4 w-4 text-purple-500 group-hover:translate-x-0.5 transition-transform" />
-          </div>
-        </button>
-        <button
-        onClick={() => {
-          if (eyeTrackingEnabled) {
-            eyeTracker.pause()
-            setEyeTrackingEnabled(false)
-          } else {
-            setShowEyeCalibration(true)
-          }
-        }}
-        className="group w-full rounded-xl border border-green-200/60 bg-gradient-to-r from-green-50/60 to-emerald-50/40 hover:from-green-100/80 hover:to-emerald-100/60 p-3 text-left shadow-sm transition-all duration-200 hover:shadow-md"
-      >
-        <div className="flex items-center gap-3">
-          <div className="rounded-lg ring-1 ring-green-200/60 bg-white/60 p-2">
-            <Eye className="h-4 w-4 text-green-600" />
-          </div>
-          <div className="flex-1">
-            <div className="text-sm font-medium text-green-800">
-              {eyeTrackingEnabled ? 'Pause Eye Tracking' : 'Start Eye Tracking'}
-            </div>
-            <div className="text-xs text-green-600 mt-0.5">Track reading patterns</div>
-          </div>
-          <ChevronRight className="h-4 w-4 text-green-500 group-hover:translate-x-0.5 transition-transform" />
-        </div>
-      </button>
-
-      {eyeTrackingEnabled && (
-  <button
-    onClick={() => setShowGazeHeatmap(!showGazeHeatmap)}
-    className="group w-full rounded-xl border border-orange-200/60 bg-gradient-to-r from-orange-50/60 to-red-50/40 hover:from-orange-100/80 hover:to-red-100/60 p-3 text-left shadow-sm transition-all duration-200 hover:shadow-md"
-  >
-    <div className="flex items-center gap-3">
-      <div className="rounded-lg ring-1 ring-orange-200/60 bg-white/60 p-2">
-        <Eye className="h-4 w-4 text-orange-600" />
-      </div>
-      <div className="flex-1">
-        <div className="text-sm font-medium text-orange-800">
-          {showGazeHeatmap ? 'Hide' : 'Show'} Gaze Heatmap
-        </div>
-        <div className="text-xs text-orange-600 mt-0.5">Visualize where you looked</div>
-      </div>
-    </div>
-  </button>
-)}
-
-      <button
-  onClick={() => {
-    const gazePoints = eyeTracker.getGazePoints(currentPage)
-    console.log('👁️ Gaze Points on current page:', gazePoints.length)
-    console.log('Sample points:', gazePoints.slice(0, 10))
-  }}
-  className="group w-full rounded-xl border border-amber-200/60 bg-gradient-to-r from-amber-50/60 to-yellow-50/40 hover:from-amber-100/80 hover:to-yellow-100/60 p-3 text-left shadow-sm transition-all duration-200 hover:shadow-md"
->
-  <div className="flex items-center gap-3">
-    <div className="rounded-lg ring-1 ring-amber-200/60 bg-white/60 p-2">
-      <Activity className="h-4 w-4 text-amber-600" />
-    </div>
-    <div className="flex-1">
-      <div className="text-sm font-medium text-amber-800">Check Gaze Data</div>
-      <div className="text-xs text-amber-600 mt-0.5">View tracked points in console</div>
-    </div>
-  </div>
-</button>
-
-<button
-  onClick={() => {
-    const gazePoints = eyeTracker.getGazePoints(currentPage)
-    console.log('👁️ Gaze Points on current page:', gazePoints.length)
-    console.log('Sample points:', gazePoints.slice(0, 10))
-  }}
-  className="group w-full rounded-xl border border-amber-200/60 bg-gradient-to-r from-amber-50/60 to-yellow-50/40 hover:from-amber-100/80 hover:to-yellow-100/60 p-3 text-left shadow-sm transition-all duration-200 hover:shadow-md"
->
-  <div className="flex items-center gap-3">
-    <div className="rounded-lg ring-1 ring-amber-200/60 bg-white/60 p-2">
-      <Activity className="h-4 w-4 text-amber-600" />
-    </div>
-    <div className="flex-1">
-      <div className="text-sm font-medium text-amber-800">Check Gaze Data</div>
-      <div className="text-xs text-amber-600 mt-0.5">View tracked points in console</div>
-    </div>
-  </div>
-</button>
-
-{/* ✅ FIXED Section Assignment Button */}
-<button
-  onClick={() => {
-    console.log('🎯 Section Assignments button clicked!')
-    console.log('📚 Number of sections:', pdfSections.length)
-    
-    if (pdfSections.length === 0) {
-      toast.error('No sections found. Please wait for PDF to load completely.')
-      return
-    }
-    
-    const newState = !showSectionAssignment
-    console.log('🔄 showSectionAssignment changing from', showSectionAssignment, 'to', newState)
-    setShowSectionAssignment(newState)
-    
-    // Check after 100ms if state actually changed
-    setTimeout(() => {
-      console.log('✅ showSectionAssignment after 100ms:', newState)
-    }, 100)
-  }}
-  className="group w-full rounded-xl border border-rose-200/60 bg-gradient-to-r from-rose-50/60 to-pink-50/40 hover:from-rose-100/80 hover:to-pink-100/60 p-3 text-left shadow-sm transition-all duration-200 hover:shadow-md"
->
-  <div className="flex items-center gap-3">
-    <div className="rounded-lg ring-1 ring-rose-200/60 bg-white/60 p-2">
-      <Users className="h-4 w-4 text-rose-600" />
-    </div>
-    <div className="flex-1">
-      <div className="text-sm font-medium text-rose-800">Section Assignments</div>
-      <div className="text-xs text-rose-600 mt-0.5">
-        {extractingHeadings ? 'Extracting sections...' : `Assign to collaborators (${pdfSections.length} sections)`}
-      </div>
-    </div>
-  </div>
-</button>
-
-
-{/* ✅ ADD THIS DEBUG BUTTON HERE */}
-<button
-  onClick={() => {
-    console.log('='.repeat(50))
-    console.log('🔍 DEBUGGING SECTION ASSIGNMENT')
-    console.log('='.repeat(50))
-    console.log('📚 pdfSections length:', pdfSections.length)
-    console.log('📚 pdfSections data:', pdfSections)
-    console.log('📚 extractingHeadings:', extractingHeadings)
-    console.log('📚 showSectionAssignment:', showSectionAssignment)
-    console.log('='.repeat(50))
-  }}
-  className="w-full p-2 bg-yellow-100 text-yellow-900 text-xs rounded-lg mt-2"
->
-  🐛 DEBUG: Check pdfSections State
-</button>
-
-      </div>
-
-      {/* Divider */}
-      <div className="border-t border-slate-200/60 my-3"></div>
-
-      {/* Navigation Tools */}
-      <div className="space-y-2">
-        <button
-          onClick={() => webViewerInstance?.UI.openElements(['searchPanel'])}
-          className="group w-full rounded-xl hover:bg-slate-50/80 p-3 text-left transition-all duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-500 focus-visible:ring-offset-2"
-        >
-          <div className="flex items-center gap-3">
-            <div className="rounded-lg ring-1 ring-slate-200/60 bg-white/60 p-2">
-              <Search className="h-4 w-4 text-slate-600" />
-            </div>
-            <div className="flex-1">
-              <div className="text-sm font-medium text-slate-700">Search</div>
-              <div className="text-xs text-slate-500 mt-0.5">Cmd/Ctrl + K</div>
-            </div>
-            <ChevronRight className="h-4 w-4 text-slate-400 group-hover:translate-x-0.5 transition-transform" />
-          </div>
-        </button>
-
-        <button
-          onClick={() => webViewerInstance?.UI.openElements(['outlinesPanel'])}
-          className="group w-full rounded-xl hover:bg-slate-50/80 p-3 text-left transition-all duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-500 focus-visible:ring-offset-2"
-        >
-          <div className="flex items-center gap-3">
-            <div className="rounded-lg ring-1 ring-slate-200/60 bg-white/60 p-2">
-              <Bookmark className="h-4 w-4 text-slate-600" />
-            </div>
-            <div className="flex-1">
-              <div className="text-sm font-medium text-slate-700">Contents</div>
-              <div className="text-xs text-slate-500 mt-0.5">Headings & figures</div>
-            </div>
-            <ChevronRight className="h-4 w-4 text-slate-400 group-hover:translate-x-0.5 transition-transform" />
-          </div>
-        </button>
-
-
-
-
-
-        <button
-  onClick={() => setShowInteractionAnalysis(true)}
-  className="group w-full rounded-xl hover:bg-slate-50/80 p-3 text-left transition-all duration-200"
->
-  <div className="flex items-center gap-3">
-    <div className="rounded-lg ring-1 ring-slate-200/60 bg-white/60 p-2">
-      <Activity className="h-4 w-4 text-slate-600" />
-    </div>
-    <div className="flex-1">
-      <div className="text-sm font-medium text-slate-700">Analysis</div>
-      <div className="text-xs text-slate-500 mt-0.5">View insights</div>
-    </div>
-    <ChevronRight className="h-4 w-4 text-slate-400 group-hover:translate-x-0.5 transition-transform" />
-  </div>
-</button>
-      </div>
-    </div>
-  </div>
-</div>
-
-
-{/* Section Assignment Panel - Slides out next to sidebar */}
-{showSectionAssignment && pdfSections.length > 0 && (
-  <div className="fixed right-4 top-20 w-[420px] h-[calc(100vh-100px)] z-[9999]">
-<div className="h-full bg-white rounded-lg shadow-2xl overflow-visible border border-gray-200">
-      <div className="flex items-center justify-between p-4 border-b bg-gradient-to-r from-rose-50 to-pink-50">
-        <div className="flex items-center gap-2">
-          <Users className="w-5 h-5 text-rose-600" />
-          <h3 className="font-bold text-lg text-rose-900">Section Assignments</h3>
-        </div>
-        <Button
-          variant="ghost"
-          size="sm"
-          onClick={() => setShowSectionAssignment(false)}
-          className="hover:bg-rose-100"
-        >
-          <X className="w-4 h-4" />
-        </Button>
-      </div>
-      <div className="overflow-y-auto" style={{ height: 'calc(100% - 73px)' }}>
-      <SectionAssignmentPanel
-  sections={pdfSections}
-  collaborators={(() => {
-    // Create a Map to deduplicate by userId
-    const uniqueCollabs = new Map()
-    
-    // Add current user first
-    uniqueCollabs.set(userId, { 
-      id: userId, 
-      name: userName, 
-      color: '#3b82f6' 
-    })
-    
-    // Add other collaborators
-    collaborators
-      .filter(c => c.status === 'online' && c.id !== userId)
-      .forEach((c, index) => {
-        if (!uniqueCollabs.has(c.id)) {
-          uniqueCollabs.set(c.id, {
-            id: c.id,
-            name: c.name,
-            color: ['#10b981', '#8b5cf6', '#ef4444', '#f59e0b', '#06b6d4'][index % 5] || '#6b7280'
-          })
-        }
-      })
-    
-    return Array.from(uniqueCollabs.values())
-  })()}
-  currentUserId={userId}
-  documentId={documentId}
-  socket={socketInstance}
-  onAssignmentChange={(assignments) => {
-    console.log('📚 Section assignments updated:', assignments)
-    setSectionAssignments(assignments)
-  }}
-  onJumpToSection={handleJumpToSection}
-/>
-      </div>
-    </div>
-  </div>
-)}
 
 
 
@@ -4923,11 +5401,10 @@ onClick={() => {
             {openTabs.map((tab) => (
               <div
                 key={tab.id}
-                className={`flex items-center px-3 py-2 rounded-t-lg text-sm cursor-pointer group min-w-0 max-w-[200px] transition-colors ${
-                  tab.active 
-                    ? 'bg-white border-t border-l border-r border-gray-200 text-gray-900 shadow-sm' 
-                    : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
-                }`}
+                className={`flex items-center px-3 py-2 rounded-t-lg text-sm cursor-pointer group min-w-0 max-w-[200px] transition-colors ${tab.active
+                  ? 'bg-white border-t border-l border-r border-gray-200 text-gray-900 shadow-sm'
+                  : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                  }`}
                 onClick={() => switchTab(tab.id)}
               >
                 <FileText className="w-4 h-4 mr-2 flex-shrink-0 text-blue-600" />
@@ -4955,8 +5432,8 @@ onClick={() => {
               Add Document
             </button>
 
-{/* ✅ ADD THIS BUTTON RIGHT HERE */}
-{/* <button
+            {/* ✅ ADD THIS BUTTON RIGHT HERE */}
+            {/* <button
   onClick={() => setShowSectionAssignment(v => !v)}
   className="px-3 py-2 text-sm text-gray-500 hover:text-gray-700 hover:bg-blue-200 rounded flex items-center transition-colors ml-2"
   title="Assign sections to collaborators"
@@ -4965,20 +5442,20 @@ onClick={() => {
   Assign Sections
 </button> */}
 
-            
+
           </div>
 
           {/* RIGHT: fixed actions (does NOT scroll away) */}
-  <div className="ml-2 shrink-0">
-    <button
-      onClick={() => setShowSectionAssignment(v => !v)}
-      className="px-3 py-2 text-sm text-gray-600 hover:text-gray-800 hover:bg-blue-100 rounded flex items-center transition-colors"
-      title="Assign sections to collaborators"
-    >
-      <BookOpen className="w-4 h-4 mr-1" />
-      Assign Sections
-    </button>
-  </div>
+          <div className="ml-2 shrink-0">
+            <button
+              onClick={() => setShowSectionAssignment(v => !v)}
+              className="px-3 py-2 text-sm text-gray-600 hover:text-gray-800 hover:bg-blue-100 rounded flex items-center transition-colors"
+              title="Assign sections to collaborators"
+            >
+              <BookOpen className="w-4 h-4 mr-1" />
+              Assign Sections
+            </button>
+          </div>
         </div>
 
         {/* Tab Content Area */}
@@ -4992,496 +5469,495 @@ onClick={() => {
               </div>
             </div>
           )}
-          
+
           {/* WebViewer Container */}
-          <div 
+          <div
             id="webviewer-container"
-            className="webviewer flex-1 w-full relative" 
+            className="webviewer flex-1 w-full relative"
             ref={viewer}
-            style={{ 
+            style={{
               height: 'calc(100vh - 140px)',
               minHeight: '800px',
               width: '100%'
             }}
           >
-          {/* Stuck Markers Overlay */}
-          {stuckMarkers
-            .filter(marker => marker.page === currentPage)
-            .map(marker => (
-              <div
-                key={marker.id}
-                className="absolute z-50 group"
-                style={{
-                  left: marker.x,
-                  top: marker.y,
-                }}
-              >
-                <div className="bg-gradient-to-r from-red-50 to-orange-50 border-2 border-red-400 rounded-xl px-4 py-3 shadow-xl backdrop-blur-sm">
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center space-x-2">
-                      <div className="w-3 h-3 bg-red-500 rounded-full animate-pulse"></div>
-                      <span className="text-red-700 font-semibold text-sm">
-                        {marker.text}
+            {/* Stuck Markers Overlay */}
+            {stuckMarkers
+              .filter(marker => marker.page === currentPage)
+              .map(marker => (
+                <div
+                  key={marker.id}
+                  className="absolute z-50 group"
+                  style={{
+                    left: marker.x,
+                    top: marker.y,
+                  }}
+                >
+                  <div className="bg-gradient-to-r from-red-50 to-orange-50 border-2 border-red-400 rounded-xl px-4 py-3 shadow-xl backdrop-blur-sm">
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center space-x-2">
+                        <div className="w-3 h-3 bg-red-500 rounded-full animate-pulse"></div>
+                        <span className="text-red-700 font-semibold text-sm">
+                          {marker.text}
+                        </span>
+                      </div>
+                      <button
+                        onClick={() => handleRemoveStuckMarker(marker.id)}
+                        className="opacity-0 group-hover:opacity-100 transition-opacity duration-200 ml-2 p-1 hover:bg-red-200 rounded-full"
+                        title="Mark as solved"
+                      >
+                        <svg className="w-4 h-4 text-red-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                        </svg>
+                      </button>
+                    </div>
+                    <div className="mt-1 flex items-center space-x-1">
+                      <div className="w-2 h-2 bg-gray-400 rounded-full"></div>
+                      <span className="text-xs text-gray-600 font-medium">
+                        Anonymous Reader
                       </span>
                     </div>
-                    <button
-                      onClick={() => handleRemoveStuckMarker(marker.id)}
-                      className="opacity-0 group-hover:opacity-100 transition-opacity duration-200 ml-2 p-1 hover:bg-red-200 rounded-full"
-                      title="Mark as solved"
-                    >
-                      <svg className="w-4 h-4 text-red-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                      </svg>
-                    </button>
-                  </div>
-                  <div className="mt-1 flex items-center space-x-1">
-                    <div className="w-2 h-2 bg-gray-400 rounded-full"></div>
-                    <span className="text-xs text-gray-600 font-medium">
-                      Anonymous Reader
-                    </span>
                   </div>
                 </div>
-              </div>
-            ))}
+              ))}
+          </div>
         </div>
-      </div>
 
-      {/* Invite Collaborator Modal */}
-      {showInviteModal && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-          <div className="bg-white rounded-lg p-6 w-96 max-w-md">
-            <div className="flex items-center justify-between mb-4">
-              <h3 className="text-lg font-semibold">Invite Collaborator</h3>
-              <Button 
-                variant="ghost" 
-                size="sm" 
-                onClick={() => setShowInviteModal(false)}
-              >
-                <X className="h-4 w-4" />
-              </Button>
-            </div>
-            
-            <div className="space-y-4">
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Email Address
-                </label>
-                <Input
-                  type="email"
-                  placeholder="colleague@university.edu"
-                  value={inviteEmail}
-                  onChange={(e) => setInviteEmail(e.target.value)}
-                />
-              </div>
-              
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Role
-                </label>
-                <select
-                  value={inviteRole}
-                  onChange={(e) => setInviteRole(e.target.value as 'viewer' | 'editor' | 'admin')}
-                  className="w-full p-2 border border-gray-300 rounded-md"
-                >
-                  <option value="viewer">Viewer (Read only)</option>
-                  <option value="editor">Editor (Can edit)</option>
-                  <option value="admin">Admin (Full control)</option>
-                </select>
-              </div>
-              
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Message (Optional)
-                </label>
-                <textarea
-                  placeholder="Hi! I'd like to collaborate on this research document..."
-                  value={inviteMessage}
-                  onChange={(e) => setInviteMessage(e.target.value)}
-                  className="w-full p-2 border border-gray-300 rounded-md h-20 resize-none"
-                />
-              </div>
-              
-              <div className="flex gap-2 pt-4">
-                <Button 
-                  variant="outline" 
+        {/* Invite Collaborator Modal */}
+        {showInviteModal && (
+          <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+            <div className="bg-white rounded-lg p-6 w-96 max-w-md">
+              <div className="flex items-center justify-between mb-4">
+                <h3 className="text-lg font-semibold">Invite Collaborator</h3>
+                <Button
+                  variant="ghost"
+                  size="sm"
                   onClick={() => setShowInviteModal(false)}
-                  className="flex-1"
                 >
-                  Cancel
+                  <X className="h-4 w-4" />
                 </Button>
-                <Button 
-                  onClick={inviteCollaborator}
-                  disabled={!inviteEmail}
-                  className="flex-1"
-                >
-                  Send Invitation
-                </Button>
+              </div>
+
+              <div className="space-y-4">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    Email Address
+                  </label>
+                  <Input
+                    type="email"
+                    placeholder="colleague@university.edu"
+                    value={inviteEmail}
+                    onChange={(e) => setInviteEmail(e.target.value)}
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    Role
+                  </label>
+                  <select
+                    value={inviteRole}
+                    onChange={(e) => setInviteRole(e.target.value as 'viewer' | 'editor' | 'admin')}
+                    className="w-full p-2 border border-gray-300 rounded-md"
+                  >
+                    <option value="viewer">Viewer (Read only)</option>
+                    <option value="editor">Editor (Can edit)</option>
+                    <option value="admin">Admin (Full control)</option>
+                  </select>
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    Message (Optional)
+                  </label>
+                  <textarea
+                    placeholder="Hi! I'd like to collaborate on this research document..."
+                    value={inviteMessage}
+                    onChange={(e) => setInviteMessage(e.target.value)}
+                    className="w-full p-2 border border-gray-300 rounded-md h-20 resize-none"
+                  />
+                </div>
+
+                <div className="flex gap-2 pt-4">
+                  <Button
+                    variant="outline"
+                    onClick={() => setShowInviteModal(false)}
+                    className="flex-1"
+                  >
+                    Cancel
+                  </Button>
+                  <Button
+                    onClick={inviteCollaborator}
+                    disabled={!inviteEmail}
+                    className="flex-1"
+                  >
+                    Send Invitation
+                  </Button>
+                </div>
               </div>
             </div>
           </div>
-        </div>
-      )}
+        )}
 
-      {/* Math Explainer Modal */}
-      <MathExplainer
-        isOpen={showMathExplainer}
-        onClose={() => setShowMathExplainer(false)}
-        equation={selectedEquation}
-        context={equationContext}
-        documentContent=""
-      />
-      
-      {/* General Explainer Modal */}
-      <GeneralExplainer
-        isOpen={showGeneralExplainer}
-        onClose={() => setShowGeneralExplainer(false)}
-        selectedText={generalExplainerText}
-        documentContext={equationContext}
-        documentContent=""
-        documentTitle=""
-        documentAuthors=""
-        documentUrl={documentUrl}
-        userId={userId}
-        userName={userName}
-      />
+        {/* Math Explainer Modal */}
+        <MathExplainer
+          isOpen={showMathExplainer}
+          onClose={() => setShowMathExplainer(false)}
+          equation={selectedEquation}
+          context={equationContext}
+          documentContent=""
+        />
 
-      {/* Advanced Explainer Modal */}
-      <AdvancedExplainer
-        isOpen={showAdvancedExplainer}
-        onClose={() => setShowAdvancedExplainer(false)}
-        selectedText={advancedExplainerText}
-        documentContent=""
-        documentTitle=""
-        documentAuthors=""
-        documentUrl={documentUrl}
-        userId={userId}
-        userName={userName}
-      />
+        {/* General Explainer Modal */}
+        <GeneralExplainer
+          isOpen={showGeneralExplainer}
+          onClose={() => setShowGeneralExplainer(false)}
+          selectedText={generalExplainerText}
+          documentContext={equationContext}
+          documentContent=""
+          documentTitle=""
+          documentAuthors=""
+          documentUrl={documentUrl}
+          userId={userId}
+          userName={userName}
+        />
 
-      {/* Table Explainer Modal */}
-      <TableExplainer
-        isOpen={showTableExplainer}
-        onClose={() => setShowTableExplainer(false)}
-        selectedText={tableExplainerText}
-        documentContent=""
-        documentTitle=""
-        documentAuthors=""
-        documentUrl={documentUrl}
-        userId={userId}
-        userName={userName}
-      />
+        {/* Advanced Explainer Modal */}
+        <AdvancedExplainer
+          isOpen={showAdvancedExplainer}
+          onClose={() => setShowAdvancedExplainer(false)}
+          selectedText={advancedExplainerText}
+          documentContent=""
+          documentTitle=""
+          documentAuthors=""
+          documentUrl={documentUrl}
+          userId={userId}
+          userName={userName}
+        />
 
-      {/* Image Explainer Modal */}
-      <ImageExplainer
-        isOpen={showImageExplainer}
-        onClose={() => {
-          setShowImageExplainer(false)
-          setExtractedImageData(null)
-          setHasActualImage(false)
-        }}
-        selectedText={imageExplainerText}
-        imageData={extractedImageData || undefined}
-        hasActualImage={hasActualImage}
-        documentContent=""
-        documentTitle=""
-        documentAuthors=""
-        documentUrl={documentUrl}
-        userId={userId}
-        userName={userName}
-      />
+        {/* Table Explainer Modal */}
+        <TableExplainer
+          isOpen={showTableExplainer}
+          onClose={() => setShowTableExplainer(false)}
+          selectedText={tableExplainerText}
+          documentContent=""
+          documentTitle=""
+          documentAuthors=""
+          documentUrl={documentUrl}
+          userId={userId}
+          userName={userName}
+        />
 
-      {/* Screen Capture Tool */}
-      <ScreenCapture
-        isOpen={showScreenCapture}
-        onClose={() => setShowScreenCapture(false)}
-        onCapture={(imageData) => {
-          console.log('📸 Screen capture completed, starting AI analysis');
-          setCapturedImageData(imageData);
-          setExtractedImageData(imageData);
-          setHasActualImage(true);
-          setImageExplainerText('Screen captured area for analysis');
-          setShowImageExplainer(true);
-          setShowScreenCapture(false);
-        }}
-        targetElementId="webviewer-container"
-      />
-
-      {/* Prerequisite Helper */}
-      <PrerequisiteHelper
-        isOpen={showPrerequisiteHelper}
-        onClose={() => setShowPrerequisiteHelper(false)}
-        selectedText={prerequisiteText}
-        documentContent={documentContent || ''}
-        documentTitle={documentTitle || ''}
-        documentAuthors={documentAuthors || ''}
-        documentUrl={documentUrl}
-        userId={userId}
-        userName={userName}
-      />
-
-      
-      {/* Text Selection Popup */}
-      {showTextSelectionPopup && selectedText && (
-        <TextSelectionPopup
-          selectedText={selectedText}
-          position={selectionPosition}
+        {/* Image Explainer Modal */}
+        <ImageExplainer
+          isOpen={showImageExplainer}
           onClose={() => {
-            console.log('🎯 Closing text selection popup');
-            setShowTextSelectionPopup(false);
+            setShowImageExplainer(false)
+            setExtractedImageData(null)
+            setHasActualImage(false)
           }}
-          onHighlight={(color) => {
-            // Add highlight annotation using WebViewer
-            if (webViewerInstance && webViewerInstance.Core) {
-              const { documentViewer, annotationManager, Annotations } = webViewerInstance.Core;
-              const selectedTextQuads = documentViewer.getSelectedTextQuads();
-              
-              if (selectedTextQuads && selectedTextQuads.length > 0) {
-                const pageNumber = selectedTextQuads[0].pageNumber;
-                const highlight = new Annotations.HighlightAnnotation();
-                highlight.PageNumber = pageNumber;
-                highlight.Quads = selectedTextQuads.map((quad: any) => quad.quads).flat();
-                highlight.StrokeColor = new Annotations.Color(color);
-                highlight.Author = userName;
-                
-                annotationManager.addAnnotation(highlight);
-                annotationManager.redrawAnnotation(highlight);
-                documentViewer.clearSelection();
+          selectedText={imageExplainerText}
+          imageData={extractedImageData || undefined}
+          hasActualImage={hasActualImage}
+          documentContent=""
+          documentTitle=""
+          documentAuthors=""
+          documentUrl={documentUrl}
+          userId={userId}
+          userName={userName}
+        />
+
+        {/* Screen Capture Tool */}
+        <ScreenCapture
+          isOpen={showScreenCapture}
+          onClose={() => setShowScreenCapture(false)}
+          onCapture={(imageData) => {
+            console.log('📸 Screen capture completed, starting AI analysis');
+            setCapturedImageData(imageData);
+            setExtractedImageData(imageData);
+            setHasActualImage(true);
+            setImageExplainerText('Screen captured area for analysis');
+            setShowImageExplainer(true);
+            setShowScreenCapture(false);
+          }}
+          targetElementId="webviewer-container"
+        />
+
+        {/* Prerequisite Helper */}
+        <PrerequisiteHelper
+          isOpen={showPrerequisiteHelper}
+          onClose={() => setShowPrerequisiteHelper(false)}
+          selectedText={prerequisiteText}
+          documentContent={documentContent || ''}
+          documentTitle={documentTitle || ''}
+          documentAuthors={documentAuthors || ''}
+          documentUrl={documentUrl}
+          userId={userId}
+          userName={userName}
+        />
+
+
+        {/* Text Selection Popup */}
+        {showTextSelectionPopup && selectedText && (
+          <TextSelectionPopup
+            selectedText={selectedText}
+            position={selectionPosition}
+            onClose={() => {
+              console.log('🎯 Closing text selection popup');
+              setShowTextSelectionPopup(false);
+            }}
+            onHighlight={(color) => {
+              // Add highlight annotation using WebViewer
+              if (webViewerInstance && webViewerInstance.Core) {
+                const { documentViewer, annotationManager, Annotations } = webViewerInstance.Core;
+                const selectedTextQuads = documentViewer.getSelectedTextQuads();
+
+                if (selectedTextQuads && selectedTextQuads.length > 0) {
+                  const pageNumber = selectedTextQuads[0].pageNumber;
+                  const highlight = new Annotations.HighlightAnnotation();
+                  highlight.PageNumber = pageNumber;
+                  highlight.Quads = selectedTextQuads.map((quad: any) => quad.quads).flat();
+                  highlight.StrokeColor = new Annotations.Color(color);
+                  highlight.Author = userName;
+
+                  annotationManager.addAnnotation(highlight);
+                  annotationManager.redrawAnnotation(highlight);
+                  documentViewer.clearSelection();
+                }
               }
-            }
-            setShowTextSelectionPopup(false);
-          }}
-          onAnnotate={(comment) => {
-            // Add comment annotation using WebViewer
-            if (webViewerInstance && webViewerInstance.Core) {
-              const { documentViewer, annotationManager, Annotations } = webViewerInstance.Core;
-              const selectedTextQuads = documentViewer.getSelectedTextQuads();
-              
-              if (selectedTextQuads && selectedTextQuads.length > 0) {
-                const pageNumber = selectedTextQuads[0].pageNumber;
-                const highlight = new Annotations.HighlightAnnotation();
-                highlight.PageNumber = pageNumber;
-                highlight.Quads = selectedTextQuads.map((quad: any) => quad.quads).flat();
-                highlight.StrokeColor = new Annotations.Color('#ffeb3b');
-                highlight.Author = userName;
-                highlight.Contents = comment;
-                
-                // Create a sticky note for the comment
-                const note = new Annotations.StickyAnnotation();
-                note.PageNumber = pageNumber;
-                note.X = selectedTextQuads[0].quads[0].x1;
-                note.Y = selectedTextQuads[0].quads[0].y1;
-                note.Contents = comment;
-                note.Author = userName;
-                note.Subject = 'Comment';
-                note.InReplyTo = highlight.Id;
-                
-                annotationManager.addAnnotation(highlight);
-                annotationManager.addAnnotation(note);
-                annotationManager.redrawAnnotation(highlight);
-                annotationManager.redrawAnnotation(note);
-                documentViewer.clearSelection();
+              setShowTextSelectionPopup(false);
+            }}
+            onAnnotate={(comment) => {
+              // Add comment annotation using WebViewer
+              if (webViewerInstance && webViewerInstance.Core) {
+                const { documentViewer, annotationManager, Annotations } = webViewerInstance.Core;
+                const selectedTextQuads = documentViewer.getSelectedTextQuads();
+
+                if (selectedTextQuads && selectedTextQuads.length > 0) {
+                  const pageNumber = selectedTextQuads[0].pageNumber;
+                  const highlight = new Annotations.HighlightAnnotation();
+                  highlight.PageNumber = pageNumber;
+                  highlight.Quads = selectedTextQuads.map((quad: any) => quad.quads).flat();
+                  highlight.StrokeColor = new Annotations.Color('#ffeb3b');
+                  highlight.Author = userName;
+                  highlight.Contents = comment;
+
+                  // Create a sticky note for the comment
+                  const note = new Annotations.StickyAnnotation();
+                  note.PageNumber = pageNumber;
+                  note.X = selectedTextQuads[0].quads[0].x1;
+                  note.Y = selectedTextQuads[0].quads[0].y1;
+                  note.Contents = comment;
+                  note.Author = userName;
+                  note.Subject = 'Comment';
+                  note.InReplyTo = highlight.Id;
+
+                  annotationManager.addAnnotation(highlight);
+                  annotationManager.addAnnotation(note);
+                  annotationManager.redrawAnnotation(highlight);
+                  annotationManager.redrawAnnotation(note);
+                  documentViewer.clearSelection();
+                }
               }
-            }
-            setShowTextSelectionPopup(false);
-          }}
-          onAIExplain={() => {
-            // Always route to Math Explainer for this button
-            console.log('🧮 Math AI button clicked for:', selectedText);
-            setSelectedEquation(selectedText);
-            setEquationContext(extractContextAroundSelection(selectedText));
-            setShowMathExplainer(true);
-            setShowTextSelectionPopup(false);
-          }}
-          onGeneralExplain={() => {
-            // Always route to Advanced Explainer for this button
-            console.log('🚀 Smart AI button clicked for:', selectedText);
-            setAdvancedExplainerText(selectedText);
-            setShowAdvancedExplainer(true);
-            setShowTextSelectionPopup(false);
-          }}
-          onTableExplain={() => {
-            // Always route to Table Explainer for this button
-            console.log('📊 Table AI button clicked for:', selectedText);
-            setTableExplainerText(selectedText);
-            setShowTableExplainer(true);
-            setShowTextSelectionPopup(false);
-          }}
-          onImageExplain={async () => {
-            // Enhanced Image AI with actual image extraction
-            console.log('🖼️ Image AI button clicked for:', selectedText);
-            
-            try {
-              // Check if we can extract actual image data
-              const extractedImageData = await extractImageFromPDF(selectedText);
-              
-              console.log('🔍 ApryseWebViewer Debug - extractedImageData:', {
-                hasData: !!extractedImageData,
-                dataType: typeof extractedImageData,
-                startsWithDataImage: extractedImageData?.startsWith('data:image'),
-                length: extractedImageData?.length || 0,
-                first50chars: extractedImageData ? extractedImageData.substring(0, 50) + '...' : 'null'
-              });
-              
-              if (extractedImageData && extractedImageData.startsWith('data:image')) {
-                console.log('✅ Successfully extracted actual image data for Vision AI');
-                // Pass the actual image data to the explainer
-                setImageExplainerText(selectedText);
-                // Store image data in state for the explainer
-                setExtractedImageData(extractedImageData);
-                setHasActualImage(true);
-                setShowImageExplainer(true);
-              } else if (extractedImageData === 'CAPTION_ONLY') {
-                console.log('📝 Using caption-based analysis (image extraction not available)');
+              setShowTextSelectionPopup(false);
+            }}
+            onAIExplain={() => {
+              // Always route to Math Explainer for this button
+              console.log('🧮 Math AI button clicked for:', selectedText);
+              setSelectedEquation(selectedText);
+              setEquationContext(extractContextAroundSelection(selectedText));
+              setShowMathExplainer(true);
+              setShowTextSelectionPopup(false);
+            }}
+            onGeneralExplain={() => {
+              // Always route to Advanced Explainer for this button
+              console.log('🚀 Smart AI button clicked for:', selectedText);
+              setAdvancedExplainerText(selectedText);
+              setShowAdvancedExplainer(true);
+              setShowTextSelectionPopup(false);
+            }}
+            onTableExplain={() => {
+              // Always route to Table Explainer for this button
+              console.log('📊 Table AI button clicked for:', selectedText);
+              setTableExplainerText(selectedText);
+              setShowTableExplainer(true);
+              setShowTextSelectionPopup(false);
+            }}
+            onImageExplain={async () => {
+              // Enhanced Image AI with actual image extraction
+              console.log('🖼️ Image AI button clicked for:', selectedText);
+
+              try {
+                // Check if we can extract actual image data
+                const extractedImageData = await extractImageFromPDF(selectedText);
+
+                console.log('🔍 ApryseWebViewer Debug - extractedImageData:', {
+                  hasData: !!extractedImageData,
+                  dataType: typeof extractedImageData,
+                  startsWithDataImage: extractedImageData?.startsWith('data:image'),
+                  length: extractedImageData?.length || 0,
+                  first50chars: extractedImageData ? extractedImageData.substring(0, 50) + '...' : 'null'
+                });
+
+                if (extractedImageData && extractedImageData.startsWith('data:image')) {
+                  console.log('✅ Successfully extracted actual image data for Vision AI');
+                  // Pass the actual image data to the explainer
+                  setImageExplainerText(selectedText);
+                  // Store image data in state for the explainer
+                  setExtractedImageData(extractedImageData);
+                  setHasActualImage(true);
+                  setShowImageExplainer(true);
+                } else if (extractedImageData === 'CAPTION_ONLY') {
+                  console.log('📝 Using caption-based analysis (image extraction not available)');
+                  setImageExplainerText(selectedText);
+                  setExtractedImageData(null);
+                  setHasActualImage(false);
+                  setShowImageExplainer(true);
+                } else {
+                  console.log('⚠️ Could not extract image, suggesting screen capture');
+                  // Instead of falling back to caption only, suggest using screen capture
+                  toast.error('Unable to extract image automatically. Please use the screen capture tool (camera icon) to capture the specific figure area for AI analysis.');
+                  return; // Don't open the explainer yet
+                }
+              } catch (error) {
+                console.error('❌ Error in image extraction:', error);
+                // Show helpful message instead of falling back
+                toast.info('💡 Tip: For best results with figure analysis, use the screen capture tool (camera icon) to select the specific figure area!', {
+                  duration: 4000
+                });
+                // Still allow caption-based analysis as fallback
                 setImageExplainerText(selectedText);
                 setExtractedImageData(null);
                 setHasActualImage(false);
                 setShowImageExplainer(true);
-                      } else {
-          console.log('⚠️ Could not extract image, suggesting screen capture');
-          // Instead of falling back to caption only, suggest using screen capture
-          toast.error('Unable to extract image automatically. Please use the screen capture tool (camera icon) to capture the specific figure area for AI analysis.');
-          return; // Don't open the explainer yet
-        }
-            } catch (error) {
-              console.error('❌ Error in image extraction:', error);
-              // Show helpful message instead of falling back
-              toast.info('💡 Tip: For best results with figure analysis, use the screen capture tool (camera icon) to select the specific figure area!', {
-                duration: 4000
-              });
-              // Still allow caption-based analysis as fallback
-              setImageExplainerText(selectedText);
-              setExtractedImageData(null);
-              setHasActualImage(false);
-              setShowImageExplainer(true);
-            }
-            
-            setShowTextSelectionPopup(false);
-          }}
-          onPrerequisiteHelp={() => {
-            // Route to Prerequisite Helper
-            console.log('🎓 Prerequisites button clicked for:', selectedText);
-            setPrerequisiteText(selectedText);
-            setShowPrerequisiteHelper(true);
-            setShowTextSelectionPopup(false);
-          }}
-          onStuckHelp={() => {
-            setShowTextSelectionPopup(false);
-            handleStuckHelp();
-          }}
-          onCopy={() => {
-            // Copy is handled internally by the popup
-            console.log('Text copied to clipboard');
-          }}
-          documentContext={equationContext}
+              }
+
+              setShowTextSelectionPopup(false);
+            }}
+            onPrerequisiteHelp={() => {
+              // Route to Prerequisite Helper
+              console.log('🎓 Prerequisites button clicked for:', selectedText);
+              setPrerequisiteText(selectedText);
+              setShowPrerequisiteHelper(true);
+              setShowTextSelectionPopup(false);
+            }}
+            onStuckHelp={() => {
+              setShowTextSelectionPopup(false);
+              handleStuckHelp();
+            }}
+            onCopy={() => {
+              // Copy is handled internally by the popup
+              console.log('Text copied to clipboard');
+            }}
+            documentContext={equationContext}
+          />
+        )}
+
+        {/* Smart Prerequisite Helper */}
+        <SmartPrerequisiteHelper
+          isOpen={showSmartPrerequisiteHelper}
+          onClose={() => setShowSmartPrerequisiteHelper(false)}
+          documentTitle={documentTitle || 'Research Paper'}
+          documentContent={documentContent || ''}
+          documentAuthors={documentAuthors || ''}
+          documentUrl={documentUrl}
+          selectedText={prerequisiteText}
         />
-      )}
 
-      {/* Smart Prerequisite Helper */}
-      <SmartPrerequisiteHelper
-        isOpen={showSmartPrerequisiteHelper}
-        onClose={() => setShowSmartPrerequisiteHelper(false)}
-        documentTitle={documentTitle || 'Research Paper'}
-        documentContent={documentContent || ''}
-        documentAuthors={documentAuthors || ''}
-        documentUrl={documentUrl}
-        selectedText={prerequisiteText}
-      />
+        {/* AI Research Prerequisites */}
+        <AIResearchPrerequisites
+          isOpen={showAIResearchPrerequisites}
+          onClose={() => setShowAIResearchPrerequisites(false)}
+          documentTitle={documentTitle || 'Research Paper'}
+          documentAuthors={documentAuthors || ''}
+          documentJournal={documentJournal || ''}
+          documentYear={documentYear || ''}
+          documentUrl={documentUrl}
+          documentText={documentContent} // Pass the extracted text
+        />
 
-      {/* AI Research Prerequisites */}
-      <AIResearchPrerequisites
-        isOpen={showAIResearchPrerequisites}
-        onClose={() => setShowAIResearchPrerequisites(false)}
-        documentTitle={documentTitle || 'Research Paper'}
-        documentAuthors={documentAuthors || ''}
-        documentJournal={documentJournal || ''}
-        documentYear={documentYear || ''}
-        documentUrl={documentUrl}
-        documentText={documentContent} // Pass the extracted text
-      />
+        {/* ✅ ADD THIS REASON SELECTOR MODAL HERE: */}
+        {/* Highlight Reason Selector */}
+        {showReasonSelector && (
+          <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+            <div className="bg-white rounded-lg shadow-xl max-w-md w-full mx-4 p-6">
+              <div className="flex items-center justify-between mb-4">
+                <h3 className="text-lg font-semibold text-gray-900">
+                  Why are you highlighting this?
+                </h3>
+                <button
+                  onClick={() => {
+                    setShowReasonSelector(false);
+                    setPendingHighlight(null);
+                  }}
+                  className="text-gray-400 hover:text-gray-600"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
 
-      {/* ✅ ADD THIS REASON SELECTOR MODAL HERE: */}
-      {/* Highlight Reason Selector */}
-      {showReasonSelector && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-          <div className="bg-white rounded-lg shadow-xl max-w-md w-full mx-4 p-6">
-            <div className="flex items-center justify-between mb-4">
-              <h3 className="text-lg font-semibold text-gray-900">
-                Why are you highlighting this?
-              </h3>
-              <button
-                onClick={() => {
-                  setShowReasonSelector(false);
-                  setPendingHighlight(null);
-                }}
-                className="text-gray-400 hover:text-gray-600"
-              >
-                <X className="w-5 h-5" />
-              </button>
-            </div>
-            
-            <div className="mb-4">
-              <p className="text-sm text-gray-600 mb-3">
-                Choose the reason that best describes why you highlighted this text:
-              </p>
-              
-              <div className="space-y-2">
-                {Object.entries(HIGHLIGHT_REASONS).map(([key, reason]) => (
-                  <button
-                    key={key}
-                    onClick={() => completeHighlightWithReason(key)}
-                    className={`w-full text-left p-3 rounded-lg border-2 transition-all hover:border-gray-300 ${
-                      selectedReason === key 
-                        ? 'border-blue-500 bg-blue-50' 
+              <div className="mb-4">
+                <p className="text-sm text-gray-600 mb-3">
+                  Choose the reason that best describes why you highlighted this text:
+                </p>
+
+                <div className="space-y-2">
+                  {Object.entries(HIGHLIGHT_REASONS).map(([key, reason]) => (
+                    <button
+                      key={key}
+                      onClick={() => completeHighlightWithReason(key)}
+                      className={`w-full text-left p-3 rounded-lg border-2 transition-all hover:border-gray-300 ${selectedReason === key
+                        ? 'border-blue-500 bg-blue-50'
                         : 'border-gray-200 hover:bg-gray-50'
-                    }`}
-                  >
-                    <div className="flex items-center space-x-3">
-                      <div 
-                        className="w-4 h-4 rounded"
-                        style={{ backgroundColor: reason.color }}
-                      ></div>
-                      <span className="font-medium text-gray-900">
-                        {reason.label}
-                      </span>
-                    </div>
-                  </button>
-                ))}
+                        }`}
+                    >
+                      <div className="flex items-center space-x-3">
+                        <div
+                          className="w-4 h-4 rounded"
+                          style={{ backgroundColor: reason.color }}
+                        ></div>
+                        <span className="font-medium text-gray-900">
+                          {reason.label}
+                        </span>
+                      </div>
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              <div className="flex space-x-3">
+                <button
+                  onClick={() => completeHighlightWithReason(selectedReason)}
+                  className="flex-1 bg-blue-600 text-white py-2 px-4 rounded-lg hover:bg-blue-700 transition-colors"
+                >
+                  Highlight with Reason
+                </button>
+                <button
+                  onClick={() => {
+                    setShowReasonSelector(false);
+                    setPendingHighlight(null);
+                  }}
+                  className="px-4 py-2 text-gray-600 border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors"
+                >
+                  Cancel
+                </button>
               </div>
             </div>
-            
-            <div className="flex space-x-3">
-              <button
-                onClick={() => completeHighlightWithReason(selectedReason)}
-                className="flex-1 bg-blue-600 text-white py-2 px-4 rounded-lg hover:bg-blue-700 transition-colors"
-              >
-                Highlight with Reason
-              </button>
-              <button
-                onClick={() => {
-                  setShowReasonSelector(false);
-                  setPendingHighlight(null);
-                }}
-                className="px-4 py-2 text-gray-600 border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors"
-              >
-                Cancel
-              </button>
-            </div>
           </div>
-        </div>
-      )}
-
-
-
-
-
-      {/* ========== [ADV] Visual Summary Render ========== */}
-      <div className="max-w-6xl mx-auto px-4 py-6">
-        {advSummary && (
-          <VisualSummaryPanel advSummary={advSummary} goToPage={goToPage} />
         )}
-      </div>
-      {/* Research Storyboard */}
-      {/* <RealResearchStoryboard
+
+
+
+
+
+        {/* ========== [ADV] Visual Summary Render ========== */}
+        <div className="max-w-6xl mx-auto px-4 py-6">
+          {advSummary && (
+            <VisualSummaryPanel advSummary={advSummary} goToPage={goToPage} />
+          )}
+        </div>
+        {/* Research Storyboard */}
+        {/* <RealResearchStoryboard
   isOpen={showStoryboard}
   onClose={() => setShowStoryboard(false)}
   capturedSelections={capturedSelections.map(sel => ({
@@ -5509,84 +5985,108 @@ onClick={() => {
   prerequisiteText={prerequisiteText}
 /> */}
 
-{/* Gaze Heatmap Overlay */}
-<GazeHeatmap page={currentPage} enabled={eyeTrackingEnabled && showGazeHeatmap} />
-    {/* Eye Tracking Calibration */}
-    <EyeTrackingCalibration
-        isOpen={showEyeCalibration}
-        onClose={() => setShowEyeCalibration(false)}
-        webgazer={eyeTracker.getWebGazerInstance()}  // ✅ ADD THIS LINE
-        onComplete={() => {
-          eyeTracker.finishCalibration()
-          eyeTracker.startTracking(documentId, currentPage)
-          setEyeTrackingEnabled(true)
-          
-          // Show prediction points for testing
-          const webgazer = (window as any).webgazer
-          if (webgazer) {
-            webgazer.showPredictionPoints(true) // This shows the red dot
-          }
-          
-          console.log('✅ Eye tracking started!')
-        }}
+        {/* Gaze Heatmap Overlay */}
+        <GazeHeatmap page={currentPage} enabled={eyeTrackingEnabled && showGazeHeatmap} />
+        {/* Eye Tracking Calibration */}
+        <EyeTrackingCalibration
+          isOpen={showEyeCalibration}
+          onClose={() => setShowEyeCalibration(false)}
+          webgazer={eyeTracker.getWebGazerInstance()}  // ✅ ADD THIS LINE
+          onComplete={() => {
+            eyeTracker.finishCalibration()
+            eyeTracker.startTracking(documentId, currentPage)
+            setEyeTrackingEnabled(true)
+
+            // Show prediction points for testing
+            const webgazer = (window as any).webgazer
+            if (webgazer) {
+              webgazer.showPredictionPoints(true) // This shows the red dot
+            }
+
+            console.log('✅ Eye tracking started!')
+          }}
         />
 
 
 
-{/* Smart Notifications from Agent 7 */}
-{/* Smart Notifications from Agent 7 */}
-{smartNotifications.length > 0 && (
-  <div className="fixed top-20 right-4 w-80 space-y-2 z-50">
-    {smartNotifications
-      .filter(n => !dismissedNotifications.has(n.id))
-      .filter(n => {
-        console.log(`🔍 [UI Filter] Checking notification:`, {
-          title: n.title,
-          targetUserId: n.targetUserId,
-          currentUserId: userId,
-          match: n.targetUserId === userId
-        })
-        
-        // ✅ STRICT: Only show if explicitly targeted to this user
-        if (n.targetUserId === userId) {
-          console.log('✅ [UI Filter] MATCH - Showing notification')
-          return true
-        }
-        
-        if (n.targetUserIds && n.targetUserIds.includes(userId)) {
-          console.log('✅ [UI Filter] GROUP MATCH - Showing notification')
-          return true
-        }
-        
-        console.log('❌ [UI Filter] NO MATCH - Hiding notification')
-        return false  // ✅ CRITICAL: Don't show if targetUserId doesn't match
-      })
-      .slice(-3)
-      .map((notif, idx) => (
-      <div key={idx} className="bg-blue-50 border border-blue-200 rounded-lg p-4 shadow-lg relative">
-<button 
-  onClick={() => {
-    setDismissedNotifications(prev => new Set(prev).add(notif.id))
-    setSmartNotifications(prev => prev.filter(n => n.id !== notif.id))
-  }}
-  className="absolute top-2 left-2 text-gray-400 hover:text-gray-600"
->
-  ✕
-</button>
-        <p className="font-semibold text-sm pr-6">{notif.title}</p>
-        <p className="text-xs text-gray-600 mt-1">{notif.message}</p>
-        {notif.actionButton && (
-  <button 
-    onClick={() => handleNotificationAction(notif)}
-    className="mt-2 text-xs bg-blue-600 text-white px-3 py-1 rounded hover:bg-blue-700 transition"
-  >
-    {notif.actionButton.label}
-  </button>
-)}
-      </div>
-    ))}
-  </div>
-)}
+        {/* Smart Notifications from Agent 7 */}
+        {/* Smart Notifications from Agent 7 */}
+        {smartNotifications.length > 0 && (
+          <div className="fixed top-20 right-4 w-80 space-y-2 z-50">
+            {smartNotifications
+              .filter(n => !dismissedNotifications.has(n.id))
+              .filter(n => {
+                console.log(`🔍 [UI Filter] Checking notification:`, {
+                  title: n.title,
+                  targetUserId: n.targetUserId,
+                  currentUserId: userId,
+                  match: n.targetUserId === userId
+                })
+
+                // ✅ STRICT: Only show if explicitly targeted to this user
+                if (n.targetUserId === userId) {
+                  console.log('✅ [UI Filter] MATCH - Showing notification')
+                  return true
+                }
+
+                if (n.targetUserIds && n.targetUserIds.includes(userId)) {
+                  console.log('✅ [UI Filter] GROUP MATCH - Showing notification')
+                  return true
+                }
+
+                console.log('❌ [UI Filter] NO MATCH - Hiding notification')
+                return false  // ✅ CRITICAL: Don't show if targetUserId doesn't match
+              })
+              .slice(-3)
+              .map((notif, idx) => (
+                <div key={idx} className="bg-blue-50 border border-blue-200 rounded-lg p-4 shadow-lg relative">
+                  <button
+                    onClick={() => {
+                      setDismissedNotifications(prev => new Set(prev).add(notif.id))
+                      setSmartNotifications(prev => prev.filter(n => n.id !== notif.id))
+                    }}
+                    className="absolute top-2 left-2 text-gray-400 hover:text-gray-600"
+                  >
+                    ✕
+                  </button>
+                  <p className="font-semibold text-sm pr-6">{notif.title}</p>
+                  <p className="text-xs text-gray-600 mt-1">{notif.message}</p>
+                  {(notif.actionButton || notif.secondaryButton) && (
+                    <div className="mt-3 flex gap-2">
+                      {notif.actionButton && (
+                        <button
+                          onClick={() => handleNotificationAction(notif)}
+                          className="text-xs bg-blue-600 text-white px-4 py-1.5 rounded hover:bg-blue-700 transition font-medium"
+                        >
+                          {notif.actionButton.label}
+                        </button>
+                      )}
+                      {notif.secondaryButton && (
+                        <button
+                          onClick={() => {
+                            // Handle secondary button action
+                            if (notif.secondaryButton?.action === 'dismiss-invitation') {
+                              handleNotificationAction({
+                                ...notif,
+                                actionButton: { ...notif.secondaryButton, action: 'dismiss-invitation' }
+                              })
+                            } else {
+                              // Default: just dismiss
+                              setDismissedNotifications(prev => new Set(prev).add(notif.id))
+                              setSmartNotifications(prev => prev.filter(n => n.id !== notif.id))
+                            }
+                          }}
+                          className="text-xs bg-gray-200 text-gray-700 px-4 py-1.5 rounded hover:bg-gray-300 transition font-medium"
+                        >
+                          {notif.secondaryButton.label}
+                        </button>
+                      )}
+                    </div>
+                  )}
+                </div>
+              ))}
+          </div>
+        )}
 
 
 
@@ -5601,22 +6101,96 @@ onClick={() => {
 
 
         {/* Smart Help Panel */}
-<SmartHelpPanel
-  isOpen={showHelpPanel}
-  onClose={() => setShowHelpPanel(false)}
-  confusedHighlights={helpPanelContext.confusedHighlights}
-  sectionName={helpPanelContext.sectionName}
-  userId={userId}
-  userName={userName}
-  availablePeers={getAvailablePeers()}
-  documentId={documentId}
-/>
-        </div>
-        
-        </div>
-        
-      )
+        <SmartHelpPanel
+          isOpen={showHelpPanel}
+          onClose={() => setShowHelpPanel(false)}
+          confusedHighlights={helpPanelContext.confusedHighlights || []}
+          sectionName={helpPanelContext.sectionName || 'This Section'}
+          userId={userId}
+          userName={userName}
+          availablePeers={getAvailablePeers()}
+          documentId={documentId}
+          sectionId={helpPanelContext.confusedHighlights?.[0]?.sectionId}
+          onSendInvitation={(peerId, peerName) => {
+            const sectionId = helpPanelContext.confusedHighlights?.[0]?.sectionId || 'section-page-1'
+            openPeerChat(peerId, peerName, sectionId)
+          }}
+        />
 
 
-  
+
+
+
+        {/* Peer Chat Modal */}
+        {peerChatOpen && peerChatData && (
+          <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+            <div className="bg-white rounded-lg shadow-xl w-[500px] h-[600px] flex flex-col">
+              {/* Header */}
+              <div className="flex items-center justify-between p-4 border-b">
+                <h3 className="font-semibold text-lg">
+                  💬 Chat with {peerChatData.peerName}
+                </h3>
+                <button
+                  onClick={() => setPeerChatOpen(false)}
+                  className="text-gray-500 hover:text-gray-700"
+                >
+                  ✕
+                </button>
+              </div>
+
+              {/* Messages Area */}
+              <div className="flex-1 p-4 overflow-y-auto bg-gray-50">
+                <div className="space-y-3">
+                  {/* System message */}
+                  <div className="text-center text-sm text-gray-500 mb-4">
+                    Connected with {peerChatData.peerName}
+                  </div>
+
+                  {/* Placeholder */}
+                  <div className="text-center text-sm text-gray-400 mt-8">
+                    Start the conversation by typing below
+                  </div>
+                </div>
+              </div>
+
+              {/* Input Area */}
+              <div className="p-4 border-t">
+                <div className="flex gap-2">
+                  <input
+                    type="text"
+                    placeholder="Type your message..."
+                    className="flex-1 px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    onKeyPress={(e) => {
+                      if (e.key === 'Enter') {
+                        const input = e.currentTarget
+                        const message = input.value.trim()
+                        if (message) {
+                          console.log('💬 Sending:', message)
+                          // TODO: Send via Socket.io
+                          input.value = ''
+                        }
+                      }
+                    }}
+                  />
+                  <button
+                    onClick={() => {
+                      console.log('💬 Send button clicked')
+                    }}
+                    className="px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition"
+                  >
+                    Send
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+      </div>
+
+    </div>
+
+  )
+
+
+
 }

@@ -35,6 +35,7 @@ export interface SmartNotification {
   dismissed?: boolean
   targetUserId?: string  // ✅ ADD: User who should see this notification
   targetUserIds?: string[]  // ✅ ADD: Multiple users (for group notifications)
+  invitationData?: any  // ✅ ADD: Store invitation/peer data for actions
 }
 
 export interface ImplicitSuggestion {
@@ -57,7 +58,7 @@ class Agent7_ImplicitAssistance {
   activate() {
     this.isActive = true
     console.log('🤖 [Agent 7] Implicit Assistance activated')
-    
+
     // Listen for events from other agents
     this.setupEventListeners()
   }
@@ -84,12 +85,12 @@ class Agent7_ImplicitAssistance {
 
   private setupEventListeners() {
     if (typeof window === 'undefined') return
-    
+
     // Listen to Agent 1 events
     window.addEventListener('agent1:struggle-detected', ((e: CustomEvent) => {
       this.onStruggleDetected(e.detail)
     }) as EventListener)
-    
+
     window.addEventListener('agent1:breakthrough-detected', ((e: CustomEvent) => {
       this.onBreakthroughDetected(e.detail)
     }) as EventListener)
@@ -101,7 +102,17 @@ class Agent7_ImplicitAssistance {
 
   onStruggleDetected(signal: StruggleSignal) {
     if (!this.isActive) return
-    
+
+    // ✅ DISABLED: Notifications are now generated directly by aiCoordinationCore
+    // This prevents duplicate notifications and ensures thresholds are respected
+    // The coordination core calls generateNotification() with proper targeting
+
+    console.log('📊 [Agent 7] Struggle signal received (notifications handled by coordination core):', signal)
+
+    // ❌ COMMENTED OUT: This was causing immediate notifications on every struggle signal
+    // The coordination core now handles notification generation after checking thresholds
+
+    /*
     // ✅ CRITICAL: Only notify the struggling user!
     const strugglingUserId = (signal as any).userId
     
@@ -150,11 +161,12 @@ class Agent7_ImplicitAssistance {
       
       this.addNotification(loopNotification)
     }
+    */
   }
 
   onBreakthroughDetected(signal: BreakthroughSignal) {
     if (!this.isActive) return
-    
+
     // Generate breakthrough sharing notification
     const notification: SmartNotification = {
       id: `breakthrough-${signal.sectionId}-${Date.now()}`,
@@ -170,7 +182,7 @@ class Agent7_ImplicitAssistance {
       timestamp: Date.now(),
       sectionId: signal.sectionId
     }
-    
+
     this.addNotification(notification)
   }
 
@@ -185,7 +197,7 @@ class Agent7_ImplicitAssistance {
       timestamp: Date.now(),
       sectionId
     }
-    
+
     this.addNotification(notification)
   }
 
@@ -198,6 +210,7 @@ class Agent7_ImplicitAssistance {
     actionButton?: { label: string; action: string }
     targetUserId?: string  // ✅ ADD: Optional target user
     targetUserIds?: string[]  // ✅ ADD: Optional multiple users
+    invitationData?: any  // ✅ ADD: Optional invitation/peer data
   }) {
     const notification: SmartNotification = {
       id: `custom-${Date.now()}`,
@@ -210,9 +223,10 @@ class Agent7_ImplicitAssistance {
       timestamp: Date.now(),
       sectionId: config.sectionId,
       targetUserId: config.targetUserId,  // ✅ ADD
-      targetUserIds: config.targetUserIds  // ✅ ADD
+      targetUserIds: config.targetUserIds,  // ✅ ADD
+      invitationData: config.invitationData  // ✅ ADD: Store invitation data
     }
-    
+
     this.addNotification(notification)
   }
 
@@ -223,7 +237,7 @@ class Agent7_ImplicitAssistance {
       'Complex papers take time - you\'re on track',
       'Every section you complete is progress!'
     ]
-    
+
     const notification: SmartNotification = {
       id: `encourage-${Date.now()}`,
       type: 'encouragement',
@@ -232,7 +246,7 @@ class Agent7_ImplicitAssistance {
       message: 'Research reading is challenging work',
       timestamp: Date.now()
     }
-    
+
     this.addNotification(notification)
   }
 
@@ -246,7 +260,7 @@ class Agent7_ImplicitAssistance {
     sessionDuration: number
   ): ImplicitSuggestion[] {
     const suggestions: ImplicitSuggestion[] = []
-    
+
     // Suggest break if session > 45 min
     if (sessionDuration > 45 * 60 * 1000) {
       suggestions.push({
@@ -256,7 +270,7 @@ class Agent7_ImplicitAssistance {
         urgent: sessionDuration > 90 * 60 * 1000
       })
     }
-    
+
     // Suggest review if confusion pattern
     const confusionPattern = patterns.find(p => p.pattern === 'heavy-confusion')
     if (confusionPattern) {
@@ -267,7 +281,7 @@ class Agent7_ImplicitAssistance {
         urgent: confusionPattern.confidence > 0.7
       })
     }
-    
+
     // Suggest peer connection if high struggle
     const highStruggle = struggleSignals.find(s => s.severity === 'high')
     if (highStruggle) {
@@ -278,7 +292,7 @@ class Agent7_ImplicitAssistance {
         urgent: true
       })
     }
-    
+
     // Suggest explainer if confusion loops
     const confusionLoops = struggleSignals.filter(s => s.indicators.revisitCount >= 3)
     if (confusionLoops.length > 0) {
@@ -289,7 +303,7 @@ class Agent7_ImplicitAssistance {
         urgent: true
       })
     }
-    
+
     return suggestions.sort((a, b) => {
       if (a.urgent !== b.urgent) return a.urgent ? -1 : 1
       return b.confidence - a.confidence
@@ -301,24 +315,51 @@ class Agent7_ImplicitAssistance {
   // ============================================================================
 
   private addNotification(notification: SmartNotification) {
-    // Don't add if already dismissed
-    if (this.dismissedNotifications.has(notification.id)) return
-    
-    // Don't add duplicate notifications
-    const exists = this.notifications.some(n => 
-      n.type === notification.type && 
+    // Don't add if this exact notification ID was already dismissed
+    if (this.dismissedNotifications.has(notification.id)) {
+      console.log(`⏭️ [Agent 7] Skipping notification ${notification.id} - already dismissed`)
+      return
+    }
+
+    // ✅ FIX: Allow new notifications even if similar ones exist, as long as they're dismissed
+    // Only prevent duplicates if there's an ACTIVE (non-dismissed) notification of the same type and section
+    const activeDuplicate = this.notifications.some(n =>
+      n.type === notification.type &&
       n.sectionId === notification.sectionId &&
-      !n.dismissed
+      n.targetUserId === notification.targetUserId && // Also match target user
+      !n.dismissed &&
+      (Date.now() - n.timestamp) < 60000 // Only consider duplicates within last minute
     )
-    
-    if (!exists) {
-      this.notifications.push(notification)
-      console.log('🔔 [Agent 7] Notification generated:', notification.title)
-      
-      // Emit event for UI
-      if (typeof window !== 'undefined') {
-        window.dispatchEvent(new CustomEvent('agent7:notification', { detail: notification }))
+
+    if (activeDuplicate) {
+      console.log(`⏭️ [Agent 7] Skipping duplicate notification - active one exists`)
+      return
+    }
+
+    // Remove old dismissed notifications of the same type/section to prevent memory buildup
+    // Keep only the last 50 notifications
+    if (this.notifications.length > 50) {
+      const dismissed = this.notifications.filter(n => n.dismissed)
+      if (dismissed.length > 0) {
+        // Remove oldest dismissed notifications
+        dismissed.sort((a, b) => a.timestamp - b.timestamp)
+        const toRemove = dismissed.slice(0, dismissed.length - 25) // Keep last 25 dismissed
+        toRemove.forEach(n => {
+          const index = this.notifications.findIndex(notif => notif.id === n.id)
+          if (index >= 0) {
+            this.notifications.splice(index, 1)
+            this.dismissedNotifications.delete(n.id)
+          }
+        })
       }
+    }
+
+    this.notifications.push(notification)
+    console.log('🔔 [Agent 7] Notification generated:', notification.title, `(ID: ${notification.id})`)
+
+    // Emit event for UI
+    if (typeof window !== 'undefined') {
+      window.dispatchEvent(new CustomEvent('agent7:notification', { detail: notification }))
     }
   }
 

@@ -20,8 +20,8 @@ export function useRealtimeHighlights({
   const [isConnected, setIsConnected] = useState(false)
   const [connectedUsers, setConnectedUsers] = useState<any[]>([])
   const [incomingHighlights, setIncomingHighlights] = useState<any[]>([]) // MOVED INSIDE
-// ✅ ADD THIS NEW FUNCTION:
-const clearIncomingHighlights = useCallback(() => {
+  // ✅ ADD THIS NEW FUNCTION:
+  const clearIncomingHighlights = useCallback(() => {
     setIncomingHighlights([]);
   }, []);
 
@@ -30,14 +30,14 @@ const clearIncomingHighlights = useCallback(() => {
     if (!enabled || !documentId) return
 
     console.log('🔌 Connecting to real Socket.io server...')
-    
+
     const socket = io('http://localhost:3000')
     socketRef.current = socket
 
     socket.on('connect', () => {
       console.log('✅ Connected to Socket.io server!')
       setIsConnected(true)
-      
+
       socket.emit('join-document', {
         documentId,
         userName,
@@ -61,41 +61,16 @@ const clearIncomingHighlights = useCallback(() => {
 
     socket.on('highlight-added', (highlight) => {
       console.log('✨ New highlight from another user:', highlight)
-      
+
       if (highlight.action === 'click') {
         showUserClickInPDF(highlight)
         console.log(`👁️ ${highlight.user} is viewing: "${highlight.clickedText.substring(0, 30)}..."`)
       } else {
         console.log('📝 Received new highlight, passing to main component');
+        // Note: Struggle detection is now handled in the annotation listener
+        // after the highlight is imported, where we track confusion highlights
+        // per user and only trigger notifications when there are 3+ highlights
         setIncomingHighlights(prev => [...prev, highlight]);
-        
-        // If it's a confusion highlight, update peer status
-        if (highlight.reason === 'confusion') {
-          const { agent2_collaborationOrchestrator } = require('@/lib/agents/Agent2_CollaborationOrchestrator')
-          const { aiCoordinationCore } = require('@/lib/agents/aiCoordinationCore')
-          
-          const sectionId = `section-page-${highlight.pageNumber}`
-          
-          agent2_collaborationOrchestrator.updatePeerStatus(
-            highlight.user,
-            sectionId,
-            30
-          )
-          console.log('🤝 Updated peer status for remote user:', highlight.user)
-          
-          aiCoordinationCore.routeAgentEvent('agent1', 'struggle-detected', {
-            sectionId: sectionId,
-            sectionName: `Section Page ${highlight.pageNumber}`,
-            severity: 'medium',
-            indicators: {
-              confusionHighlights: 1,
-              stuckMarkers: 0,
-              revisitCount: 0,
-              timeSpent: 0,
-              understandingScore: 30
-            }
-          })
-        }
       }
     })
 
@@ -115,25 +90,25 @@ const clearIncomingHighlights = useCallback(() => {
 
   const showUserClickInPDF = useCallback((highlight: any) => {
     console.log('🎨 showUserClickInPDF called with:', highlight);
-    
+
     if (!webViewerInstance?.Core) return;
 
     try {
       const { annotationManager } = webViewerInstance.Core
-      
+
       const allAnnotations = annotationManager.getAnnotationsList();
       const pageHighlights = allAnnotations.filter((ann: any) => {
         const isHighlight = ann.Subject === 'Highlight' || ann.Subject === 'highlight';
         const isCorrectPage = ann.PageNumber === highlight.pageNumber;
         return isHighlight && isCorrectPage;
       });
-      
+
       if (pageHighlights.length > 0) {
         const targetAnnotation = pageHighlights[0];
         const originalColor = targetAnnotation.StrokeColor;
         targetAnnotation.StrokeColor = new webViewerInstance.Core.Annotations.Color(0, 255, 0);
         annotationManager.redrawAnnotation(targetAnnotation);
-        
+
         setTimeout(() => {
           targetAnnotation.StrokeColor = originalColor;
           annotationManager.redrawAnnotation(targetAnnotation);
@@ -150,6 +125,6 @@ const clearIncomingHighlights = useCallback(() => {
     broadcastHighlight,
     incomingHighlights,
     clearIncomingHighlights,
-    broadcastHighlightDeletion: () => {},
+    broadcastHighlightDeletion: () => { },
   }
 }

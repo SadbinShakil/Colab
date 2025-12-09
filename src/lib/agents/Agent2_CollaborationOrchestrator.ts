@@ -86,9 +86,14 @@ class Agent2_CollaborationOrchestrator {
   // ============================================================================
 
   registerPeer(userId: string, userName: string) {
-    if (!this.peerProfiles.has(userId)) {
+    // ✅ Ensure userId is string
+    const userIdStr = String(userId)
+    
+    console.log(`🤖 [Agent 2] Registering peer: ${userName} (userId: ${userIdStr})`)
+    
+    if (!this.peerProfiles.has(userIdStr)) {
       const profile: PeerProfile = {
-        userId,
+        userId: userIdStr,
         userName,
         sectionId: '',
         understandingScore: 50,
@@ -96,8 +101,8 @@ class Agent2_CollaborationOrchestrator {
         availableToHelp: true,
         currentlyHelping: null
       }
-      
-      this.peerProfiles.set(userId, profile)
+
+      this.peerProfiles.set(userIdStr, profile)
       console.log(`🤖 [Agent 2] Peer registered: ${userName}`)
     }
   }
@@ -105,10 +110,10 @@ class Agent2_CollaborationOrchestrator {
   updatePeerStatus(userId: string, sectionId: string, understandingScore: number) {
     const profile = this.peerProfiles.get(userId)
     if (!profile) return
-    
+
     profile.sectionId = sectionId
     profile.understandingScore = understandingScore
-    
+
     // Update status based on score
     if (understandingScore < 40) {
       profile.status = 'struggling'
@@ -126,16 +131,16 @@ class Agent2_CollaborationOrchestrator {
   findPeersForHelp(userId: string, sectionId: string): PeerMatch[] {
     const helpee = this.peerProfiles.get(userId)
     if (!helpee) return []
-    
+
 
     // ✅ DEBUG: Log all registered peers
-  console.log(`🔍 [Agent 2] Finding peers for ${userId} in section ${sectionId}`)
-  console.log(`📋 [Agent 2] All registered peers:`, Array.from(this.peerProfiles.entries()))
+    console.log(`🔍 [Agent 2] Finding peers for ${userId} in section ${sectionId}`)
+    console.log(`📋 [Agent 2] All registered peers:`, Array.from(this.peerProfiles.entries()))
     const matches: PeerMatch[] = []
-    
+
     // NEW: Find other struggling peers for group study
     const strugglingPeers: PeerProfile[] = []
-    
+
     this.peerProfiles.forEach((peer, peerId) => {
       if (
         peerId !== userId &&
@@ -146,11 +151,11 @@ class Agent2_CollaborationOrchestrator {
         strugglingPeers.push(peer)
       }
     })
-    
+
     // If others are struggling, suggest group collaboration
     if (strugglingPeers.length >= 1) {
       console.log(`🤝 [Agent 2] Found ${strugglingPeers.length} struggling peers - suggesting group study`)
-      
+
       matches.push({
         matchId: `group-${Date.now()}`,
         helper: strugglingPeers[0],
@@ -161,7 +166,7 @@ class Agent2_CollaborationOrchestrator {
         suggestedApproach: 'group'
       })
     }
-    
+
     // Find proficient peers in same section
     this.peerProfiles.forEach((peer, peerId) => {
       if (
@@ -172,7 +177,7 @@ class Agent2_CollaborationOrchestrator {
         !peer.currentlyHelping
       ) {
         const matchScore = this.calculateMatchScore(helpee, peer)
-        
+
         matches.push({
           matchId: `match-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
           helper: peer,
@@ -184,7 +189,7 @@ class Agent2_CollaborationOrchestrator {
         })
       }
     })
-    
+
     // Sort by match score
     return matches.sort((a, b) => b.matchScore - a.matchScore).slice(0, 3)
   }
@@ -192,7 +197,7 @@ class Agent2_CollaborationOrchestrator {
   private calculateMatchScore(helpee: PeerProfile, helper: PeerProfile): number {
     // Higher score = better match
     let score = 0
-    
+
     // Score based on understanding gap (not too large, not too small)
     const gap = helper.understandingScore - helpee.understandingScore
     if (gap > 20 && gap < 40) {
@@ -202,23 +207,23 @@ class Agent2_CollaborationOrchestrator {
     } else {
       score += 20 // Small gap
     }
-    
+
     // Bonus if helper is available
     if (helper.availableToHelp) {
       score += 30
     }
-    
+
     // Bonus if same section
     if (helper.sectionId === helpee.sectionId) {
       score += 20
     }
-    
+
     return Math.min(score, 100)
   }
 
   private getMatchReason(helpee: PeerProfile, helper: PeerProfile): string {
     const gap = helper.understandingScore - helpee.understandingScore
-    
+
     // ✅ NEVER expose understanding scores to users - keep private!
     if (gap > 30) {
       return `${helper.userName} has strong understanding of this section`
@@ -243,7 +248,7 @@ class Agent2_CollaborationOrchestrator {
 
   startCollaboration(match: PeerMatch, type: 'peer-tutoring' | 'group-discussion' | 'ai-mediated'): string {
     const sessionId = `collab-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`
-    
+
     const session: CollaborationSession = {
       sessionId,
       participants: [match.helper.userId, match.helpee.userId],
@@ -251,30 +256,30 @@ class Agent2_CollaborationOrchestrator {
       startTime: Date.now(),
       helpType: type
     }
-    
+
     this.activeCollaborations.set(sessionId, session)
-    
+
     // Update peer statuses
     const helper = this.peerProfiles.get(match.helper.userId)
     if (helper) {
       helper.currentlyHelping = match.helpee.userId
     }
-    
+
     console.log(`🤖 [Agent 2] Collaboration started: ${match.helper.userName} → ${match.helpee.userName}`)
-    
+
     // Emit event for other agents
     this.emitEvent('collaboration-started', { sessionId, match, type })
-    
+
     return sessionId
   }
 
   endCollaboration(sessionId: string, outcome: 'success' | 'partial' | 'failed') {
     const session = this.activeCollaborations.get(sessionId)
     if (!session) return
-    
+
     session.endTime = Date.now()
     session.outcome = outcome
-    
+
     // Free up helpers
     session.participants.forEach(userId => {
       const peer = this.peerProfiles.get(userId)
@@ -282,11 +287,11 @@ class Agent2_CollaborationOrchestrator {
         peer.currentlyHelping = null
       }
     })
-    
+
     this.activeCollaborations.delete(sessionId)
-    
+
     console.log(`🤖 [Agent 2] Collaboration ended: ${outcome}`)
-    
+
     // Emit event
     this.emitEvent('collaboration-ended', { sessionId, outcome, duration: (session.endTime || 0) - session.startTime })
   }
@@ -303,7 +308,7 @@ class Agent2_CollaborationOrchestrator {
 
   generateCollaborationOptions(userId: string, sectionId: string) {
     const matches = this.findPeersForHelp(userId, sectionId)
-    
+
     const options = [
       {
         type: 'ai',
@@ -313,19 +318,19 @@ class Agent2_CollaborationOrchestrator {
         available: true
       }
     ]
-    
+
     // Add peer options
     matches.forEach((match, idx) => {
-        options.push({
-            type: 'peer',
-            title: `Connect with ${match.helper.userName}`,
-            description: match.matchReason,
-            priority: idx === 0 ? 'high' : 'medium',
-            available: match.helper.availableToHelp,
-            matchScore: match.matchScore
-          } as any) // ← Add this
+      options.push({
+        type: 'peer',
+        title: `Connect with ${match.helper.userName}`,
+        description: match.matchReason,
+        priority: idx === 0 ? 'high' : 'medium',
+        available: match.helper.availableToHelp,
+        matchScore: match.matchScore
+      } as any) // ← Add this
     })
-    
+
     // Add group option if multiple peers available
     if (matches.length >= 2) {
       options.push({
@@ -336,7 +341,7 @@ class Agent2_CollaborationOrchestrator {
         available: true
       })
     }
-    
+
     return options
   }
 
@@ -347,13 +352,13 @@ class Agent2_CollaborationOrchestrator {
   getCollaborationStats() {
     const totalCollaborations = this.matchHistory.length
     const activeNow = this.activeCollaborations.size
-    
+
     const successfulCollabs = this.matchHistory.filter(m => {
       // Check if this match led to successful collaboration
       // (simplified - would need more tracking in real system)
       return true
     }).length
-    
+
     return {
       total: totalCollaborations,
       active: activeNow,
@@ -388,6 +393,12 @@ class Agent2_CollaborationOrchestrator {
   getAvailableHelpers(sectionId: string): PeerProfile[] {
     return Array.from(this.peerProfiles.values()).filter(
       p => p.sectionId === sectionId && p.status === 'proficient' && p.availableToHelp
+    )
+  }
+
+  getStrugglingPeers(sectionId: string): PeerProfile[] {
+    return Array.from(this.peerProfiles.values()).filter(
+      p => p.sectionId === sectionId && p.status === 'struggling'
     )
   }
 }

@@ -38,7 +38,7 @@ app.prepare().then(() => {
 
     socket.on('join-document', ({ documentId, userName, userId }) => {
       socket.join(documentId)
-      console.log(`📄 ${userName} joined document: ${documentId}`)
+      console.log(`📄 ${userName} (${userId}) joined document: ${documentId}`)
     
       socket.data = { documentId, userName, userId }
     
@@ -53,51 +53,27 @@ app.prepare().then(() => {
       if (existingUserIndex >= 0) {
         // Update existing user's socketId
         room.users[existingUserIndex].socketId = socket.id
-        console.log(`🔄 Updated existing user: ${userName}`)
+        console.log(`🔄 Updated existing user: ${userName} (${userId}) -> socket: ${socket.id}`)
       } else {
         // Add new user
         room.users.push({ socketId: socket.id, userName, userId })
-        console.log(`✅ Added new user: ${userName}`)
+        console.log(`✅ Added new user: ${userName} (${userId}) -> socket: ${socket.id}`)
       }
+    
+      console.log(`👥 [Server] Current users in room ${documentId}:`, room.users.map(u => `${u.userName} (${u.userId})`))
     
       socket.emit('existing-highlights', room.highlights)
       io.to(documentId).emit('users-update', room.users)
-      
+    
       socket.to(documentId).emit('peer-joined', {
         userId,
         userName,
         documentId
       })
-      
+    
       console.log(`👥 Active users in ${documentId}:`, room.users.length)
     })
 
-
-
-    socket.on('users-update', (users) => {
-      console.log('👥 Users update received:', users)
-      
-      const activeCollaborators = users.map((user) => ({
-        id: user.userId,
-        name: user.userName,
-        avatar: `/api/placeholder/32/32`,
-        status: 'online',
-        userId: user.userId,
-        isCurrentUser: user.userId === userId,
-        role: 'viewer',
-        activity: 'viewing',
-        lastActivity: new Date().toISOString(),
-        permissions: {
-          canView: true,
-          canEdit: false,
-          canInvite: false,
-          canDelete: false
-        }
-      }))
-      
-      console.log('✅ Setting collaborators from users-update:', activeCollaborators)
-      setCollaborators(activeCollaborators)
-    })
 
     socket.on('new-highlight', (highlightData) => {
       const { documentId } = highlightData
@@ -115,6 +91,57 @@ app.prepare().then(() => {
 
       socket.to(documentId).emit('highlight-added', enrichedHighlight)
       console.log(`✨ Highlight broadcasted in ${documentId}`)
+    })
+
+    // ✅ ADD: Handle peer chat invitations
+    socket.on('peer-chat-invitation', (data) => {
+      console.log(`📨 [Server] Chat invitation: ${data.fromUserName} → ${data.toUserName}`)
+      console.log(`📨 [Server] Invitation data:`, {
+        fromUserId: data.fromUserId,
+        toUserId: data.toUserId,
+        documentId: data.documentId
+      })
+
+      // Find the target user's socket ID
+      const room = documentRooms.get(data.documentId)
+      if (!room) {
+        console.log(`❌ [Server] Room ${data.documentId} not found`)
+        return
+      }
+
+      console.log(`👥 [Server] Room users:`, room.users.map((u) => ({ userId: u.userId, userName: u.userName, socketId: u.socketId })))
+      console.log(`🔍 [Server] Looking for target user: ${data.toUserId}`)
+      console.log(`🔍 [Server] Available user IDs:`, room.users.map((u) => u.userId))
+
+      const targetUser = room.users.find((u) => u.userId === data.toUserId)
+      if (targetUser) {
+        // Send invitation ONLY to the specific user
+        console.log(`📤 [Server] Sending invitation to socket ${targetUser.socketId} for user ${targetUser.userName} (${targetUser.userId})`)
+        io.to(targetUser.socketId).emit('peer-chat-invitation', data)
+        console.log(`✅ [Server] Invitation sent to socket: ${targetUser.socketId} (user: ${targetUser.userName})`)
+      } else {
+        console.log(`❌ [Server] Target user ${data.toUserId} not found in room. Available users:`, room.users.map((u) => `${u.userName} (${u.userId})`))
+        // Also log the invitation data for debugging
+        console.log(`❌ [Server] Invitation data was:`, data)
+      }
+    })
+
+    // ✅ ADD: Handle peer chat acceptance
+    socket.on('peer-chat-accepted', (data) => {
+      console.log(`✅ [Server] Chat accepted: ${data.toUserName} accepted ${data.fromUserName}`)
+
+      // Find the original inviter's socket ID
+      const room = documentRooms.get(data.documentId)
+      if (room) {
+        const inviterUser = room.users.find((u) => u.userId === data.fromUserId)
+        if (inviterUser) {
+          // Notify ONLY the original inviter
+          io.to(inviterUser.socketId).emit('peer-chat-accepted', data)
+          console.log(`✅ [Server] Acceptance sent to socket: ${inviterUser.socketId}`)
+        } else {
+          console.log(`❌ [Server] Inviter ${data.fromUserId} not found in room`)
+        }
+      }
     })
 
     socket.on('disconnect', () => {
