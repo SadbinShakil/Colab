@@ -47,17 +47,15 @@ export async function GET(req: NextRequest) {
         }
 
         const room = documentRooms.get(documentId)
-        // ADD THIS LINE:
-       
         
-        // Check if user already exists (prevent duplicates)
+        // ✅ Check if user already exists (prevent duplicates) - use string comparison
         const existingUserIndex = room.users.findIndex((u: any) => String(u.userId) === userIdStr)
         if (existingUserIndex >= 0) {
           // Update socket ID for existing user
           room.users[existingUserIndex].socketId = socket.id
           console.log(`🔄 Updated socket for existing user: ${userName}`)
         } else {
-          // Add new user
+          // ✅ Add new user with string userId
           room.users.push({ socketId: socket.id, userName, userId: userIdStr })
           console.log(`✅ Added new user to room: ${userName}`)
         }
@@ -81,13 +79,9 @@ export async function GET(req: NextRequest) {
 
         // ✅ CRITICAL: Convert to strings for comparison
         const targetUserId = String(data.toUserId)
-      
+
         // Find the target user's socket ID
         const room = documentRooms.get(data.documentId)
-        // const targetUserId = String(data.toUserId)
-
-        // // Find the target user's socket ID
-        // const room = documentRooms.get(data.documentId)
         if (!room) {
           console.log(`❌ [Server] Document room ${data.documentId} not found`)
           console.log(`📋 [Server] Available rooms:`, Array.from(documentRooms.keys()))
@@ -98,9 +92,11 @@ export async function GET(req: NextRequest) {
         console.log(`   Looking for userId: "${targetUserId}"`)
         console.log(`   Room has ${room.users.length} users:`)
         room.users.forEach((u: any, idx: number) => {
-          console.log(`      ${idx + 1}. ${u.userName} - userId: "${u.userId}" (type: ${typeof u.userId}) - socketId: ${u.socketId}`)
+          const match = String(u.userId) === targetUserId ? '✅ MATCH' : ''
+          console.log(`      ${idx + 1}. ${u.userName} - userId: "${u.userId}" - socketId: ${u.socketId} ${match}`)
         })
 
+        // ✅ Use string comparison
         const targetUser = room.users.find((u: any) => String(u.userId) === targetUserId)
         if (targetUser) {
           console.log(`\n✅ [Server] Target user FOUND: ${targetUser.userName}`)
@@ -127,7 +123,7 @@ export async function GET(req: NextRequest) {
           const userByName = room.users.find((u: any) => u.userName === data.toUserName)
           if (userByName) {
             console.log(`⚠️  [Server] Found user by NAME instead: ${userByName.userName}`)
-            console.log(`   Their userId is: "${userByName.userId}" (expected: "${data.toUserId}")`)
+            console.log(`   Their userId is: "${userByName.userId}" (expected: "${targetUserId}")`)
             console.log(`   This indicates a userId mismatch problem!`)
           }
           
@@ -143,14 +139,9 @@ export async function GET(req: NextRequest) {
         console.log(`\n✅ [Server] ==================== INVITATION ACCEPTED ====================`)
         console.log(`   ${data.toUserName} accepted invitation from ${data.fromUserName}`)
         console.log(`   Document: ${data.documentId}`)
-        // const fromUserId = String(data.fromUserId)
-        console.log(`   Document: ${data.documentId}`)
 
-  // ✅ Convert to string
-  const fromUserId = String(data.fromUserId)
-
-  // // Find the original inviter's socket ID
-  // const room = documentRooms.get(data.documentId)
+        // ✅ Convert to string
+        const fromUserId = String(data.fromUserId)
 
         // Find the original inviter's socket ID
         const room = documentRooms.get(data.documentId)
@@ -162,9 +153,9 @@ export async function GET(req: NextRequest) {
               ...data,
               timestamp: Date.now()
             })
-            console.log(`✅ [Server] Acceptance notification sent to: ${inviterUser.userName} (${inviterUser.socketId})`)
+            console.log(`✅ [Server] Acceptance sent to: ${inviterUser.userName} (${inviterUser.socketId})`)
           } else {
-            console.log(`❌ [Server] Original inviter ${data.fromUserId} not found in room`)
+            console.log(`❌ [Server] Original inviter ${data.fromUserId} not found`)
           }
         }
         console.log(`============================================================\n`)
@@ -176,7 +167,7 @@ export async function GET(req: NextRequest) {
         
         // Broadcast to all other users in the document
         socket.to(documentId).emit('peer-joined', {
-          userId,
+          userId: String(userId),
           userName,
           documentId
         })
@@ -219,6 +210,33 @@ export async function GET(req: NextRequest) {
         
         console.log(`✅ Assignment broadcasted to all users in ${documentId}`)
       })
+
+ // ✅ Section Completion Notification
+socket.on('section-completed', (data) => {
+  const { documentId, sectionName, userName } = data
+  console.log(`✅ Section completed: ${sectionName} by ${userName}`)
+  
+  // Broadcast to everyone in the room
+  io?.to(documentId).emit('section-completed', {
+    userName,
+    sectionName,
+    timestamp: new Date().toISOString()
+  })
+})
+
+// ✅ Summary Sharing
+socket.on('summary-shared', (data) => {
+  const { documentId, sectionId, userName, summary } = data
+  console.log(`📝 Summary shared for section ${sectionId} by ${userName}`)
+  
+  // Broadcast to everyone in the room
+  io?.to(documentId).emit('summary-shared', {
+    sectionId,
+    userName,
+    summary,
+    timestamp: new Date().toISOString()
+  })
+})
 
       socket.on('disconnect', () => {
         console.log(`👋 User disconnected: ${socket.id}`)

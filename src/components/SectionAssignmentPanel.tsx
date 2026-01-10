@@ -73,8 +73,14 @@ export default function SectionAssignmentPanel({
   const [showAssignDropdown, setShowAssignDropdown] = useState<string | null>(null)
   const [hoveredSection, setHoveredSection] = useState<string | null>(null)
   const dropdownRef = useRef<HTMLDivElement>(null)
+  const [showSummaryModal, setShowSummaryModal] = useState<string | null>(null)
+  const [summaryText, setSummaryText] = useState('')
 
-
+// ✅ Clear assignments when document changes
+useEffect(() => {
+  console.log('📄 Document changed, clearing assignments')
+  setAssignments([])
+}, [documentId])
 // Listen for assignment updates from other users
 useEffect(() => {
   if (!documentId) return
@@ -127,6 +133,30 @@ useEffect(() => {
 }, [documentId, assignments])
 
 
+// Check for stale assignments (assigned >10 mins ago, still pending)
+useEffect(() => {
+  const checkStaleAssignments = () => {
+    const myAssignments = assignments.filter(
+      a => a.userId === currentUserId && a.status === 'assigned'
+    )
+    
+    myAssignments.forEach(assignment => {
+      if (!assignment.assignedAt) return
+      
+      const minutesAgo = (Date.now() - new Date(assignment.assignedAt).getTime()) / 60000
+      
+      if (minutesAgo > 10 && minutesAgo < 11) {
+        const section = sections.find(s => s.heading.id === assignment.sectionId)
+        toast.info(`Reminder: You have "${section?.heading.text}" assigned`, {
+          duration: 5000
+        })
+      }
+    })
+  }
+  
+  const interval = setInterval(checkStaleAssignments, 60000) // Check every minute
+  return () => clearInterval(interval)
+}, [assignments, currentUserId, sections])
 
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
@@ -286,6 +316,17 @@ useEffect(() => {
     setAssignments(newAssignments)
     onAssignmentChange(newAssignments)
     toast.success('Section marked as completed!')
+
+    // ✅ ADD THIS: Notify team
+    const assignment = assignments.find(a => a.sectionId === sectionId)
+    if (assignment && socket?.connected) {
+      socket.emit('section-completed', {
+        documentId,
+        sectionId,
+        userName: assignment.userName,
+        sectionName: sections.find(s => s.heading.id === sectionId)?.heading.text
+      })
+    }
     
     // Save to REST API
     try {
@@ -310,6 +351,45 @@ useEffect(() => {
         userName: currentUserId
       })
       console.log('✅ Completed status broadcasted')
+    }
+  }
+
+
+  const shareSummary = async (sectionId: string, summary: string) => {
+    if (!summary.trim()) {
+      toast.error('Please write a summary first')
+      return
+    }
+    
+    // Save summary
+    try {
+      await fetch('/api/socket', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          action: 'save-summary',
+          documentId,
+          sectionId,
+          userId: currentUserId,
+          summary: summary.trim()
+        })
+      })
+      
+      toast.success('Summary shared with team!')
+      setShowSummaryModal(null)
+      setSummaryText('')
+      
+      // Broadcast
+      if (socket?.connected) {
+        socket.emit('summary-shared', {
+          documentId,
+          sectionId,
+          userName: collaborators.find(c => c.id === currentUserId)?.name,
+          summary: summary.trim()
+        })
+      }
+    } catch (error) {
+      toast.error('Failed to share summary')
     }
   }
 
@@ -351,6 +431,76 @@ useEffect(() => {
   }
 
 
+  const getWorkloadStats = () => {
+    const stats = collaborators.map(collab => {
+      const userSections = assignments.filter(a => a.userId === collab.id)
+      const completed = userSections.filter(a => a.status === 'completed').length
+      const reading = userSections.filter(a => a.status === 'reading').length
+      const pending = userSections.filter(a => a.status === 'assigned').length
+      
+      return {
+        user: collab,
+        total: userSections.length,
+        completed,
+        reading,
+        pending,
+        percentage: Math.round((completed / (userSections.length || 1)) * 100)
+      }
+    })
+    
+    return stats
+  }
+
+
+  const autoAssignSections = async () => {
+    if (!sections || sections.length === 0) return
+    
+    const newAssignments: SectionAssignment[] = []
+    const availableCollaborators = [...collaborators]
+    
+    // Round-robin assignment for balanced workload
+    sections.forEach((section, index) => {
+      const assignee = availableCollaborators[index % availableCollaborators.length]
+      
+      newAssignments.push({
+        sectionId: section.heading.id,
+        userId: assignee.id,
+        userName: assignee.name,
+        status: 'assigned',
+        progress: 0,
+        assignedAt: new Date().toISOString()
+      })
+    })
+    
+    setAssignments(newAssignments)
+    onAssignmentChange(newAssignments)
+    toast.success(`Auto-assigned ${sections.length} sections fairly!`)
+    
+    // Save and broadcast
+    try {
+      await fetch('/api/socket', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          action: 'section-assigned',
+          documentId,
+          assignments: newAssignments
+        })
+      })
+    } catch (error) {
+      console.error('❌ Auto-assign failed:', error)
+    }
+    
+    if (socket?.connected) {
+      socket.emit('assignment-changed', {
+        documentId,
+        assignments: newAssignments,
+        userName: 'AI Auto-Assign'
+      })
+    }
+  }
+
+
   const getAssignment = (sectionId: string) => {
     return assignments.find(a => a.sectionId === sectionId)
   }
@@ -386,12 +536,49 @@ useEffect(() => {
     toast.success('All assignments cleared')
   }
 
+
+
+
+
   const completedCount = assignments.filter(a => a.status === 'completed').length
   const readingCount = assignments.filter(a => a.status === 'reading').length
   const assignedCount = assignments.filter(a => a.status === 'assigned').length
   const completionPercentage = sections.length > 0 
     ? Math.round((completedCount / sections.length) * 100) 
     : 0
+
+
+    {showSummaryModal && (
+      <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-[10000]">
+        <div className="bg-white rounded-lg shadow-2xl w-[500px] max-h-[600px] overflow-y-auto">
+          <div className="p-6">
+            <h3 className="text-lg font-bold mb-4">Share What You Learned</h3>
+            <p className="text-sm text-gray-600 mb-4">
+              Help your teammates by summarizing the key points from this section
+            </p>
+            
+            <textarea
+              value={summaryText}
+              onChange={(e) => setSummaryText(e.target.value)}
+              placeholder="Key points:
+    - Main concept...
+    - Important finding...
+    - Connection to..."
+              className="w-full h-48 p-3 border rounded-lg text-sm"
+            />
+            
+            <div className="flex gap-2 mt-4">
+              <Button onClick={() => shareSummary(showSummaryModal, summaryText)}>
+                Share Summary
+              </Button>
+              <Button variant="outline" onClick={() => setShowSummaryModal(null)}>
+                Cancel
+              </Button>
+            </div>
+          </div>
+        </div>
+      </div>
+    )}
 
   return (
     <div className="flex flex-col h-full">
@@ -437,7 +624,7 @@ useEffect(() => {
                   <span className="text-blue-700 font-medium">{readingCount} reading</span>
                 </div>
               )}
-              {assignedCount > 0 && (
+             {assignedCount > 0 && (
                 <div className="flex items-center gap-1 bg-amber-100 px-2 py-1 rounded-full text-xs">
                   <AlertCircle className="w-3 h-3 text-amber-600" />
                   <span className="text-amber-700 font-medium">{assignedCount} pending</span>
@@ -446,6 +633,18 @@ useEffect(() => {
             </div>
           </div>
         )}
+        
+        <div className="mt-3 flex gap-2">
+          <Button
+            onClick={autoAssignSections}
+            variant="outline"
+            size="sm"
+            className="text-xs"
+          >
+            <Sparkles className="w-3 h-3 mr-1" />
+            Auto-Assign Fairly
+          </Button>
+        </div>
       </div>
 
       <div className="px-4 py-3 bg-white border-b">
@@ -479,7 +678,38 @@ useEffect(() => {
           )}
         </div>
       </div>
-
+{/* 👇 PUT WORKLOAD VISUALIZATION HERE */}
+<div className="px-4 py-3 bg-gradient-to-br from-blue-50 to-indigo-50 border-b">
+        <div className="text-xs font-semibold text-gray-700 uppercase tracking-wide mb-3">
+          Team Workload
+        </div>
+        
+        {getWorkloadStats().map(stat => (
+          <div key={stat.user.id} className="mb-3 last:mb-0">
+            <div className="flex items-center justify-between mb-1">
+              <span className="text-sm font-medium text-gray-700">{stat.user.name}</span>
+              <span className="text-xs text-gray-500">
+                {stat.completed}/{stat.total} sections
+              </span>
+            </div>
+            
+            <div className="w-full bg-gray-200 rounded-full h-2">
+              <div
+                className="h-full rounded-full transition-all"
+                style={{
+                  width: `${stat.percentage}%`,
+                  backgroundColor: stat.user.color
+                }}
+              />
+            </div>
+            
+            {stat.total > sections.length / collaborators.length + 1 && (
+              <p className="text-xs text-amber-600 mt-1">⚠️ Overloaded</p>
+            )}
+          </div>
+        ))}
+      </div>
+      {/* 👆 WORKLOAD VISUALIZATION ENDS HERE */}
       <div className="flex-1 px-4 py-3" style={{ overflow: 'visible' }}>
         <div className="space-y-2">
           {sections.map((section, index) => {
@@ -553,11 +783,19 @@ useEffect(() => {
                               </Badge>
                               
                               {assignment.status === 'completed' && (
-                                <Badge variant="outline" className="bg-green-50 text-green-700 border-green-300 text-xs">
-                                  <CheckCircle className="w-3 h-3 mr-1" />
-                                  Completed
-                                </Badge>
-                              )}
+                                  <>
+                                    <CheckCircle className="w-4 h-4" />
+                                    Completed
+                                    <Button
+                                      size="sm"
+                                      variant="ghost"
+                                      onClick={() => setShowSummaryModal(section.heading.id)}
+                                      className="ml-2 text-xs"
+                                    >
+                                      Share Summary
+                                    </Button>
+                                  </>
+                                )}
                               {assignment.status === 'reading' && (
                                 <Badge variant="outline" className="bg-blue-50 text-blue-700 border-blue-300 text-xs">
                                   <Eye className="w-3 h-3 mr-1" />

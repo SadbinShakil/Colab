@@ -5,6 +5,10 @@ declare global {
   var sectionAssignments: Record<string, any[]> | undefined
 }
 
+declare global {
+  var sectionSummaries: Record<string, Record<string, any>> | undefined  // ✅ ADD THIS
+}
+
 import { NextResponse } from "next/server"
 
 // In-memory storage for annotations (replace with database in production)
@@ -357,7 +361,51 @@ export async function POST(req: Request) {
           return NextResponse.json({ success: false, error: "Missing required fields" }, { status: 400 })
 
 
-
+          case 'save-summary':
+            // Store section summaries
+            const { documentId: summaryDocId, sectionId, userId: summaryUserId, summary } = body
+            if (summaryDocId && sectionId && summary) {
+              // Initialize storage if needed
+              if (!global.sectionSummaries) {
+                global.sectionSummaries = {}
+              }
+              if (!global.sectionSummaries[summaryDocId]) {
+                global.sectionSummaries[summaryDocId] = {}
+              }
+              
+              // Store summary
+              global.sectionSummaries[summaryDocId][sectionId] = {
+                summary,
+                userId: summaryUserId,
+                timestamp: new Date().toISOString()
+              }
+              
+              console.log('📝 Summary saved:', {
+                documentId: summaryDocId,
+                sectionId,
+                summaryLength: summary.length
+              })
+              
+              return NextResponse.json({ 
+                success: true,
+                message: "Summary saved"
+              })
+            }
+            return NextResponse.json({ success: false, error: "Missing required fields" }, { status: 400 })
+          
+          case 'get-summaries':
+            // Retrieve summaries for a document
+            const { documentId: getSummariesDocId } = body
+            if (getSummariesDocId) {
+              if (!global.sectionSummaries) {
+                global.sectionSummaries = {}
+              }
+              return NextResponse.json({
+                success: true,
+                summaries: global.sectionSummaries[getSummariesDocId] || {}
+              })
+            }
+            return NextResponse.json({ success: false, error: "Missing document ID" }, { status: 400 })
 
 
 

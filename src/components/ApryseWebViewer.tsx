@@ -6,7 +6,7 @@ import { eyeTracker } from '@/lib/eyeTracking'
 import EyeTrackingCalibration from './EyeTrackingCalibration'
 import { PDFHeadingExtractor, type PDFSection, type PDFHeading } from '@/lib/pdfHeadingExtractor'
 import SmartHelpPanel from '@/components/SmartHelpPanel'
-
+import { SmartHeadingExtractor } from '@/lib/smartHeadingExtractor'
 import SectionAssignmentPanel from './SectionAssignmentPanel'
 
 
@@ -1306,6 +1306,13 @@ console.log('📤 [Socket] Emitted join-document:', {
       socket.on('peer-joined', (data) => {
         console.log('👥 Peer joined:', data.userName)
         agent2_collaborationOrchestrator.registerPeer(data.userId, data.userName)
+      })
+
+
+      socket.on('section-completed', ({ userName, sectionName }) => {
+        toast.success(`🎉 ${userName} completed: ${sectionName}`, {
+          duration: 5000
+        })
       })
 
       socket.on('peer-left', (data) => {
@@ -3265,61 +3272,17 @@ ${documentContent}
               // Extract common research paper sections
               const sections = await extractor.extractCommonSections()
 
-              // If no sections found, create test sections based on your actual PDF
-              const finalSections = sections.length > 0 ? sections : [
-                {
-                  heading: {
-                    id: 'marvista',
-                    text: 'What Marvista (by Salesforce Research) is:',
-                    level: 1,
-                    page: 1,
-                    boundingBox: { x1: 0, y1: 0, x2: 0, y2: 0 },
-                    fontSize: 16,
-                    fontWeight: 'bold'
-                  },
-                  startPage: 1,
-                  endPage: 1,
-                  content: '',
-                  subsections: []
-                },
-                {
-                  heading: {
-                    id: 'care',
-                    text: 'CARE (Collaborative AI-Assisted Reading Environment):',
-                    level: 1,
-                    page: 1,
-                    boundingBox: { x1: 0, y1: 0, x2: 0, y2: 0 },
-                    fontSize: 16,
-                    fontWeight: 'bold'
-                  },
-                  startPage: 1,
-                  endPage: 2,
-                  content: '',
-                  subsections: []
-                },
-                {
-                  heading: {
-                    id: 'paperplain',
-                    text: 'Paper Plain CHI 23:',
-                    level: 1,
-                    page: 2,
-                    boundingBox: { x1: 0, y1: 0, x2: 0, y2: 0 },
-                    fontSize: 16,
-                    fontWeight: 'bold'
-                  },
-                  startPage: 2,
-                  endPage: 2,
-                  content: '',
-                  subsections: []
-                }
-              ]
-
-              setPdfSections(finalSections)
-              console.log('📚 Final sections:', finalSections)
-
+              // Only set sections if we found real sections (don't use hardcoded fallbacks)
+              // The SmartHeadingExtractor will handle extraction from actual PDF text
               if (sections.length > 0) {
-                toast.success(`Found ${sections.length} sections in the paper!`)
+                setPdfSections(sections)
+                console.log('📚 Extracted sections:', sections)
+              } else {
+                // Don't set fake sections - let SmartHeadingExtractor handle it
+                console.log('⚠️ No common sections found, SmartHeadingExtractor will extract from PDF text')
               }
+
+              // Toast is handled by SmartHeadingExtractor
             } catch (error) {
               console.error('❌ Error extracting sections:', error)
               toast.error('Could not extract sections from PDF')
@@ -3927,33 +3890,53 @@ ${documentContent}
 
 
 
-  // === Extract PDF headings when the document finishes loading ===
-  useEffect(() => {
-    if (!webViewerInstance?.Core) return;
-    const { documentViewer, annotationManager } = webViewerInstance.Core;
+// ✅ Clear sections when documentId changes
+useEffect(() => {
+  console.log('🔄 DocumentId changed, clearing sections:', documentId);
+  setPdfSections([]);
+  setSectionAssignments([]);
+}, [documentId]);
 
-    const onDocLoaded = async () => {
-      setExtractingHeadings(true);
-      try {
-        // The extractor constructor takes (documentViewer, annotationManager)
-        const extractor = new PDFHeadingExtractor(documentViewer, annotationManager);
-        // Try the smarter path first
-        const sections = await extractor.extractCommonSections();
-        console.log('✅ Extracted sections:', sections);
-        setPdfSections(sections || []);
-      } catch (err) {
-        console.error('❌ Error extracting headings:', err);
-        setPdfSections([]);
-      } finally {
-        setExtractingHeadings(false);
+// === Extract PDF headings when the document finishes loading ===
+useEffect(() => {
+  if (!webViewerInstance?.Core) return;
+  const { documentViewer, annotationManager } = webViewerInstance.Core;
+
+  const onDocLoaded = async () => {
+    console.log('📄 New document loaded, clearing old sections...');
+    // ✅ CRITICAL: Clear sections IMMEDIATELY when new document loads
+    setPdfSections([]);
+    setExtractingHeadings(true);
+    
+    try {
+      // ✅ NEW: Use Smart Text-Based Extractor
+      const smartExtractor = new SmartHeadingExtractor();
+      const headings = await smartExtractor.extractHeadings(documentViewer);
+      const sections = smartExtractor.convertToSections(headings);
+      
+      console.log('✅ Smart extraction found:', sections.length, 'sections');
+      console.log('✅ Section titles:', sections.map(s => s.heading.text));
+      
+      setPdfSections(sections || []);
+      
+      if (!sections || sections.length === 0) {
+        toast.info('No sections found in this document')
+      } else {
+        toast.success(`Found ${sections.length} sections!`)
       }
-    };
+    } catch (err) {
+      console.error('❌ Error extracting headings:', err);
+      setPdfSections([]);
+    } finally {
+      setExtractingHeadings(false);
+    }
+  };
 
-    documentViewer.addEventListener('documentLoaded', onDocLoaded);
-    return () => {
-      documentViewer.removeEventListener('documentLoaded', onDocLoaded);
-    };
-  }, [webViewerInstance]);
+  documentViewer.addEventListener('documentLoaded', onDocLoaded);
+  return () => {
+    documentViewer.removeEventListener('documentLoaded', onDocLoaded);
+  };
+}, [webViewerInstance]);
 
 
 
