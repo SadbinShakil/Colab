@@ -21,7 +21,7 @@ import type { AnnotationPattern } from './Agent4_AnnotationsAnalysis'
 
 export interface SmartNotification {
   id: string
-  type: 'struggle-awareness' | 'confusion-loop' | 'breakthrough-sharing' | 'peer-suggestion' | 'slow-zone' | 'encouragement'
+  type: 'struggle-awareness' | 'confusion-loop' | 'breakthrough-sharing' | 'peer-suggestion' | 'slow-zone' | 'encouragement' | 'pulse'
   priority: 'high' | 'medium' | 'low'
   title: string
   message: string
@@ -30,16 +30,20 @@ export interface SmartNotification {
     label: string
     action: string
   }
+  secondaryButton?: {
+    label: string
+    action: string
+  }
   timestamp: number
   sectionId?: string
   dismissed?: boolean
-  targetUserId?: string  // ✅ ADD: User who should see this notification
-  targetUserIds?: string[]  // ✅ ADD: Multiple users (for group notifications)
-  invitationData?: any  // ✅ ADD: Store invitation/peer data for actions
+  targetUserId?: string
+  targetUserIds?: string[]
+  invitationData?: any
 }
 
 export interface ImplicitSuggestion {
-  type: 'take-break' | 'review-section' | 'connect-peer' | 'use-explainer' | 'mark-understood'
+  type: 'take-break' | 'review-section' | 'connect-peer' | 'use-explainer' | 'mark-understood' | 'visual-breakdown'
   reason: string
   confidence: number
   urgent: boolean
@@ -208,6 +212,7 @@ class Agent7_ImplicitAssistance {
     priority: 'high' | 'medium' | 'low'
     sectionId?: string
     actionButton?: { label: string; action: string }
+    secondaryButton?: { label: string; action: string }
     targetUserId?: string  // ✅ ADD: Optional target user
     targetUserIds?: string[]  // ✅ ADD: Optional multiple users
     invitationData?: any  // ✅ ADD: Optional invitation/peer data
@@ -220,6 +225,7 @@ class Agent7_ImplicitAssistance {
       message: config.message,
       actionable: config.message,
       actionButton: config.actionButton,
+      secondaryButton: config.secondaryButton,
       timestamp: Date.now(),
       sectionId: config.sectionId,
       targetUserId: config.targetUserId,  // ✅ ADD
@@ -261,46 +267,50 @@ class Agent7_ImplicitAssistance {
   ): ImplicitSuggestion[] {
     const suggestions: ImplicitSuggestion[] = []
 
-    // Suggest break if session > 45 min
+    // 1. Session Duration Logic
     if (sessionDuration > 45 * 60 * 1000) {
       suggestions.push({
         type: 'take-break',
-        reason: 'Long reading session detected',
+        reason: 'Long reading session detected. Your cognitive load might be high.',
         confidence: 0.9,
         urgent: sessionDuration > 90 * 60 * 1000
       })
     }
 
-    // Suggest review if confusion pattern
+    // 2. Behavioral Pattern Logic (GOOGLE-LEVEL)
+    const activeStruggle = struggleSignals.find(s => s.detected)
+
+    // Check Agent 1 Behavioral Patterns through the signal data
+    // If we want to be precise, we'd pass the patterns explicitly, 
+    // but for now we'll infer from the signal indicators
+    if (activeStruggle) {
+      if (activeStruggle.indicators.revisitCount >= 3) {
+        suggestions.push({
+          type: 'review-section',
+          reason: 'You have revisited this section multiple times. Would you like a fresh perspective?',
+          confidence: 0.95,
+          urgent: true
+        })
+      }
+
+      if (activeStruggle.severity === 'high') {
+        suggestions.push({
+          type: 'connect-peer',
+          reason: 'This section is complex. A collaborator who has mastered it is online.',
+          confidence: 0.85,
+          urgent: true
+        })
+      }
+    }
+
+    // 3. Annotation Pattern Logic
     const confusionPattern = patterns.find(p => p.pattern === 'heavy-confusion')
     if (confusionPattern) {
       suggestions.push({
-        type: 'review-section',
-        reason: 'Multiple confusion highlights detected',
-        confidence: confusionPattern.confidence,
-        urgent: confusionPattern.confidence > 0.7
-      })
-    }
-
-    // Suggest peer connection if high struggle
-    const highStruggle = struggleSignals.find(s => s.severity === 'high')
-    if (highStruggle) {
-      suggestions.push({
-        type: 'connect-peer',
-        reason: 'High struggle detected, peers might help',
-        confidence: 0.85,
-        urgent: true
-      })
-    }
-
-    // Suggest explainer if confusion loops
-    const confusionLoops = struggleSignals.filter(s => s.indicators.revisitCount >= 3)
-    if (confusionLoops.length > 0) {
-      suggestions.push({
         type: 'use-explainer',
-        reason: 'Confusion loops detected',
-        confidence: 0.9,
-        urgent: true
+        reason: 'The concentration of confusion highlights suggests an AI walkthrough would be beneficial.',
+        confidence: confusionPattern.confidence,
+        urgent: confusionPattern.confidence > 0.8
       })
     }
 

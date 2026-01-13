@@ -144,16 +144,36 @@ class AICoordinationCoreService {
         // Step 1: Notify the struggling user with basic help message
         agent7_implicitAssistance.generateNotification({
           type: 'struggle-awareness',
-          title: '⚠️ This section is challenging',
-          message: `Having trouble with ${data.sectionName}? You can get AI help or connect with others.`,
+          title: '🧠 Complex Section Detected',
+          message: `This section appears to be challenging. Would you like AI assistance to break it down?`,
           priority: data.severity === 'high' ? 'high' : 'medium',
           sectionId: data.sectionId,
           targetUserId: strugglingUserId,
           actionButton: {
             label: 'Get AI Help',
             action: 'open-ai-help'
+          },
+          secondaryButton: {
+            label: 'Visualize',
+            action: 'glow-section'
           }
         })
+
+        // Step 1.5: Trigger IMPLICIT PULSE (no toast, just UI glow)
+        if (data.severity === 'high') {
+          agent7_implicitAssistance.generateNotification({
+            type: 'pulse',
+            title: 'Implicit Pulse',
+            message: 'Visual cues activated',
+            priority: 'low',
+            sectionId: data.sectionId,
+            targetUserId: strugglingUserId,
+            actionButton: {
+              label: 'Pulse',
+              action: 'glow-section'
+            }
+          })
+        }
 
         // Step 2: Find peers who can help
         const session = interactionCollector.getCurrentSession()

@@ -1,7 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server'
 import OpenAI from 'openai'
 
-const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY })
+const apiKey = process.env.OPENAI_API_KEY || 'dummy-key';
+const openai = new OpenAI({ apiKey })
 
 export async function POST(request: NextRequest) {
   try {
@@ -17,7 +18,7 @@ export async function POST(request: NextRequest) {
       keyStartsWith: process.env.OPENAI_API_KEY?.substring(0, 20),
       isDemoKey: process.env.OPENAI_API_KEY === 'sk-your-openai-api-key-here'
     })
-    
+
     // Debug document content
     console.log('📄 Document Content Debug:', {
       hasDocumentContent: !!documentContent,
@@ -26,7 +27,7 @@ export async function POST(request: NextRequest) {
       question: question,
       isAbstractQuestion: question.toLowerCase().includes('abstract')
     })
-    
+
     if (!process.env.OPENAI_API_KEY || process.env.OPENAI_API_KEY === 'sk-your-openai-api-key-here') {
       // Return mock response for testing when no real API key
       const mockResponse = {
@@ -62,8 +63,8 @@ Understanding this requires knowledge of:
         examples: ["Research Paper Analysis", "Academic Discussion", "Literature Review"]
       }
 
-      return NextResponse.json({ 
-        success: true, 
+      return NextResponse.json({
+        success: true,
         response: { answer: JSON.stringify(mockResponse) }
       })
     }
@@ -114,10 +115,10 @@ Understanding this requires knowledge of:
 - Show enthusiasm for collaborative learning
 
 Always be helpful, accurate, and encouraging in your responses. When multiple users are discussing a topic, synthesize their insights and provide additional context.`
-    
+
     // Prepare document content for analysis
     let documentContentForAI = documentContent || 'No document content provided'
-    
+
     // If asking about abstract and no explicit abstract, try to find it in the content
     if (question.toLowerCase().includes('abstract') && documentContentForAI !== 'No document content provided') {
       // Look for abstract-like content at the beginning
@@ -130,28 +131,28 @@ Always be helpful, accurate, and encouraging in your responses. When multiple us
         documentContentForAI = `DOCUMENT INTRODUCTION/ABSTRACT SECTION:\n${firstPart}\n\nFULL DOCUMENT CONTENT:\n${documentContentForAI}`
       }
     }
-    
+
     // Determine if this is a paper-related question or general conversation
-    const isPaperQuestion = question.toLowerCase().includes('paper') || 
-                           question.toLowerCase().includes('document') ||
-                           question.toLowerCase().includes('abstract') ||
-                           question.toLowerCase().includes('methodology') ||
-                           question.toLowerCase().includes('results') ||
-                           question.toLowerCase().includes('conclusion') ||
-                           question.toLowerCase().includes('research') ||
-                           question.toLowerCase().includes('study') ||
-                           question.toLowerCase().includes('findings') ||
-                           question.toLowerCase().includes('data') ||
-                           question.toLowerCase().includes('analysis') ||
-                           question.toLowerCase().includes('experiment') ||
-                           question.toLowerCase().includes('hypothesis') ||
-                           question.toLowerCase().includes('authors') ||
-                           question.toLowerCase().includes('section') ||
-                           question.toLowerCase().includes('figure') ||
-                           question.toLowerCase().includes('table')
+    const isPaperQuestion = question.toLowerCase().includes('paper') ||
+      question.toLowerCase().includes('document') ||
+      question.toLowerCase().includes('abstract') ||
+      question.toLowerCase().includes('methodology') ||
+      question.toLowerCase().includes('results') ||
+      question.toLowerCase().includes('conclusion') ||
+      question.toLowerCase().includes('research') ||
+      question.toLowerCase().includes('study') ||
+      question.toLowerCase().includes('findings') ||
+      question.toLowerCase().includes('data') ||
+      question.toLowerCase().includes('analysis') ||
+      question.toLowerCase().includes('experiment') ||
+      question.toLowerCase().includes('hypothesis') ||
+      question.toLowerCase().includes('authors') ||
+      question.toLowerCase().includes('section') ||
+      question.toLowerCase().includes('figure') ||
+      question.toLowerCase().includes('table')
 
     let userPrompt = ''
-    
+
     if (isPaperQuestion && documentContentForAI !== 'No document content provided') {
       userPrompt = `📄 **Research Paper Context:**
 Title: ${documentTitle || 'N/A'}
@@ -192,7 +193,7 @@ Please provide a friendly, helpful response. This appears to be a general questi
     return NextResponse.json({ success: true, response: { answer } })
   } catch (error) {
     console.error('AI help error:', error)
-    return NextResponse.json({ 
+    return NextResponse.json({
       error: `Failed to get AI response: ${error instanceof Error ? error.message : String(error)}`,
       details: error instanceof Error ? error.toString() : String(error),
       type: error instanceof Error ? error.constructor.name : 'Unknown'

@@ -82,7 +82,8 @@ import {
   Trash2,
   CheckCircle,  // ✅ ADD THIS
   AlertCircle,  // ✅ ADD THIS
-  BookOpen
+  BookOpen,
+  Book
 } from 'lucide-react'
 import MathExplainer from './MathExplainer'
 import GeneralExplainer from './GeneralExplainer'
@@ -94,6 +95,9 @@ import PrerequisiteHelper from './PrerequisiteHelper'
 import SmartPrerequisiteHelper from './SmartPrerequisiteHelper'
 import AIResearchPrerequisites from './AIResearchPrerequisites'
 import TextSelectionPopup from './TextSelectionPopup'
+import JourneyReplayPanel from './JourneyReplayPanel'
+import CollectiveWikiPanel, { WikiEntry, InsightEntry } from './CollectiveWikiPanel'
+import { analyzeChatMessage } from '@/lib/chatAnalyzer'
 import { isMathematicalContent } from '../utils/contentDetector'
 
 
@@ -233,10 +237,21 @@ export default function ApryseWebViewer({
 
   const [peerChatOpen, setPeerChatOpen] = useState(false)
   const [peerChatData, setPeerChatData] = useState<{
+    sectionId: string
     peerId: string
     peerName: string
-    sectionId: string
   } | null>(null)
+
+  const [peerChatMessages, setPeerChatMessages] = useState<Array<{
+    fromUserId: string
+    fromUserName: string
+    toUserId?: string
+    toUserName?: string
+    message: string
+    timestamp: number
+    documentId: string
+    sectionId?: string
+  }>>([])
 
 
   const [dismissedNotifications, setDismissedNotifications] = useState<Set<string>>(new Set())
@@ -290,7 +305,7 @@ export default function ApryseWebViewer({
   const [showReasonSelector, setShowReasonSelector] = useState(false);
   const [pendingHighlight, setPendingHighlight] = useState<any>(null);
   const [selectedReason, setSelectedReason] = useState<string>('understood');
-  
+
   // Track confusion highlights per user per section to only trigger notifications when there are 3+
   const [userConfusionHighlights, setUserConfusionHighlights] = useState<Map<string, Map<string, number>>>(new Map());
 
@@ -298,7 +313,10 @@ export default function ApryseWebViewer({
     isConnected,
     connectedUsers,
     broadcastHighlight,
-    incomingHighlights, // Add this
+    broadcastPeerInvitation,
+    broadcastPeerAcceptance,
+    broadcastPeerMessage,
+    incomingHighlights,
     clearIncomingHighlights,
   } = useRealtimeHighlights({
     documentId,
@@ -468,9 +486,23 @@ export default function ApryseWebViewer({
 
   const [persona, setPersona] = useState<Persona>('reviewer');
   const [budget, setBudget] = useState<TimeBudget>('2m');
-  const [depth, setDepth] = useState(3); // 1–5const highlightAssignedSections = useCallback(() => {
-  const [advSummary, setAdvSummary] = useState<AdvancedSummary | null>(null);
+  const [depth, setDepth] = useState(3); // 1–5
   const [advBusy, setAdvBusy] = useState(false);
+  const [advSummary, setAdvSummary] = useState<AdvancedSummary | null>(null);
+  // [ADV] Ghost Layer & Section Glow state
+  const [ghostHighlights, setGhostHighlights] = useState<any[]>([])
+  const [glowingSections, setGlowingSections] = useState<Set<string>>(new Set())
+  const [showGhostLayer, setShowGhostLayer] = useState(true)
+  // Track active struggles per section for collaborative insights
+  const [activeStruggles, setActiveStruggles] = useState<Map<string, string>>(new Map())
+  // Journey Replay Panel state
+  const [showJourneyReplay, setShowJourneyReplay] = useState(false)
+  const [journeyReplaySectionId, setJourneyReplaySectionId] = useState<string>('')
+  const [journeyReplaySectionName, setJourneyReplaySectionName] = useState<string>('')
+  // Collective Wiki state
+  const [wikiEntries, setWikiEntries] = useState<WikiEntry[]>([])
+  const [wikiInsights, setWikiInsights] = useState<InsightEntry[]>([])
+  const [showWikiPanel, setShowWikiPanel] = useState(true)
 
 
 
@@ -568,9 +600,9 @@ export default function ApryseWebViewer({
 
   const handleNotificationAction = (notification: any) => {
     const action = notification.actionButton?.action
-  
+
     console.log('🔘 [Action] Button clicked:', action, notification)
-  
+
     switch (action) {
       // AI HELP ACTIONS
       case 'open-ai-help':
@@ -596,14 +628,14 @@ export default function ApryseWebViewer({
               sectionId: h.sectionId || sectionId,
               page: h.page
             }))
-  
+
           console.log(`🔍 [AI Help] Found ${confusedHighlights.length} confused highlights for section ${sectionId}`)
-  
+
           setHelpPanelContext({
             confusedHighlights,
             sectionName: notification.sectionName || `Section ${sectionId}`
           })
-  
+
           setShowHelpPanel(true)
         } else {
           // If no session, still open panel with empty highlights
@@ -615,60 +647,86 @@ export default function ApryseWebViewer({
           setShowHelpPanel(true)
         }
         break
-  
+
+      case 'glow-section':
+        if (notification.sectionId) {
+          console.log(`✨ [Glow] Activating visual glow for section ${notification.sectionId}`)
+          setGlowingSections(prev => {
+            const next = new Set(prev)
+            next.add(notification.sectionId)
+            return next
+          })
+
+          // Auto-remove glow after 8 seconds
+          setTimeout(() => {
+            setGlowingSections(prev => {
+              const next = new Set(prev)
+              next.delete(notification.sectionId)
+              return next
+            })
+          }, 8000)
+
+          // Jump to section if it exists
+          const section = pdfSections.find(s => s.heading.id === notification.sectionId)
+          if (section) {
+            handleJumpToSection(section)
+          }
+        }
+        break
+
       // PEER CONNECTION ACTIONS
       case 'connect-peer':
         console.log('💡 [Connect Peer] Opening peer chat...')
-        
+
         const matches = agent2_collaborationOrchestrator.findPeersForHelp(
           userId,
           notification.sectionId
         )
-        
+
         if (matches.length > 0) {
           const match = matches[0]
-          
+
           openPeerChat(
             match.helper.userId,
             match.helper.userName,
             notification.sectionId
           )
-          
+
           agent2_collaborationOrchestrator.startCollaboration(match, 'peer-tutoring')
-          
+
           console.log(`✅ [Connect Peer] Chat opened with ${match.helper.userName}`)
         } else {
           alert('Sorry, the helper is no longer available.')
         }
         break
-  
+
       case 'offer-help':
         console.log('🆘 [Offer Help] Helper accepting...')
         console.log('🆘 [Offer Help] Notification data:', notification)
-        
+
         // ✅ FIX: Extract struggling user info from notification
         // The notification should contain info about who is struggling
         // Check if notification has invitationData or extract from notification itself
         let strugglingUserId: string | null = null
         let strugglingUserName: string | null = null
-        
+
         // Try to get from notification metadata (if stored when notification was created)
         if (notification.invitationData) {
           strugglingUserId = notification.invitationData.strugglingUserId || notification.invitationData.fromUserId || null
           strugglingUserName = notification.invitationData.strugglingUserName || notification.invitationData.fromUserName || null
         }
-        
+
         // If not in invitationData, try to find struggling users in the section
         if (!strugglingUserId && notification.sectionId) {
           const strugglingPeers = agent2_collaborationOrchestrator.getStrugglingPeers(notification.sectionId)
           const otherStrugglingPeer = strugglingPeers.find(p => p.userId !== userId)
-          
+
           if (otherStrugglingPeer) {
             strugglingUserId = otherStrugglingPeer.userId
             strugglingUserName = otherStrugglingPeer.userName
           }
         }
-        
+
         // Last resort: try to extract from notification title/message
         if (!strugglingUserId && notification.title) {
           // Notification title format: "🆘 {userName} is struggling"
@@ -684,16 +742,16 @@ export default function ApryseWebViewer({
             }
           }
         }
-        
+
         console.log('🆘 [Offer Help] Found struggling user:', { strugglingUserId, strugglingUserName })
-        
+
         if (strugglingUserId && strugglingUserName && notification.sectionId) {
           openPeerChat(
             strugglingUserId,
             strugglingUserName,
             notification.sectionId
           )
-          
+
           console.log(`✅ [Offer Help] Helping ${strugglingUserName}`)
           toast.success(`Connecting with ${strugglingUserName}...`)
         } else {
@@ -703,38 +761,38 @@ export default function ApryseWebViewer({
           })
         }
         break
-  
+
       case 'join-group':
         console.log('👥 [Join Group] Opening group chat...')
-        
+
         setHelpPanelContext({
           confusedHighlights: [],
           sectionName: notification.sectionName || `Section ${notification.sectionId}`,
           isGroupSession: true
         })
-        
+
         setShowHelpPanel(true)
-        
+
         console.log('✅ [Join Group] Group session started')
         break
-  
+
       // INVITATION ACTIONS
       case 'accept-invitation':
         console.log('✅ [Invitation] Accepting invitation...')
-        
-        if (notification.invitationData && socketInstance) {
+
+        if (notification.invitationData) {
           const data = notification.invitationData
-          
+
           // Notify sender that invitation was accepted
-          socketInstance.emit('peer-chat-accepted', {
-            fromUserId: data.fromUserId,
-            fromUserName: data.fromUserName,
-            toUserId: data.toUserId,
-            toUserName: data.toUserName,
+          broadcastPeerAcceptance({
+            fromUserId: String(userId),
+            fromUserName: userName,
+            toUserId: String(data.fromUserId),
+            toUserName: data.fromUserName,
             sectionId: data.sectionId,
-            documentId: data.documentId
+            documentId: data.documentId || documentId
           })
-          
+
           // Open chat for accepter (User B)
           setPeerChatData({
             peerId: data.fromUserId,
@@ -742,7 +800,7 @@ export default function ApryseWebViewer({
             sectionId: data.sectionId
           })
           setPeerChatOpen(true)
-          
+
           console.log(`✅ [Invitation] Accepted from ${data.fromUserName}`)
           toast.success(`Connected with ${data.fromUserName}!`)
         } else {
@@ -750,20 +808,20 @@ export default function ApryseWebViewer({
           toast.error('Unable to accept invitation. Please try again.')
         }
         break
-  
+
       case 'dismiss-invitation':
         console.log('⏭️ [Invitation] Dismissed - will show later')
         toast.info('Invitation dismissed. You can connect later.')
         break
-  
+
       default:
         console.warn('⚠️ [Action] Unknown action:', action)
     }
-  
+
     // Dismiss notification
     setDismissedNotifications(prev => new Set(prev).add(notification.id))
     setSmartNotifications(prev => prev.filter(n => n.id !== notification.id))
-    
+
     // ✅ FIX: Also notify Agent7 that this notification was dismissed
     // This ensures Agent7's internal state is updated
     agent7_implicitAssistance.dismissNotification(notification.id)
@@ -772,48 +830,35 @@ export default function ApryseWebViewer({
 
   const openPeerChat = (peerId: string, peerName: string, sectionId: string) => {
     console.log(`💬 [Peer Chat] Sending invitation to ${peerName}`)
-    console.log(`💬 [Peer Chat] Socket instance:`, socketInstance ? `connected (${socketInstance.id})` : 'null')
-    console.log(`💬 [Peer Chat] Invitation data:`, {
-      fromUserId: userId,
-      fromUserName: userName,
-      toUserId: peerId,
-      toUserName: peerName,
-      sectionId: sectionId,
-      documentId: documentId
-    })
-    
-    // ✅ EARLY RETURN if socket is null
-    if (!socketInstance) {
-      console.error('❌ Socket not connected')
-      toast.error('Connection error', {
-        description: 'Socket not connected. Please refresh the page.'
-      })
-      return  // ✅ EXIT HERE - nothing below runs
-    }
-    
-    // ✅ Now TypeScript knows socketInstance is NOT null
     const invitationData = {
-      fromUserId: String(userId),      // ✅ Convert to string
+      fromUserId: String(userId),
       fromUserName: userName,
-      toUserId: String(peerId),        // ✅ Convert to string
+      toUserId: String(peerId),
       toUserName: peerName,
       sectionId: sectionId,
       documentId: documentId
     }
-    
-    console.log(`📤 [Invitation] Emitting to server:`, invitationData)
-    console.log(`📤 [Invitation] Socket connected:`, socketInstance.connected)
-    console.log(`📤 [Invitation] Socket ID:`, socketInstance.id)
-    
-    socketInstance.emit('peer-chat-invitation', invitationData)
-    
-    console.log(`✅ [Invitation] Emitted to socket: ${socketInstance.id}`)
-    
-    // Show pending status
-    toast.info(`Invitation sent to ${peerName}...`, {
-      description: 'Waiting for them to accept...',
-      duration: 3000
-    })
+
+    broadcastPeerInvitation(invitationData)
+    toast.info(`Invitation sent to ${peerName}`)
+  }
+
+  const handlePeerChatMessageSend = (message: string) => {
+    if (!peerChatData || !message.trim()) return
+
+    const messageData = {
+      fromUserId: String(userId),
+      fromUserName: userName,
+      toUserId: peerChatData.peerId,
+      toUserName: peerChatData.peerName,
+      message: message,
+      timestamp: Date.now(),
+      documentId: documentId,
+      sectionId: peerChatData.sectionId
+    }
+
+    broadcastPeerMessage(messageData)
+    setPeerChatMessages(prev => [...prev, messageData])
   }
 
   const getAvailablePeers = () => {
@@ -917,9 +962,10 @@ export default function ApryseWebViewer({
         if (reason === 'confusion') {
           // ✅ Check if user is REALLY struggling before triggering agents
           // Small delay to ensure session is updated with new highlight
-          setTimeout(() => {
+          // Small delay to ensure session is updated with new highlight
+          setTimeout(async () => {
             const session = interactionCollector.getCurrentSession()
-            const sectionInteraction = session?.sectionInteractions.get(`section-page-${pageNumber}`)
+            const sectionInteraction = session?.sectionInteractions.get(`section-page-${pageNumber}`) as any
 
             if (sectionInteraction) {
               const confusionCount = sectionInteraction.confusionHighlights
@@ -936,6 +982,40 @@ export default function ApryseWebViewer({
 
               if (shouldTrigger) {
                 console.log(`⚠️ [STRUGGLE DETECTED] User ${userName} is struggling with section ${pageNumber}`)
+
+                // ✅ RECORD STRUGGLE START for collaborative insights
+                const sectionId = `section-page-${pageNumber}`
+
+                // Only record if not already tracking this section
+                if (!activeStruggles.has(sectionId)) {
+                  try {
+                    const response = await fetch('/api/collaborative-insights', {
+                      method: 'POST',
+                      headers: { 'Content-Type': 'application/json' },
+                      body: JSON.stringify({
+                        action: 'record-struggle-start',
+                        documentId,
+                        userId,
+                        userName,
+                        sectionId,
+                        sectionName: `Section Page ${pageNumber}`,
+                        behavioralPatterns: sectionInteraction.behavioralPatterns || [],
+                        confusionHighlights: confusionCount
+                      })
+                    })
+
+                    if (response.ok) {
+                      const data = await response.json()
+                      if (data.success && data.struggle) {
+                        // Store struggle ID for later resolution
+                        setActiveStruggles(prev => new Map(prev).set(sectionId, data.struggle.id))
+                        console.log('📊 [Collaborative Insights] Struggle tracking started:', data.struggle.id)
+                      }
+                    }
+                  } catch (error) {
+                    console.error('❌ Failed to record struggle start:', error)
+                  }
+                }
 
                 // Update peer status in Agent 2 ONLY when actually struggling
                 agent2_collaborationOrchestrator.updatePeerStatus(
@@ -974,7 +1054,7 @@ export default function ApryseWebViewer({
         } else if (reason === 'understood') {
           // ✅ FIX: Update peer status when user marks "understood"
           // Small delay to ensure session is updated with new highlight
-          setTimeout(() => {
+          setTimeout(async () => {
             const session = interactionCollector.getCurrentSession()
             const sectionInteraction = session?.sectionInteractions.get(`section-page-${pageNumber}`)
 
@@ -982,8 +1062,43 @@ export default function ApryseWebViewer({
               // Mark user as proficient in this section (understandingScore > 70)
               // The understandingScore is calculated based on understoodHighlights
               const understandingScore = sectionInteraction.understandingScore
-              
+
               console.log(`✅ [UNDERSTOOD] User ${userName} marked section ${pageNumber} as understood (score: ${understandingScore})`)
+
+              // ✅ RECORD STRUGGLE RESOLUTION for collaborative insights
+              const sectionId = `section-page-${pageNumber}`
+              const struggleId = activeStruggles.get(sectionId)
+
+              if (struggleId) {
+                try {
+                  const response = await fetch('/api/collaborative-insights', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                      action: 'record-struggle-end',
+                      documentId,
+                      struggleId,
+                      resolutionMethod: 'self-resolved',
+                      resolutionDetails: 'User marked section as understood after review'
+                    })
+                  })
+
+                  if (response.ok) {
+                    const data = await response.json()
+                    if (data.success) {
+                      // Remove from active struggles
+                      setActiveStruggles(prev => {
+                        const newMap = new Map(prev)
+                        newMap.delete(sectionId)
+                        return newMap
+                      })
+                      console.log('✅ [Collaborative Insights] Struggle resolved:', struggleId)
+                    }
+                  }
+                } catch (error) {
+                  console.error('❌ Failed to record struggle resolution:', error)
+                }
+              }
 
               // Update peer status in Agent 2 to mark as proficient
               // This makes them available to help others struggling with the same section
@@ -999,7 +1114,7 @@ export default function ApryseWebViewer({
 
               if (strugglingPeers.length > 0) {
                 console.log(`🤝 [PEER MATCHING] Found ${strugglingPeers.length} struggling user(s) - triggering match notifications`)
-                
+
                 // Trigger notifications for each struggling user
                 // This will cause the coordination core to check for helpers and notify both users
                 strugglingPeers.forEach((strugglingPeer) => {
@@ -1159,16 +1274,16 @@ export default function ApryseWebViewer({
         // socket.emit('join-document', { documentId, userName, userId })
         // console.log('📤 [Socket] Emitted join-document:', { documentId, userName, userId })
         // Join document room - ✅ ENSURE userId IS STRING
-socket.emit('join-document', { 
-  documentId, 
-  userName, 
-  userId: String(userId)  // ✅ Convert to string
-})
-console.log('📤 [Socket] Emitted join-document:', { 
-  documentId, 
-  userName, 
-  userId: String(userId) 
-})
+        socket.emit('join-document', {
+          documentId,
+          userName,
+          userId: String(userId)  // ✅ Convert to string
+        })
+        console.log('📤 [Socket] Emitted join-document:', {
+          documentId,
+          userName,
+          userId: String(userId)
+        })
 
         // Register local peer
         agent2_collaborationOrchestrator.registerPeer(userId, userName)
@@ -1206,16 +1321,16 @@ console.log('📤 [Socket] Emitted join-document:', {
         console.log('📨 [Invitation] Current userId:', userId)
         console.log('📨 [Invitation] Target userId:', data.toUserId)
         console.log('📨 [Invitation] Match?', String(data.toUserId) === String(userId))
-        
+
         // Only show notification if this invitation is for the current user
         if (String(data.toUserId) !== String(userId)) {
           console.log(`⚠️ [Invitation] Not for current user (${userId}), ignoring. Target: ${data.toUserId}`)
           console.log(`⚠️ [Invitation] Type check - data.toUserId: "${String(data.toUserId)}" vs userId: "${String(userId)}"`)
           return
         }
-        
+
         console.log('✅ [Invitation] This invitation is for me! Showing notification...')
-        
+
         // Add notification to smartNotifications
         const invitationId = `invitation-${data.fromUserId}-${Date.now()}`
         setSmartNotifications(prev => [...prev, {
@@ -1235,7 +1350,7 @@ console.log('📤 [Socket] Emitted join-document:', {
             action: 'dismiss-invitation'
           }
         }])
-        
+
         console.log(`✅ [Invitation] Notification added for ${data.fromUserName}`)
       })
 
@@ -1248,18 +1363,60 @@ console.log('📤 [Socket] Emitted join-document:', {
         sectionId: string
         documentId?: string
       }) => {
-        console.log('✅ [Invitation] Accepted by:', data.toUserName)
-        
+        console.log('✅ [Invitation] Accepted by:', data.fromUserName)
+
+        // Only handle if this was for us
+        if (String(data.toUserId) !== String(userId)) return
+
         // Open chat for inviter (User A)
         setPeerChatData({
-          peerId: data.toUserId,
-          peerName: data.toUserName,
+          peerId: data.fromUserId, // The person who accepted (User B)
+          peerName: data.fromUserName,
           sectionId: data.sectionId
         })
         setPeerChatOpen(true)
-        
+
         // Show success notification
-        toast.success(`${data.toUserName} accepted your chat invitation!`)
+        toast.success(`${data.fromUserName} accepted your chat invitation!`)
+      })
+
+      // Listen for peer chat messages
+      socket.on('peer-chat-message', (data: {
+        fromUserId: string
+        fromUserName: string
+        toUserId: string
+        toUserName: string
+        message: string
+        timestamp: number
+        documentId: string
+        sectionId?: string
+      }) => {
+        console.log('💬 [Socket] Received peer message:', data)
+        setPeerChatMessages(prev => [...prev, data])
+
+        // Auto-open chat if message is for us and chat is closed
+        if (data.toUserId === String(userId) && !peerChatOpen) {
+          setPeerChatData({
+            peerId: data.fromUserId,
+            peerName: data.fromUserName,
+            sectionId: data.sectionId || 'unknown'
+          })
+          setPeerChatOpen(true)
+        }
+
+        // ✅ ANALYZE CHAT FOR COLLECTIVE WIKI
+        // Check if message contains definitions or insights
+        const analysis = analyzeChatMessage(data.message, data.fromUserId, data.fromUserName)
+
+        if (analysis.type === 'definition' && analysis.data) {
+          console.log('📖 [Wiki] Detected definition:', analysis.data.term)
+          toast.success(`New Definition: ${analysis.data.term}`)
+          setWikiEntries(prev => [analysis.data, ...prev])
+        } else if (analysis.type === 'insight' && analysis.data) {
+          console.log('💡 [Wiki] Detected insight:', analysis.data.content)
+          toast.success('New Insight captured!')
+          setWikiInsights(prev => [analysis.data, ...prev])
+        }
       })
 
 
@@ -1334,6 +1491,78 @@ console.log('📤 [Socket] Emitted join-document:', {
     }
   }, [documentId, userName, userId])
 
+  // Listen for socket events from useRealtimeHighlights hook
+  useEffect(() => {
+    const handleInvitation = (e: any) => {
+      console.log('📨 [Window] Received invitation event:', e.detail)
+      const data = e.detail
+
+      // Only show notification if this invitation is for the current user
+      if (String(data.toUserId) !== String(userId)) return
+
+      // Add notification to smartNotifications
+      const invitationId = `invitation-${data.fromUserId}-${Date.now()}`
+      setSmartNotifications(prev => [...prev, {
+        id: invitationId,
+        type: 'peer-invitation',
+        title: `💬 Chat Invitation from ${data.fromUserName}`,
+        message: `${data.fromUserName} wants to connect and chat about this section.`,
+        targetUserId: userId,
+        sectionId: data.sectionId,
+        invitationData: data,
+        actionButton: {
+          label: 'Connect',
+          action: 'accept-invitation'
+        },
+        secondaryButton: {
+          label: 'Later',
+          action: 'dismiss-invitation'
+        }
+      }])
+    }
+
+    const handleAcceptance = (e: any) => {
+      console.log('✅ Received acceptance event:', e.detail)
+      const data = e.detail
+
+      // If "toUserId" is ME, then someone accepted MY invitation
+      if (data.toUserId === String(userId)) {
+        setPeerChatData({
+          peerId: data.fromUserId, // Person who accepted
+          peerName: data.fromUserName,
+          sectionId: data.sectionId
+        })
+        setPeerChatOpen(true)
+        toast.success(`${data.fromUserName} accepted your help offer!`)
+      }
+    }
+
+    const handleMessage = (e: any) => {
+      console.log('💬 Received message event:', e.detail)
+      setPeerChatMessages(prev => [...prev, e.detail])
+
+      // Auto-open chat if message is for us and chat is closed
+      if (e.detail.toUserId === String(userId) && !peerChatOpen) {
+        setPeerChatData({
+          peerId: e.detail.fromUserId,
+          peerName: e.detail.fromUserName,
+          sectionId: e.detail.sectionId || 'unknown'
+        })
+        setPeerChatOpen(true)
+      }
+    }
+
+    window.addEventListener('peer-chat-invitation', handleInvitation)
+    window.addEventListener('peer-chat-accepted', handleAcceptance)
+    window.addEventListener('peer-chat-message', handleMessage)
+
+    return () => {
+      window.removeEventListener('peer-chat-invitation', handleInvitation)
+      window.removeEventListener('peer-chat-accepted', handleAcceptance)
+      window.removeEventListener('peer-chat-message', handleMessage)
+    }
+  }, [userId, peerChatOpen])
+
 
 
 
@@ -1351,8 +1580,119 @@ console.log('📤 [Socket] Emitted join-document:', {
     }
   }, [sectionAssignments, highlightAssignedSections])
 
-  // Initialize eye tracking
-  // Initialize eye tracking
+  // Ghost Layer Logic: Asynchronous Insight Alignment
+  useEffect(() => {
+    const loadGhostInsights = async () => {
+      if (!documentId) return
+
+      try {
+        // ✅ REAL IMPLEMENTATION: Fetch ghost highlights from backend
+        const response = await fetch(
+          `/api/collaborative-insights?documentId=${documentId}&action=ghost-highlights`
+        )
+
+        if (response.ok) {
+          const data = await response.json()
+
+          if (data.success && data.highlights) {
+            console.log('👻 [Ghost Highlights] Loaded:', data.highlights.length, 'sections')
+
+            // Transform ghost highlights for rendering
+            const transformedHighlights = data.highlights.map((highlight: any) => ({
+              sectionId: highlight.sectionId,
+              totalUsers: highlight.aggregatedData.totalUsers,
+              averageDuration: highlight.aggregatedData.averageDuration,
+              intensity: Math.min(highlight.aggregatedData.totalUsers / 5, 1), // Cap at 1.0
+              commonPatterns: highlight.aggregatedData.commonPatterns,
+              resolutionMethods: highlight.aggregatedData.resolutionMethods,
+              helpfulResources: highlight.aggregatedData.helpfulResources,
+              journeys: highlight.individualJourneys
+            }))
+
+            setGhostHighlights(transformedHighlights)
+
+            // Show toast if there are insights
+            if (transformedHighlights.length > 0) {
+              toast.info(
+                `👻 ${transformedHighlights.length} section(s) have historical struggle data from other researchers`,
+                { duration: 5000 }
+              )
+            }
+          }
+        }
+      } catch (err) {
+        console.error('❌ Failed to load ghost insights:', err)
+      }
+    }
+
+    loadGhostInsights()
+  }, [documentId])
+
+  const renderGhostLayer = useCallback(() => {
+    if (!webViewerInstance || !ghostHighlights.length || !showGhostLayer) return
+
+    const { annotationManager, Annotations } = webViewerInstance.Core
+
+    // Clear old ghost marks
+    const oldGhosts = annotationManager.getAnnotationsList().filter((a: any) => a.CustomData?.ghost === true)
+    annotationManager.deleteAnnotations(oldGhosts)
+
+    ghostHighlights.forEach(ghost => {
+      const rect = new Annotations.RectangleAnnotation({
+        PageNumber: ghost.page,
+        X: ghost.x,
+        Y: ghost.y,
+        Width: ghost.width,
+        Height: ghost.height,
+        StrokeThickness: 0,
+        FillColor: new Annotations.Color(255, 100, 0, 0.15), // Very faint orange
+        Opacity: 0.8,
+      })
+      rect.setCustomData('ghost', true)
+      rect.NoDelete = true
+      rect.NoMove = true
+      annotationManager.addAnnotation(rect)
+    })
+
+    annotationManager.drawAnnotationsFromList(annotationManager.getAnnotationsList())
+  }, [webViewerInstance, ghostHighlights, showGhostLayer])
+
+  useEffect(() => {
+    renderGhostLayer()
+  }, [renderGhostLayer])
+
+  // Section Glow Logic: Implicit Feedback
+  useEffect(() => {
+    const handlePulse = (e: any) => {
+      const notification = e.detail
+      if (notification.type === 'pulse' && notification.sectionId) {
+        setGlowingSections(prev => {
+          const next = new Set(prev)
+          next.add(notification.sectionId)
+          return next
+        })
+
+        // Auto-remove glow after 10 seconds
+        setTimeout(() => {
+          setGlowingSections(prev => {
+            const next = new Set(prev)
+            next.delete(notification.sectionId)
+            return next
+          })
+        }, 10000)
+      }
+    }
+
+    window.addEventListener('agent7:notification', handlePulse)
+    return () => window.removeEventListener('agent7:notification', handlePulse)
+  }, [])
+
+  // Handle opening journey replay
+  const handleShowJourneyReplay = (sectionId: string, sectionName: string) => {
+    setJourneyReplaySectionId(sectionId)
+    setJourneyReplaySectionName(sectionName)
+    setShowJourneyReplay(true)
+  }
   useEffect(() => {
     const initEyeTracking = async () => {
       const success = await eyeTracker.initialize()
@@ -1409,7 +1749,7 @@ console.log('📤 [Socket] Emitted join-document:', {
         try {
           console.log('📥 Importing XFDF highlight:', highlight);
           await annotationManager.importAnnotations(highlight.xfdf, { imported: true });
-          
+
           // Set custom data on imported annotations if not already set by XFDF
           // This ensures the annotation listener can access reason and authorId
           if (highlight.reason || highlight.user || highlight.userId) {
@@ -1420,7 +1760,7 @@ console.log('📤 [Socket] Emitted join-document:', {
               const hasNoReason = !ann.getCustomData('reason');
               return isHighlight && isCorrectPage && hasNoReason;
             });
-            
+
             // Set custom data on the most recently imported annotation
             if (importedAnnotations.length > 0) {
               const annotation = importedAnnotations[importedAnnotations.length - 1];
@@ -1436,7 +1776,7 @@ console.log('📤 [Socket] Emitted join-document:', {
               annotationManager.redrawAnnotation(annotation);
             }
           }
-          
+
           console.log('✅ XFDF highlight imported successfully!');
         } catch (error) {
           console.error('❌ Error importing XFDF:', error);
@@ -1729,6 +2069,18 @@ console.log('📤 [Socket] Emitted join-document:', {
       if (response.ok) {
         setNewMessage('')
         // Message will be updated via the polling effect
+
+        // ✅ ANALYZE OUTGOING CHAT FOR COLLECTIVE WIKI
+        if (!isPrivate) { // Only analyze public/group messages
+          const analysis = analyzeChatMessage(message, userId, userName)
+          if (analysis.type === 'definition' && analysis.data) {
+            console.log('📖 [Wiki] Detected YOUR definition:', analysis.data.term)
+            setWikiEntries(prev => [analysis.data, ...prev])
+          } else if (analysis.type === 'insight' && analysis.data) {
+            console.log('💡 [Wiki] Detected YOUR insight:', analysis.data.content)
+            setWikiInsights(prev => [analysis.data, ...prev])
+          }
+        }
       }
     } catch (error) {
       console.error('Error sending message:', error)
@@ -2832,7 +3184,6 @@ ${documentContent}
     }
   };
 
-  // ========== [ADV] Jump to page from evidence chips ==========
   const goToPage = (p: number) => {
     try {
       webViewerInstance?.Core?.documentViewer?.setCurrentPage(p);
@@ -2960,13 +3311,13 @@ ${documentContent}
                   const currentCount = userSections.get(sectionId) || 0
                   const newCount = currentCount + 1
                   userSections.set(sectionId, newCount)
-                  
+
                   console.log(`📊 User ${annotation.Author} now has ${newCount} confusion highlights in ${sectionId}`)
-                  
+
                   // Only trigger struggle detection when there are 3+ confusion highlights
                   if (newCount >= 3) {
                     console.log(`⚠️ [STRUGGLE DETECTED] User ${annotation.Author} is struggling with section ${annotationPage} (${newCount} confusion highlights)`)
-                    
+
                     agent2_collaborationOrchestrator.updatePeerStatus(
                       authorId,
                       sectionId,
@@ -2999,7 +3350,7 @@ ${documentContent}
                   } else {
                     console.log(`ℹ️ Confusion tracked but not enough signals yet (${newCount} highlights, need 3+)`)
                   }
-                  
+
                   return newMap
                 })
               }
@@ -3439,10 +3790,19 @@ ${documentContent}
           try {
             const viewerElement = documentViewer.getViewerElement();
             if (viewerElement) {
+              let lastScrollTop = 0;
               viewerElement.addEventListener('scroll', () => {
                 const currentPage = documentViewer.getCurrentPage();
                 const scrollTop = viewerElement.scrollTop;
-                console.log('📜 Scroll event on page', currentPage, 'at position', scrollTop);
+                const direction = scrollTop > lastScrollTop ? 'down' : 'up';
+                lastScrollTop = scrollTop;
+
+                console.log('📜 Scroll event on page', currentPage, 'at position', scrollTop, 'direction', direction);
+
+                // Track for contextual AI
+                const sectionId = `page-${currentPage}-section`;
+                contextualAI.trackScroll(sectionId, { page: currentPage, x: 0, y: scrollTop }, direction);
+
                 if (onScroll) {
                   onScroll(currentPage, scrollTop);
                 }
@@ -3890,53 +4250,53 @@ ${documentContent}
 
 
 
-// ✅ Clear sections when documentId changes
-useEffect(() => {
-  console.log('🔄 DocumentId changed, clearing sections:', documentId);
-  setPdfSections([]);
-  setSectionAssignments([]);
-}, [documentId]);
-
-// === Extract PDF headings when the document finishes loading ===
-useEffect(() => {
-  if (!webViewerInstance?.Core) return;
-  const { documentViewer, annotationManager } = webViewerInstance.Core;
-
-  const onDocLoaded = async () => {
-    console.log('📄 New document loaded, clearing old sections...');
-    // ✅ CRITICAL: Clear sections IMMEDIATELY when new document loads
+  // ✅ Clear sections when documentId changes
+  useEffect(() => {
+    console.log('🔄 DocumentId changed, clearing sections:', documentId);
     setPdfSections([]);
-    setExtractingHeadings(true);
-    
-    try {
-      // ✅ NEW: Use Smart Text-Based Extractor
-      const smartExtractor = new SmartHeadingExtractor();
-      const headings = await smartExtractor.extractHeadings(documentViewer);
-      const sections = smartExtractor.convertToSections(headings);
-      
-      console.log('✅ Smart extraction found:', sections.length, 'sections');
-      console.log('✅ Section titles:', sections.map(s => s.heading.text));
-      
-      setPdfSections(sections || []);
-      
-      if (!sections || sections.length === 0) {
-        toast.info('No sections found in this document')
-      } else {
-        toast.success(`Found ${sections.length} sections!`)
-      }
-    } catch (err) {
-      console.error('❌ Error extracting headings:', err);
-      setPdfSections([]);
-    } finally {
-      setExtractingHeadings(false);
-    }
-  };
+    setSectionAssignments([]);
+  }, [documentId]);
 
-  documentViewer.addEventListener('documentLoaded', onDocLoaded);
-  return () => {
-    documentViewer.removeEventListener('documentLoaded', onDocLoaded);
-  };
-}, [webViewerInstance]);
+  // === Extract PDF headings when the document finishes loading ===
+  useEffect(() => {
+    if (!webViewerInstance?.Core) return;
+    const { documentViewer, annotationManager } = webViewerInstance.Core;
+
+    const onDocLoaded = async () => {
+      console.log('📄 New document loaded, clearing old sections...');
+      // ✅ CRITICAL: Clear sections IMMEDIATELY when new document loads
+      setPdfSections([]);
+      setExtractingHeadings(true);
+
+      try {
+        // ✅ NEW: Use Smart Text-Based Extractor
+        const smartExtractor = new SmartHeadingExtractor();
+        const headings = await smartExtractor.extractHeadings(documentViewer);
+        const sections = smartExtractor.convertToSections(headings);
+
+        console.log('✅ Smart extraction found:', sections.length, 'sections');
+        console.log('✅ Section titles:', sections.map(s => s.heading.text));
+
+        setPdfSections(sections || []);
+
+        if (!sections || sections.length === 0) {
+          toast.info('No sections found in this document')
+        } else {
+          toast.success(`Found ${sections.length} sections!`)
+        }
+      } catch (err) {
+        console.error('❌ Error extracting headings:', err);
+        setPdfSections([]);
+      } finally {
+        setExtractingHeadings(false);
+      }
+    };
+
+    documentViewer.addEventListener('documentLoaded', onDocLoaded);
+    return () => {
+      documentViewer.removeEventListener('documentLoaded', onDocLoaded);
+    };
+  }, [webViewerInstance]);
 
 
 
@@ -5366,14 +5726,64 @@ useEffect(() => {
                   setSectionAssignments(assignments)
                 }}
                 onJumpToSection={handleJumpToSection}
+                glowingSections={glowingSections}
+                ghostHighlights={ghostHighlights}
+                onShowJourneyReplay={handleShowJourneyReplay}
               />
             </div>
           </div>
         </div>
       )}
 
+      {/* Journey Replay Panel */}
+      <JourneyReplayPanel
+        isOpen={showJourneyReplay}
+        onClose={() => setShowJourneyReplay(false)}
+        documentId={documentId}
+        sectionId={journeyReplaySectionId}
+        sectionName={journeyReplaySectionName}
+        onJumpToResource={(resource) => {
+          // Parse resource string and jump
+          console.log('Jumping to resource:', resource)
+          // TODO: specific resource jumping logic if needed
+        }}
+      />
 
 
+
+
+      {/* Collective Wiki Panel (Floating Left) */}
+      {showWikiPanel && (
+        <div className="fixed left-4 bottom-20 z-[9000] h-[500px] shadow-2xl animate-in slide-in-from-left-10 fade-in duration-300">
+          <CollectiveWikiPanel
+            entries={wikiEntries}
+            insights={wikiInsights}
+            onVerifyEntry={(entryId) => {
+              // Verify logic
+              setWikiEntries(prev => prev.map(e => e.id === entryId ? {
+                ...e,
+                verifiedBy: [...e.verifiedBy, userId],
+                source: 'manual'
+              } : e))
+              toast.success('Definition verified!')
+            }}
+            onLikeInsight={(insightId) => {
+              // Like logic
+              setWikiInsights(prev => prev.map(i => i.id === insightId ? {
+                ...i,
+                likes: i.likes + 1
+              } : i))
+            }}
+          />
+          {/* Close/Minimize Button */}
+          <button
+            onClick={() => setShowWikiPanel(false)}
+            className="absolute -top-3 -right-3 bg-slate-800 text-white rounded-full p-1 shadow-md hover:bg-slate-700"
+          >
+            <X className="w-4 h-4" />
+          </button>
+        </div>
+      )}
 
       {/* PDF Viewer Container */}
       {/* Tabbed PDF Viewer Container */}
@@ -5413,6 +5823,16 @@ useEffect(() => {
             >
               <Plus className="w-4 h-4 mr-1" />
               Add Document
+            </button>
+
+            <button
+              onClick={() => setShowWikiPanel(v => !v)}
+              className={`px-3 py-2 text-sm rounded flex items-center transition-colors ml-2 ${showWikiPanel ? 'bg-indigo-100 text-indigo-700' : 'text-gray-500 hover:text-indigo-600 hover:bg-gray-200'
+                }`}
+              title="Toggle Collective Memory"
+            >
+              <Book className="w-4 h-4 mr-1" />
+              Wiki
             </button>
 
             {/* ✅ ADD THIS BUTTON RIGHT HERE */}
@@ -6122,17 +6542,34 @@ useEffect(() => {
               </div>
 
               {/* Messages Area */}
-              <div className="flex-1 p-4 overflow-y-auto bg-gray-50">
+              <div className="flex-1 p-4 overflow-y-auto bg-gray-50 flex flex-col-reverse">
                 <div className="space-y-3">
-                  {/* System message */}
-                  <div className="text-center text-sm text-gray-500 mb-4">
-                    Connected with {peerChatData.peerName}
-                  </div>
+                  {peerChatMessages
+                    .filter(msg => {
+                      // Show messages between me and this specific peer
+                      // (Wait, some messages might be from user to me)
+                      return (msg.fromUserId === String(userId) && msg.toUserId === peerChatData.peerId) ||
+                        (msg.fromUserId === peerChatData.peerId && msg.toUserId === String(userId))
+                    })
+                    .map((msg, idx) => (
+                      <div key={idx} className={`flex ${msg.fromUserId === String(userId) ? 'justify-end' : 'justify-start'}`}>
+                        <div className={`max-w-[80%] rounded-lg p-3 ${msg.fromUserId === String(userId)
+                          ? 'bg-blue-600 text-white'
+                          : 'bg-white border border-gray-200 text-gray-800'
+                          }`}>
+                          <p className="text-xs font-semibold mb-1 opacity-70">
+                            {msg.fromUserName} • {new Date(msg.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                          </p>
+                          <p className="text-sm">{msg.message}</p>
+                        </div>
+                      </div>
+                    ))}
 
-                  {/* Placeholder */}
-                  <div className="text-center text-sm text-gray-400 mt-8">
-                    Start the conversation by typing below
-                  </div>
+                  {peerChatMessages.length === 0 && (
+                    <div className="text-center text-sm text-gray-400 mt-8">
+                      Start the conversation by typing below
+                    </div>
+                  )}
                 </div>
               </div>
 
@@ -6148,16 +6585,20 @@ useEffect(() => {
                         const input = e.currentTarget
                         const message = input.value.trim()
                         if (message) {
-                          console.log('💬 Sending:', message)
-                          // TODO: Send via Socket.io
+                          handlePeerChatMessageSend(message)
                           input.value = ''
                         }
                       }
                     }}
                   />
                   <button
-                    onClick={() => {
-                      console.log('💬 Send button clicked')
+                    onClick={(e) => {
+                      const input = (e.currentTarget.previousElementSibling as HTMLInputElement)
+                      const message = input.value.trim()
+                      if (message) {
+                        handlePeerChatMessageSend(message)
+                        input.value = ''
+                      }
                     }}
                     className="px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition"
                   >

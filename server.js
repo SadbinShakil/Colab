@@ -39,15 +39,15 @@ app.prepare().then(() => {
     socket.on('join-document', ({ documentId, userName, userId }) => {
       socket.join(documentId)
       console.log(`📄 ${userName} (${userId}) joined document: ${documentId}`)
-    
+
       socket.data = { documentId, userName, userId }
-    
+
       if (!documentRooms.has(documentId)) {
         documentRooms.set(documentId, { highlights: [], users: [] })
       }
-    
+
       const room = documentRooms.get(documentId)
-      
+
       // ✅ Check if user already exists (prevent duplicates)
       const existingUserIndex = room.users.findIndex(u => u.userId === userId)
       if (existingUserIndex >= 0) {
@@ -59,25 +59,25 @@ app.prepare().then(() => {
         room.users.push({ socketId: socket.id, userName, userId })
         console.log(`✅ Added new user: ${userName} (${userId}) -> socket: ${socket.id}`)
       }
-    
+
       console.log(`👥 [Server] Current users in room ${documentId}:`, room.users.map(u => `${u.userName} (${u.userId})`))
-    
+
       socket.emit('existing-highlights', room.highlights)
       io.to(documentId).emit('users-update', room.users)
-    
+
       socket.to(documentId).emit('peer-joined', {
         userId,
         userName,
         documentId
       })
-    
+
       console.log(`👥 Active users in ${documentId}:`, room.users.length)
     })
 
 
     socket.on('new-highlight', (highlightData) => {
       const { documentId } = highlightData
-      
+
       const enrichedHighlight = {
         ...highlightData,
         id: `highlight_${Date.now()}_${socket.id}`,
@@ -128,47 +128,70 @@ app.prepare().then(() => {
 
     // ✅ ADD: Handle peer chat acceptance
     socket.on('peer-chat-accepted', (data) => {
-      console.log(`✅ [Server] Chat accepted: ${data.toUserName} accepted ${data.fromUserName}`)
+      console.log(`✅ [Server] Chat accepted: ${data.fromUserName} accepted invitation from ${data.toUserName}`)
 
-      // Find the original inviter's socket ID
+      // Find the original inviter's socket ID (data.toUserId is the inviter)
       const room = documentRooms.get(data.documentId)
       if (room) {
-        const inviterUser = room.users.find((u) => u.userId === data.fromUserId)
+        const inviterUser = room.users.find((u) => u.userId === data.toUserId)
         if (inviterUser) {
           // Notify ONLY the original inviter
           io.to(inviterUser.socketId).emit('peer-chat-accepted', data)
-          console.log(`✅ [Server] Acceptance sent to socket: ${inviterUser.socketId}`)
+          console.log(`✅ [Server] Acceptance sent to inviter socket: ${inviterUser.socketId}`)
         } else {
-          console.log(`❌ [Server] Inviter ${data.fromUserId} not found in room`)
+          console.log(`❌ [Server] Inviter ${data.toUserId} not found in room for acceptance`)
+        }
+      }
+    })
+
+    // ✅ ADD: Handle peer chat messages
+    socket.on('peer-chat-message', (data) => {
+      console.log(`💬 [Server] Chat message: ${data.fromUserName} → ${data.toUserName || 'Group'}`)
+
+      const room = documentRooms.get(data.documentId)
+      if (room) {
+        if (data.toUserId) {
+          // PRIVATE MESSAGE: Find target user
+          const targetUser = room.users.find((u) => u.userId === data.toUserId)
+          if (targetUser) {
+            io.to(targetUser.socketId).emit('peer-chat-message', data)
+            console.log(`✅ [Server] Message sent to socket: ${targetUser.socketId}`)
+          } else {
+            console.log(`❌ [Server] Target user ${data.toUserId} not found for private message`)
+          }
+        } else {
+          // GROUP MESSAGE: Broadcast to all in document
+          socket.to(data.documentId).emit('peer-chat-message', data)
+          console.log(`✅ [Server] Group message broadcasted in ${data.documentId}`)
         }
       }
     })
 
     socket.on('disconnect', () => {
       console.log(`👋 User disconnected: ${socket.id}`)
-    
+
       // Remove user from all document rooms they were in
       const { documentId, userName, userId } = socket.data || {}
-    
+
       if (documentId && documentRooms.has(documentId)) {
         const room = documentRooms.get(documentId)
         const initialCount = room.users.length
-    
+
         // Remove the disconnected user
         room.users = room.users.filter(user => user.socketId !== socket.id)
-    
+
         console.log(`👥 ${userName} left document: ${documentId} (${initialCount} -> ${room.users.length} users)`)
-    
+
         // Notify remaining users about the update
         io.to(documentId).emit('users-update', room.users)
-        
+
         // Broadcast peer-left event
         io.to(documentId).emit('peer-left', {
           userId,
           userName,
           documentId
         })
-    
+
         // Clean up empty rooms
         if (room.users.length === 0) {
           documentRooms.delete(documentId)

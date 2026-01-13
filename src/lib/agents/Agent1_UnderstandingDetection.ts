@@ -52,6 +52,16 @@ export interface UnderstandingState {
   }>
 }
 
+/**
+ * Advanced Behavioral Patterns
+ */
+export type BehavioralPattern =
+  | 'semantic-dwell'    // Staying on a section much longer than needed to read it
+  | 're-read-loop'      // Visiting the same 2-3 pages in a repetitive cycle
+  | 'gaze-panic'        // Gaze jittering within a small area (staring at a symbol)
+  | 'erratic-scan'      // High scroll frequency with low engagement (lost user)
+  | 'cross-ref-jump'    // Jumping between equation in A and definition in B
+
 class Agent1_UnderstandingDetection {
   private agentId = 'agent-1-understanding-detection'
   private isActive = false
@@ -64,10 +74,10 @@ class Agent1_UnderstandingDetection {
 
   activate() {
     if (this.isActive) return
-    
+
     this.isActive = true
     console.log('🤖 [Agent 1] Understanding Detection activated')
-    
+
     // Start continuous monitoring
     this.startMonitoring()
   }
@@ -98,10 +108,10 @@ class Agent1_UnderstandingDetection {
     // Monitor every 5 seconds
     this.monitoringInterval = setInterval(() => {
       if (!this.isActive) return
-      
+
       const session = interactionCollector.getCurrentSession()
       if (!session) return
-      
+
       // Check for struggle signals
       const struggleSignals = this.detectStruggle(session)
       struggleSignals.forEach(signal => {
@@ -109,7 +119,7 @@ class Agent1_UnderstandingDetection {
           this.emitEvent('struggle-detected', signal)
         }
       })
-      
+
       // Check for breakthrough moments
       const breakthroughs = this.detectBreakthroughs(session)
       breakthroughs.forEach(breakthrough => {
@@ -133,10 +143,12 @@ class Agent1_UnderstandingDetection {
 
   detectStruggle(session: InteractionSession): StruggleSignal[] {
     const signals: StruggleSignal[] = []
-    
+
     session.sectionInteractions.forEach((section, sectionId) => {
-      const severity = this.calculateStruggSeverity(section)
-      
+      // GOOGLE-LEVEL: Behavioral flow analysis
+      const patterns = this.detectPatterns(section, session)
+      const severity = this.calculateStruggSeverity(section, patterns)
+
       if (severity !== null) {
         signals.push({
           detected: true,
@@ -154,16 +166,58 @@ class Agent1_UnderstandingDetection {
         })
       }
     })
-    
+
     return signals
   }
 
-  private calculateStruggSeverity(section: SectionInteraction): 'low' | 'medium' | 'high' | null {
-    const struggleScore = section.struggleScore
-    
-    if (struggleScore < 40) return null // No struggle
-    if (struggleScore < 60) return 'low'
-    if (struggleScore < 80) return 'medium'
+  private detectPatterns(section: SectionInteraction, session: InteractionSession): BehavioralPattern[] {
+    const patterns: BehavioralPattern[] = []
+
+    // 1. Semantic Dwell Detection (Assuming ~200 words per section avg, 250wpm read speed)
+    // If user spends > 5 minutes on a standard section without understood highlights
+    if (section.totalTimeSpent > 5 * 60000 && section.understoodHighlights === 0) {
+      patterns.push('semantic-dwell')
+    }
+
+    // 2. Re-read Loop Detection
+    const last5Visits = session.pageVisits.slice(-6)
+    const uniquePages = new Set(last5Visits.map(v => v.page))
+    if (last5Visits.length >= 5 && uniquePages.size <= 2) {
+      patterns.push('re-read-loop')
+    }
+
+    // 3. Gaze Panic (Concentrated fixations in a tiny area)
+    if (section.gazeFixations > 50 && section.totalTimeSpent < 30000) {
+      patterns.push('gaze-panic')
+    }
+
+    // 4. Erratic Scan
+    const recentScrolls = session.pageVisits.filter(v =>
+      v.startTime > Date.now() - 60000 && v.duration < 5000
+    )
+    if (recentScrolls.length > 4) {
+      patterns.push('erratic-scan')
+    }
+
+    return patterns
+  }
+
+  private calculateStruggSeverity(
+    section: SectionInteraction,
+    patterns: BehavioralPattern[]
+  ): 'low' | 'medium' | 'high' | null {
+    // Weighted struggle logic
+    let score = section.struggleScore
+
+    // Amplify score based on behavioral patterns
+    if (patterns.includes('re-read-loop')) score += 30
+    if (patterns.includes('semantic-dwell')) score += 20
+    if (patterns.includes('gaze-panic')) score += 40
+    if (patterns.includes('erratic-scan')) score += 15
+
+    if (score < 40) return null
+    if (score < 60) return 'low'
+    if (score < 80) return 'medium'
     return 'high'
   }
 
@@ -173,15 +227,15 @@ class Agent1_UnderstandingDetection {
 
   detectBreakthroughs(session: InteractionSession): BreakthroughSignal[] {
     const breakthroughs: BreakthroughSignal[] = []
-    
+
     session.sectionInteractions.forEach((section, sectionId) => {
       const previousScore = this.previousScores.get(sectionId)
       const currentScore = section.understandingScore
-      
+
       // Breakthrough: score jumped from <50 to >70 in short time
       if (previousScore !== undefined && previousScore < 50 && currentScore > 70) {
         const timeDiff = Date.now() - section.firstVisitTime
-        
+
         breakthroughs.push({
           detected: true,
           sectionId,
@@ -192,11 +246,11 @@ class Agent1_UnderstandingDetection {
           timestamp: Date.now()
         })
       }
-      
+
       // Update previous score
       this.previousScores.set(sectionId, currentScore)
     })
-    
+
     return breakthroughs
   }
 
@@ -213,7 +267,7 @@ class Agent1_UnderstandingDetection {
         recentChanges: []
       }
     }
-    
+
     if (sectionId) {
       const section = session.sectionInteractions.get(sectionId)
       if (!section) {
@@ -223,20 +277,20 @@ class Agent1_UnderstandingDetection {
           recentChanges: []
         }
       }
-      
+
       return {
         currentScore: section.understandingScore,
         trend: this.determineTrend(section.understandingScore),
         recentChanges: [] // TODO: Track history
       }
     }
-    
+
     // Overall understanding
     const sections = Array.from(session.sectionInteractions.values())
     const avgScore = sections.length > 0
       ? Math.round(sections.reduce((sum, s) => sum + s.understandingScore, 0) / sections.length)
       : 50
-    
+
     return {
       currentScore: avgScore,
       trend: this.determineTrend(avgScore),
@@ -258,21 +312,21 @@ class Agent1_UnderstandingDetection {
   getCurrentStrugglingSections(): StruggleSignal[] {
     const session = interactionCollector.getCurrentSession()
     if (!session) return []
-    
+
     return this.detectStruggle(session).filter(s => s.detected)
   }
 
   getRecentBreakthroughs(): BreakthroughSignal[] {
     const session = interactionCollector.getCurrentSession()
     if (!session) return []
-    
+
     return this.detectBreakthroughs(session).filter(b => b.detected)
   }
 
   isUserStruggling(): boolean {
     const session = interactionCollector.getCurrentSession()
     if (!session) return false
-    
+
     const struggles = this.detectStruggle(session)
     return struggles.some(s => s.severity === 'high' || s.severity === 'medium')
   }
@@ -280,9 +334,9 @@ class Agent1_UnderstandingDetection {
   getConfusionLoops(): Array<{ sectionId: string; count: number }> {
     const session = interactionCollector.getCurrentSession()
     if (!session) return []
-    
+
     const loops: Array<{ sectionId: string; count: number }> = []
-    
+
     session.sectionInteractions.forEach((section, sectionId) => {
       // Confusion loop: 3+ visits with high confusion
       if (section.visitCount >= 3 && section.confusionHighlights > section.understoodHighlights) {
@@ -292,7 +346,7 @@ class Agent1_UnderstandingDetection {
         })
       }
     })
-    
+
     return loops.sort((a, b) => b.count - a.count)
   }
 }

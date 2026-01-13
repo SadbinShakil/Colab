@@ -74,6 +74,21 @@ export function useRealtimeHighlights({
       }
     })
 
+    socket.on('peer-chat-invitation', (data) => {
+      console.log('📨 Received chat invitation:', data)
+      window.dispatchEvent(new CustomEvent('peer-chat-invitation', { detail: data }))
+    })
+
+    socket.on('peer-chat-accepted', (data) => {
+      console.log('✅ Chat invitation accepted:', data)
+      window.dispatchEvent(new CustomEvent('peer-chat-accepted', { detail: data }))
+    })
+
+    socket.on('peer-chat-message', (data) => {
+      console.log('💬 Received peer message:', data)
+      window.dispatchEvent(new CustomEvent('peer-chat-message', { detail: data }))
+    })
+
     return () => {
       socket.disconnect()
       setIsConnected(false)
@@ -85,6 +100,27 @@ export function useRealtimeHighlights({
     if (socketRef.current?.connected) {
       console.log('📡 Broadcasting highlight:', data)
       socketRef.current.emit('new-highlight', data)
+    }
+  }
+
+  const broadcastPeerInvitation = (data: any) => {
+    if (socketRef.current?.connected) {
+      console.log('📨 Broadcasting peer invitation:', data)
+      socketRef.current.emit('peer-chat-invitation', data)
+    }
+  }
+
+  const broadcastPeerAcceptance = (data: any) => {
+    if (socketRef.current?.connected) {
+      console.log('✅ Broadcasting peer acceptance:', data)
+      socketRef.current.emit('peer-chat-accepted', data)
+    }
+  }
+
+  const broadcastPeerMessage = (data: any) => {
+    if (socketRef.current?.connected) {
+      console.log('💬 Broadcasting peer message:', data)
+      socketRef.current.emit('peer-chat-message', data)
     }
   }
 
@@ -123,6 +159,9 @@ export function useRealtimeHighlights({
     isConnected,
     connectedUsers,
     broadcastHighlight,
+    broadcastPeerInvitation,
+    broadcastPeerAcceptance,
+    broadcastPeerMessage,
     incomingHighlights,
     clearIncomingHighlights,
     broadcastHighlightDeletion: () => { },

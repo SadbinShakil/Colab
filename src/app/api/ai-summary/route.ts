@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import OpenAI from 'openai'
 
 const openai = new OpenAI({
-  apiKey: process.env.OPENAI_API_KEY,
+  apiKey: process.env.OPENAI_API_KEY || 'dummy-key',
 })
 
 const sectionKeys = [
@@ -37,31 +37,31 @@ export async function POST(request: NextRequest) {
       console.log('[AI SUMMARY API] Using mock response (no valid API key)')
       // Generate a realistic mock response based on the document title
       const paperTitle = documentTitle || 'Research Paper'
-      const isComputerScience = paperTitle.toLowerCase().includes('neural') || 
-                               paperTitle.toLowerCase().includes('machine learning') ||
-                               paperTitle.toLowerCase().includes('ai') ||
-                               paperTitle.toLowerCase().includes('transformer') ||
-                               paperTitle.toLowerCase().includes('attention')
-      
-             // Determine if this looks like a research paper based on title and content
-       const isResearchPaper = paperTitle.toLowerCase().includes('study') || 
-                              paperTitle.toLowerCase().includes('research') ||
-                              paperTitle.toLowerCase().includes('analysis') ||
-                              paperTitle.toLowerCase().includes('investigation') ||
-                              paperTitle.toLowerCase().includes('experiment') ||
-                              documentAbstract?.toLowerCase().includes('method') ||
-                              documentAbstract?.toLowerCase().includes('result') ||
-                              documentAbstract?.toLowerCase().includes('conclusion')
-       
-       const mockSummary = isResearchPaper ? {
-         isResearchPaper: true,
-         title: paperTitle,
-         authors: documentAuthors || 'Research Team',
-         year: documentYear || '2024',
-         journal: documentJournal || 'Academic Journal',
-         abstract: documentAbstract || 'This research presents a comprehensive analysis of the subject matter, employing rigorous methodology to address key questions in the field. The study demonstrates significant findings that contribute to the existing body of knowledge and provide practical implications for future research and applications.',
-        
-                 motivation: `💡 **Research Motivation & Problem Statement**
+      const isComputerScience = paperTitle.toLowerCase().includes('neural') ||
+        paperTitle.toLowerCase().includes('machine learning') ||
+        paperTitle.toLowerCase().includes('ai') ||
+        paperTitle.toLowerCase().includes('transformer') ||
+        paperTitle.toLowerCase().includes('attention')
+
+      // Determine if this looks like a research paper based on title and content
+      const isResearchPaper = paperTitle.toLowerCase().includes('study') ||
+        paperTitle.toLowerCase().includes('research') ||
+        paperTitle.toLowerCase().includes('analysis') ||
+        paperTitle.toLowerCase().includes('investigation') ||
+        paperTitle.toLowerCase().includes('experiment') ||
+        documentAbstract?.toLowerCase().includes('method') ||
+        documentAbstract?.toLowerCase().includes('result') ||
+        documentAbstract?.toLowerCase().includes('conclusion')
+
+      const mockSummary = isResearchPaper ? {
+        isResearchPaper: true,
+        title: paperTitle,
+        authors: documentAuthors || 'Research Team',
+        year: documentYear || '2024',
+        journal: documentJournal || 'Academic Journal',
+        abstract: documentAbstract || 'This research presents a comprehensive analysis of the subject matter, employing rigorous methodology to address key questions in the field. The study demonstrates significant findings that contribute to the existing body of knowledge and provide practical implications for future research and applications.',
+
+        motivation: `💡 **Research Motivation & Problem Statement**
 
 **Research Gap:**
 • Current approaches lack comprehensive understanding of the underlying mechanisms
@@ -83,7 +83,7 @@ export async function POST(request: NextRequest) {
 • Potential to revolutionize the field with novel methodologies
 • Practical implications for industry and real-world applications`,
 
-                 keyFindings: `🔬 **Primary Research Contributions**
+        keyFindings: `🔬 **Primary Research Contributions**
 
 **Main Hypothesis Validation:**
 • The study successfully validates the primary research hypothesis with statistical significance (p < 0.001)
@@ -106,7 +106,7 @@ export async function POST(request: NextRequest) {
 • Provides theoretical framework for future research
 • Establishes new benchmark for performance evaluation`,
 
-         methods: `🔬 **How They Did It - Research Methodology**
+        methods: `🔬 **How They Did It - Research Methodology**
 
 **Experimental Design:**
 • **Research Type**: ${isComputerScience ? 'Computational/Experimental' : 'Mixed-methods research design'}
@@ -131,7 +131,7 @@ export async function POST(request: NextRequest) {
 • **Ethics**: IRB approval and informed consent procedures
 • **Reporting Standards**: Adherence to ${isComputerScience ? 'ML reproducibility guidelines' : 'CONSORT/STROBE guidelines'}`,
 
-                 results: `📊 **Results & Data Analysis**
+        results: `📊 **Results & Data Analysis**
 
 **Primary Outcomes:**
 • **Figure 1**: Main effect analysis showing significant improvement (β = 0.67, SE = 0.12, p < 0.001)
@@ -154,7 +154,7 @@ export async function POST(request: NextRequest) {
 • Comprehensive error bars and confidence intervals
 • Proper statistical reporting following journal standards`,
 
-         futureWork: `🔮 **Future Work & Research Directions**
+        futureWork: `🔮 **Future Work & Research Directions**
 
 **Immediate Next Steps:**
 • Replication studies in diverse populations to validate generalizability
@@ -236,24 +236,24 @@ export async function POST(request: NextRequest) {
 • **Productivity**: Improved workplace productivity and quality of life
 • **Healthcare Access**: Enhanced access to evidence-based interventions
 • **Health Equity**: Potential to reduce health disparities in underserved populations`
-       } : {
-         isResearchPaper: false,
-         contentType: 'Document',
-         summary: `This document appears to be a ${paperTitle.toLowerCase().includes('manual') ? 'manual' : paperTitle.toLowerCase().includes('guide') ? 'guide' : 'document'} rather than a research paper. It contains general information and content that may be useful for understanding the subject matter.`,
-         keyPoints: '• General information and content\n• Not structured as academic research\n• May contain useful reference material\n• Suitable for general reading and reference',
-         structure: 'Document structure varies based on content type and purpose',
-         audience: 'General audience interested in the subject matter'
-       }
+      } : {
+        isResearchPaper: false,
+        contentType: 'Document',
+        summary: `This document appears to be a ${paperTitle.toLowerCase().includes('manual') ? 'manual' : paperTitle.toLowerCase().includes('guide') ? 'guide' : 'document'} rather than a research paper. It contains general information and content that may be useful for understanding the subject matter.`,
+        keyPoints: '• General information and content\n• Not structured as academic research\n• May contain useful reference material\n• Suitable for general reading and reference',
+        structure: 'Document structure varies based on content type and purpose',
+        audience: 'General audience interested in the subject matter'
+      }
 
       return NextResponse.json({ success: true, summary: mockSummary })
     }
 
-         // Use the document text provided from the client-side Apryse extraction
-     const documentContent = documentText || ''
-     console.log('[AI SUMMARY API] Using real AI analysis with documentText length:', documentContent.length)
+    // Use the document text provided from the client-side Apryse extraction
+    const documentContent = documentText || ''
+    console.log('[AI SUMMARY API] Using real AI analysis with documentText length:', documentContent.length)
 
-     // Enhanced system prompt for realistic academic research paper analysis
-     const systemPrompt = `You are a senior research analyst specializing in academic paper analysis. Your task is to provide a comprehensive, structured summary that follows academic standards.
+    // Enhanced system prompt for realistic academic research paper analysis
+    const systemPrompt = `You are a senior research analyst specializing in academic paper analysis. Your task is to provide a comprehensive, structured summary that follows academic standards.
 
 FIRST, determine if this is a research paper by checking for:
 - Research methodology, experiments, or studies
@@ -300,7 +300,7 @@ Guidelines:
 - Suggest practical applications and future work
 - Respond quickly and efficiently`
 
-     const userPrompt = `Analyze this document and determine if it's a research paper. If yes, provide academic analysis. If no, provide content summary.
+    const userPrompt = `Analyze this document and determine if it's a research paper. If yes, provide academic analysis. If no, provide content summary.
 
 DOCUMENT INFO:
 Title: ${documentTitle || 'Not specified'}
@@ -320,7 +320,7 @@ QUICK ANALYSIS:
 Respond efficiently with clear JSON structure.`
 
     let completion, text
-    
+
     try {
       completion = await openai.chat.completions.create({
         model: 'gpt-3.5-turbo', // Faster model for quicker response

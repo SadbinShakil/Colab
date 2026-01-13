@@ -5,8 +5,8 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Progress } from '@/components/ui/progress'
-import { 
-  X, Lightbulb, Brain, Clock, Highlighter, MessageSquare, 
+import {
+  X, Lightbulb, Brain, Clock, Highlighter, MessageSquare,
   BookOpen, Sparkles, CheckCircle, ArrowRight, HelpCircle,
   TrendingUp, Target, Zap, GraduationCap, FileText, Star
 } from 'lucide-react'
@@ -38,7 +38,7 @@ export default function ContextualHelpPopup({ onClose }: ContextualHelpPopupProp
 
     console.log('👂 [ContextualHelpPopup] Setting up event listener for struggle-detected')
     window.addEventListener('struggle-detected', handleStruggleDetected as EventListener)
-    
+
     return () => {
       console.log('🧹 [ContextualHelpPopup] Cleaning up event listener')
       window.removeEventListener('struggle-detected', handleStruggleDetected as EventListener)
@@ -47,19 +47,19 @@ export default function ContextualHelpPopup({ onClose }: ContextualHelpPopupProp
 
   const handleGetHelp = async () => {
     if (!currentStruggle) return
-    
+
     setIsLoading(true)
     try {
       const help = await contextualAI.getContextualHelp(
-        currentStruggle.sectionId, 
+        currentStruggle.sectionId,
         currentStruggle.sectionText
       )
       setHelpContent(help)
       setIsExpanded(true)
-      
+
       // Clear the struggle pattern since user accepted help
       contextualAI.clearStrugglePatterns(currentStruggle.sectionId)
-      
+
       toast.success('💡 Here\'s your personalized explanation!', {
         description: 'AI has analyzed this section for you',
         duration: 4000
@@ -95,21 +95,24 @@ export default function ContextualHelpPopup({ onClose }: ContextualHelpPopupProp
       case 'time_spent': return <Clock className="w-5 h-5" />
       case 'revisiting': return <BookOpen className="w-5 h-5" />
       case 'annotations': return <MessageSquare className="w-5 h-5" />
+      case 'skimming': return <TrendingUp className="w-5 h-5" />
       default: return <HelpCircle className="w-5 h-5" />
     }
   }
 
   const getStruggleMessage = (type: string) => {
     switch (type) {
-      case 'highlighting': 
+      case 'highlighting':
         return 'You\'ve highlighted several parts of this section. Would you like me to explain the key concepts?'
-      case 'time_spent': 
+      case 'time_spent':
         return 'You\'ve been reading this section for a while. Need help understanding it better?'
-      case 'revisiting': 
+      case 'revisiting':
         return 'You\'ve returned to this section multiple times. Let me help clarify the concepts.'
-      case 'annotations': 
+      case 'annotations':
         return 'You\'ve added several notes here. Would you like me to provide additional context?'
-      default: 
+      case 'skimming':
+        return 'I notice you\'re scrolling quickly through this section. Would you like a high-level summary of the key points?'
+      default:
         return 'I notice you might need help with this section. Can I assist you?'
     }
   }
@@ -124,6 +127,8 @@ export default function ContextualHelpPopup({ onClose }: ContextualHelpPopupProp
         return 'You\'ve returned to this section multiple times, which is a strong indicator of your commitment to mastering the material. This suggests a deep desire to understand and retain the information, as well as a willingness to invest time in the learning process.'
       case 'annotations':
         return 'You\'ve added several notes here, which is a great way to organize and reinforce your understanding. This indicates a proactive approach to learning, as well as a strong desire to connect new information with existing knowledge.'
+      case 'skimming':
+        return 'You\'re moving quickly through this content. This skimming pattern often happens when looking for specific answers or trying to get the "big picture" before diving deep. I can help synthesize the main arguments for you.'
       default:
         return 'Based on your reading behavior, I can infer that you are a diligent learner who values understanding and retention of information. Your engagement with the material is positive, and you show a strong desire to learn and apply the concepts.'
     }
@@ -159,7 +164,7 @@ export default function ContextualHelpPopup({ onClose }: ContextualHelpPopupProp
               <X className="w-5 h-5" />
             </Button>
           </div>
-          
+
           {/* Struggle Pattern Indicator */}
           <div className="flex items-center gap-2 mt-3 p-2 bg-white/10 rounded-lg backdrop-blur-sm">
             <div className="flex items-center gap-2">
@@ -182,7 +187,7 @@ export default function ContextualHelpPopup({ onClose }: ContextualHelpPopupProp
                   <TrendingUp className="w-4 h-4 text-blue-600" />
                   <span className="font-semibold text-blue-800 text-sm">Reading Pattern Analysis</span>
                 </div>
-                
+
                 {/* Enhanced reasoning display */}
                 <div className="mb-3 p-3 bg-white/60 rounded-lg border border-blue-200">
                   <div className="flex items-start gap-2">
@@ -192,19 +197,19 @@ export default function ContextualHelpPopup({ onClose }: ContextualHelpPopupProp
                     </p>
                   </div>
                 </div>
-                
+
                 <p className="text-sm text-gray-700 leading-relaxed">
                   {getStruggleMessage(currentStruggle.struggleType)}
                 </p>
-                
+
                 {/* Confidence Meter */}
                 <div className="mt-3">
                   <div className="flex justify-between text-xs text-gray-600 mb-1">
                     <span>Difficulty Assessment</span>
                     <span>{Math.round((currentStruggle?.confidence || 0) * 100)}%</span>
                   </div>
-                  <Progress 
-                    value={(currentStruggle?.confidence || 0) * 100} 
+                  <Progress
+                    value={(currentStruggle?.confidence || 0) * 100}
                     className="h-2 bg-blue-100"
                   />
                 </div>
@@ -229,7 +234,7 @@ export default function ContextualHelpPopup({ onClose }: ContextualHelpPopupProp
                   <span className="text-xs font-medium text-indigo-700">Related Papers</span>
                 </div>
               </div>
-              
+
               <div className="flex gap-3 pt-2">
                 <Button
                   onClick={handleGetHelp}
@@ -270,7 +275,7 @@ export default function ContextualHelpPopup({ onClose }: ContextualHelpPopupProp
                   {helpContent?.difficulty || 'intermediate'} level
                 </Badge>
               </div>
-              
+
               {helpContent && (
                 <div className="space-y-4">
                   {/* Main Explanation */}
@@ -294,7 +299,7 @@ export default function ContextualHelpPopup({ onClose }: ContextualHelpPopupProp
                       {helpContent.simplifiedVersion}
                     </p>
                   </div>
-                  
+
                   {/* Key Concepts */}
                   <div>
                     <div className="flex items-center gap-2 mb-3">
@@ -303,9 +308,9 @@ export default function ContextualHelpPopup({ onClose }: ContextualHelpPopupProp
                     </div>
                     <div className="flex flex-wrap gap-2">
                       {helpContent.keyConcepts.map((concept, index) => (
-                        <Badge 
-                          key={index} 
-                          variant="secondary" 
+                        <Badge
+                          key={index}
+                          variant="secondary"
                           className="bg-purple-100 text-purple-700 border border-purple-200 text-xs font-medium"
                         >
                           {concept}
@@ -329,7 +334,7 @@ export default function ContextualHelpPopup({ onClose }: ContextualHelpPopupProp
                       ))}
                     </div>
                   </div>
-                  
+
                   {/* Related Topics */}
                   <div>
                     <div className="flex items-center gap-2 mb-3">
@@ -338,9 +343,9 @@ export default function ContextualHelpPopup({ onClose }: ContextualHelpPopupProp
                     </div>
                     <div className="flex flex-wrap gap-2">
                       {helpContent.relatedConcepts.map((topic, index) => (
-                        <Badge 
-                          key={index} 
-                          variant="outline" 
+                        <Badge
+                          key={index}
+                          variant="outline"
                           className="border-indigo-200 text-indigo-700 hover:bg-indigo-50 text-xs"
                         >
                           {topic}
@@ -348,7 +353,7 @@ export default function ContextualHelpPopup({ onClose }: ContextualHelpPopupProp
                       ))}
                     </div>
                   </div>
-                  
+
                   {/* Action Buttons */}
                   <div className="flex gap-3 pt-3 border-t border-gray-200">
                     <Button

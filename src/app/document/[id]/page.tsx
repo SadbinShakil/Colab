@@ -5,8 +5,8 @@ import { useRouter, useSearchParams } from 'next/navigation'
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
-import { 
-  BookOpen, MessageCircle, Users, Highlighter, MessageSquare, 
+import {
+  BookOpen, MessageCircle, Users, Highlighter, MessageSquare,
   ZoomIn, ZoomOut, RotateCw, Download, Share2, Bookmark,
   ChevronLeft, ChevronRight, Search, Settings, Brain,
   HelpCircle, User, Send, Paperclip, Smile, MoreVertical,
@@ -27,6 +27,7 @@ import CollaborativeInsightsModal from '@/components/CollaborativeInsightsModal'
 import DetailedInsightsModal from '@/components/DetailedInsightsModal'
 import AddInsightModal from '@/components/AddInsightModal'
 import LiveActivityFeed from '@/components/LiveActivityFeed'
+import SituationSettings from '@/components/SituationSettings'
 
 
 interface Annotation {
@@ -99,7 +100,7 @@ export default function DocumentViewer({ params }: { params: Promise<{ id: strin
   const [summaryLoading, setSummaryLoading] = useState(false)
   const [showExtractedText, setShowExtractedText] = useState(false)
   const [extractedText, setExtractedText] = useState('')
-  
+
   // URL state parameters
   const [urlState, setUrlState] = useState({
     page: 1,
@@ -109,7 +110,7 @@ export default function DocumentViewer({ params }: { params: Promise<{ id: strin
     scrollX: 0,
     scrollY: 0
   })
-  
+
   // Read URL parameters on component mount
   useEffect(() => {
     const page = parseInt(searchParams.get('page') || '1')
@@ -118,27 +119,28 @@ export default function DocumentViewer({ params }: { params: Promise<{ id: strin
     const rotation = parseInt(searchParams.get('rotation') || '0')
     const scrollX = parseFloat(searchParams.get('scrollX') || '0')
     const scrollY = parseFloat(searchParams.get('scrollY') || '0')
-    
+
     setUrlState({ page, zoom, fitMode, rotation, scrollX, scrollY })
     console.log('🔄 Document page loaded with URL state:', { page, zoom, fitMode, rotation, scrollX, scrollY })
   }, [searchParams])
-  
+
   // Collaborative insights state
   const [showCollaborativeInsights, setShowCollaborativeInsights] = useState(false)
   const [showDetailedInsights, setShowDetailedInsights] = useState(false)
   const [collaborativeSummary, setCollaborativeSummary] = useState<any>(null)
   const [showAddInsight, setShowAddInsight] = useState(false)
-  
+  const [showSituationSettings, setShowSituationSettings] = useState(false)
+
   // Refs for auto-scrolling
   const aiMessagesEndRef = useRef<HTMLDivElement>(null)
-  
+
   // Auto-scroll to bottom when new AI messages are added (disabled to prevent layout issues)
   // useEffect(() => {
   //   if (aiMessagesEndRef.current) {
   //     aiMessagesEndRef.current.scrollIntoView({ behavior: 'smooth' })
   //   }
   // }, [aiMessages])
-  
+
   // Demo comments for realistic interface
   const [demoComments] = useState([
     {
@@ -152,7 +154,7 @@ export default function DocumentViewer({ params }: { params: Promise<{ id: strin
       type: 'comment'
     },
     {
-      id: 'demo-2', 
+      id: 'demo-2',
       author: 'Prof. Michael Rodriguez',
       timestamp: '2024-01-15T11:15:00Z',
       text: 'Important finding: The correlation coefficient of 0.87 suggests a strong relationship between variables A and B.',
@@ -204,11 +206,11 @@ export default function DocumentViewer({ params }: { params: Promise<{ id: strin
     try {
       // Call logout API
       await fetch('/api/auth/logout', { method: 'POST' })
-      
+
       // Clear local storage
       localStorage.removeItem('currentUser')
       sessionStorage.removeItem('currentUser')
-      
+
       // Redirect to login
       router.push('/auth/login')
     } catch (error) {
@@ -237,7 +239,7 @@ export default function DocumentViewer({ params }: { params: Promise<{ id: strin
             return
           }
         }
-        
+
         // Fallback to sessionStorage
         const sessionUser = sessionStorage.getItem('currentUser')
         if (sessionUser) {
@@ -250,12 +252,12 @@ export default function DocumentViewer({ params }: { params: Promise<{ id: strin
             return
           }
         }
-        
+
         // No authenticated user found - redirect to join page
         console.log('No authenticated user found, redirecting to join page')
         router.push(`/join-document?id=${documentId}`)
         return
-        
+
       } catch (error) {
         console.error('Error getting user info:', error)
         // Clear corrupted data
@@ -265,7 +267,7 @@ export default function DocumentViewer({ params }: { params: Promise<{ id: strin
         router.push(`/join-document?id=${documentId}`)
       }
     }
-    
+
     getUserInfo()
   }, [documentId, router])
 
@@ -280,12 +282,12 @@ export default function DocumentViewer({ params }: { params: Promise<{ id: strin
 
   useEffect(() => {
     if (!documentId) return
-    
+
     // Load document metadata from API
     const loadDocument = async () => {
       try {
         const response = await fetch(`/api/upload?id=${documentId}`)
-        
+
         if (response.ok) {
           const result = await response.json()
           const document = result.document
@@ -306,10 +308,10 @@ export default function DocumentViewer({ params }: { params: Promise<{ id: strin
             setSummary(null)
           }
           console.log('Document loaded successfully:', result.document)
-          
+
           // Check if other researchers have read this document
           const currentUserId = currentUser?.id || 'anonymous'
-          
+
           // For demo purposes, show collaborative insights for any document
           // In production, this would check actual data
           setTimeout(() => {
@@ -328,7 +330,7 @@ export default function DocumentViewer({ params }: { params: Promise<{ id: strin
                   replies: []
                 },
                 {
-                  id: "demo-2", 
+                  id: "demo-2",
                   type: "understanding",
                   content: "The residual connections and layer normalization are crucial for training deep transformers. Without them, the gradients would vanish in the deeper layers. This is a key insight for architecture design.",
                   userName: "Prof. Lisa Thompson",
@@ -374,12 +376,12 @@ export default function DocumentViewer({ params }: { params: Promise<{ id: strin
             filename: `document-${documentId}.pdf`,
             url: `/uploads/${documentId}-*.pdf` // This will need to be resolved
           }
-          
+
           // In a real scenario, we'd query the server for the correct filename
           // For now, let's try to construct the most likely URL
           const possibleExtensions = ['.pdf', '.PDF']
           let foundUrl = null
-          
+
           // Try common filename patterns that might exist
           for (const ext of possibleExtensions) {
             const testUrl = `/uploads/${documentId}${ext}`
@@ -388,7 +390,7 @@ export default function DocumentViewer({ params }: { params: Promise<{ id: strin
               foundUrl = testUrl
             }
           }
-          
+
           mockDocument.url = foundUrl || `/uploads/${documentId}.pdf`
           setDocument(mockDocument)
           console.log('Using fallback document URL:', mockDocument.url)
@@ -435,7 +437,7 @@ export default function DocumentViewer({ params }: { params: Promise<{ id: strin
           }
         })
       })
-      
+
       if (!response.ok) {
         console.error('Failed to send message:', response.status, response.statusText)
       }
@@ -450,7 +452,7 @@ export default function DocumentViewer({ params }: { params: Promise<{ id: strin
     const question = aiQuestion.trim()
     setAiQuestion('')
     setIsAILoading(true)
-    
+
     // Add the question to AI messages immediately
     const newAIMessage: AIMessage = {
       id: `ai_${Date.now()}`,
@@ -459,7 +461,7 @@ export default function DocumentViewer({ params }: { params: Promise<{ id: strin
       timestamp: new Date().toISOString(),
       isLoading: true
     }
-    
+
     // Use functional update to prevent race conditions
     setAiMessages(prev => {
       try {
@@ -469,15 +471,15 @@ export default function DocumentViewer({ params }: { params: Promise<{ id: strin
         return prev
       }
     })
-    
+
     try {
       // Get document content for AI analysis - prioritize full text
-      const documentContent = document?.fullText || 
-                             document?.summary?.fullText || 
-                             document?.abstract || 
-                             document?.title || 
-                             'No document context provided.'
-      
+      const documentContent = document?.fullText ||
+        document?.summary?.fullText ||
+        document?.abstract ||
+        document?.title ||
+        'No document context provided.'
+
       console.log('🤖 AI Help Debug - Document Content:', {
         hasFullText: !!document?.fullText,
         hasSummaryFullText: !!document?.summary?.fullText,
@@ -486,7 +488,7 @@ export default function DocumentViewer({ params }: { params: Promise<{ id: strin
         contentLength: documentContent?.length || 0,
         contentPreview: documentContent?.substring(0, 200) || 'No content'
       })
-      
+
       // Call the real AI Help API
       const response = await fetch('/api/ai-help', {
         method: 'POST',
@@ -508,13 +510,13 @@ export default function DocumentViewer({ params }: { params: Promise<{ id: strin
       }
 
       const data = await response.json()
-      
+
       if (data.success && data.response?.answer) {
         // Update the message with the real AI response
         setAiMessages(prev => {
           try {
-            return prev.map(msg => 
-              msg.id === newAIMessage.id 
+            return prev.map(msg =>
+              msg.id === newAIMessage.id
                 ? { ...msg, answer: data.response.answer, isLoading: false }
                 : msg
             )
@@ -534,11 +536,11 @@ Based on the document "${document?.title || 'this research paper'}", here are so
 • For detailed analysis, please try again in a moment
 
 Would you like to ask about a specific section or concept?`
-        
+
         setAiMessages(prev => {
           try {
-            return prev.map(msg => 
-              msg.id === newAIMessage.id 
+            return prev.map(msg =>
+              msg.id === newAIMessage.id
                 ? { ...msg, answer: fallbackResponse, isLoading: false }
                 : msg
             )
@@ -548,15 +550,15 @@ Would you like to ask about a specific section or concept?`
           }
         })
       }
-      
+
       setIsAILoading(false)
-      
+
     } catch (error) {
       console.error('AI request failed:', error)
       setAiMessages(prev => {
         try {
-          return prev.map(msg => 
-            msg.id === newAIMessage.id 
+          return prev.map(msg =>
+            msg.id === newAIMessage.id
               ? { ...msg, answer: 'Sorry, there was an error connecting to the AI service. Please try again.', isLoading: false }
               : msg
           )
@@ -574,16 +576,16 @@ Would you like to ask about a specific section or concept?`
   const handleAskMore = async (section: string) => {
     if (!document) return
     setSummaryLoading(true)
-    
+
     // Use the extracted text from our working extraction system
     let documentText = extractedText
-    
+
     // If no extracted text is available, try to extract it now
     if (!documentText) {
       console.log('[AI SUMMARY] No extracted text available, extracting now...')
       try {
         const requestId = Date.now()
-        
+
         const extractPromise = new Promise<string>((resolve, reject) => {
           const handleResponse = (event: CustomEvent) => {
             if (event.detail.requestId === requestId) {
@@ -595,32 +597,32 @@ Would you like to ask about a specific section or concept?`
               window.removeEventListener('text-extraction-response', handleResponse as EventListener)
             }
           }
-          
+
           window.addEventListener('text-extraction-response', handleResponse as EventListener)
-          
+
           let timeout: NodeJS.Timeout
-          
+
           // Clear timeout when response is received
           const originalHandleResponse = handleResponse
           const wrappedHandleResponse = (event: CustomEvent) => {
             if (timeout) clearTimeout(timeout)
             originalHandleResponse(event)
           }
-          
+
           timeout = setTimeout(() => {
             reject(new Error('Text extraction timeout'))
             window.removeEventListener('text-extraction-response', handleResponse as EventListener)
           }, 10000)
-          
+
           const extractionEvent = new CustomEvent('extract-text-request', {
             detail: { requestId }
           })
           window.dispatchEvent(extractionEvent)
-          
+
           window.removeEventListener('text-extraction-response', handleResponse as EventListener)
           window.addEventListener('text-extraction-response', wrappedHandleResponse as EventListener)
         })
-        
+
         documentText = await extractPromise
         console.log('[AI SUMMARY] Successfully extracted text for summary generation')
       } catch (error) {
@@ -629,7 +631,7 @@ Would you like to ask about a specific section or concept?`
         documentText = ''
       }
     }
-    
+
     try {
       const response = await fetch('/api/ai-summary', {
         method: 'POST',
@@ -651,7 +653,7 @@ Would you like to ask about a specific section or concept?`
           setSummary((prev: any) => ({ ...prev, [section]: data.summary[section] || prev[section] }))
         }
       }
-    } catch {}
+    } catch { }
     setSummaryLoading(false)
   }
 
@@ -669,19 +671,19 @@ Would you like to ask about a specific section or concept?`
   // Generate initial AI summary using extracted text
   const generateInitialSummary = async () => {
     if (!document) return
-    
+
     setSummaryLoading(true)
     console.log('[AI SUMMARY] Generating initial summary...')
-    
+
     // Use the extracted text from our working extraction system
     let documentText = extractedText
-    
+
     // If no extracted text is available, try to extract it now
     if (!documentText) {
       console.log('[AI SUMMARY] No extracted text available, extracting now...')
       try {
         const requestId = Date.now()
-        
+
         const extractPromise = new Promise<string>((resolve, reject) => {
           const handleResponse = (event: CustomEvent) => {
             if (event.detail.requestId === requestId) {
@@ -693,32 +695,32 @@ Would you like to ask about a specific section or concept?`
               window.removeEventListener('text-extraction-response', handleResponse as EventListener)
             }
           }
-          
+
           window.addEventListener('text-extraction-response', handleResponse as EventListener)
-          
+
           let timeout: NodeJS.Timeout
-          
+
           // Clear timeout when response is received
           const originalHandleResponse = handleResponse
           const wrappedHandleResponse = (event: CustomEvent) => {
             if (timeout) clearTimeout(timeout)
             originalHandleResponse(event)
           }
-          
+
           timeout = setTimeout(() => {
             reject(new Error('Text extraction timeout'))
             window.removeEventListener('text-extraction-response', handleResponse as EventListener)
           }, 10000)
-          
+
           const extractionEvent = new CustomEvent('extract-text-request', {
             detail: { requestId }
           })
           window.dispatchEvent(extractionEvent)
-          
+
           window.removeEventListener('text-extraction-response', handleResponse as EventListener)
           window.addEventListener('text-extraction-response', wrappedHandleResponse as EventListener)
         })
-        
+
         documentText = await extractPromise
         console.log('[AI SUMMARY] Successfully extracted text for initial summary generation')
       } catch (error) {
@@ -726,15 +728,15 @@ Would you like to ask about a specific section or concept?`
         // Show user-friendly error message
         const errorMessage = error instanceof Error ? error.message : 'Unknown error occurred'
         console.error('[AI SUMMARY] Text extraction failed:', errorMessage)
-        
+
         // Fallback to empty text but show user notification
         documentText = ''
-        
+
         // You could add a toast notification here if you have a toast system
         // toast.error('Unable to extract text from document. Please ensure the document is fully loaded and try again.')
       }
     }
-    
+
     try {
       console.log('[AI SUMMARY] Sending request to AI summary API...')
       const response = await fetch('/api/ai-summary', {
@@ -750,7 +752,7 @@ Would you like to ask about a specific section or concept?`
           documentText: documentText
         })
       })
-      
+
       if (response.ok) {
         const data = await response.json()
         if (data.success && data.summary) {
@@ -789,20 +791,20 @@ Would you like to ask about a specific section or concept?`
   const extractTextFromWebViewer = async () => {
     try {
       console.log('[TEXT EXTRACTION] Starting text extraction...')
-      
+
       // Show loading message
       toast.info('Extracting text from PDF...', {
         description: 'Please wait while we process the document',
         duration: 2000
       })
-      
+
       const requestId = Date.now()
-      
+
       // Set up response listener with timeout
       const handleResponse = (event: CustomEvent) => {
         if (event.detail.requestId === requestId) {
           console.log('[TEXT EXTRACTION] Response received:', event.detail)
-          
+
           if (event.detail.success && event.detail.text) {
             // Show the popup with real extracted text
             setExtractedText(event.detail.text)
@@ -815,38 +817,38 @@ Would you like to ask about a specific section or concept?`
             console.log('[TEXT EXTRACTION] Extraction failed:', event.detail.error)
             toast.error(`Text extraction failed: ${event.detail.error}`)
           }
-          
+
           // Remove the listener
           window.removeEventListener('text-extraction-response', handleResponse as EventListener)
         }
       }
-      
+
       // Add response listener
       window.addEventListener('text-extraction-response', handleResponse as EventListener)
-      
+
       // Set up timeout
       const timeout = setTimeout(() => {
         console.log('[TEXT EXTRACTION] Timeout - no response from WebViewer')
         toast.error('Text extraction timeout - WebViewer may not be ready')
         window.removeEventListener('text-extraction-response', handleResponse as EventListener)
       }, 10000) // 10 second timeout
-      
+
       // Dispatch extraction request
       const extractionEvent = new CustomEvent('extract-text-request', {
         detail: { requestId }
       })
       window.dispatchEvent(extractionEvent)
-      
+
       // Clear timeout when response is received
       const originalHandleResponse = handleResponse
       const wrappedHandleResponse = (event: CustomEvent) => {
         clearTimeout(timeout)
         originalHandleResponse(event)
       }
-      
+
       window.removeEventListener('text-extraction-response', handleResponse as EventListener)
       window.addEventListener('text-extraction-response', wrappedHandleResponse as EventListener)
-      
+
     } catch (error) {
       console.error('[TEXT EXTRACTION] Error:', error)
       toast.error('Text extraction failed')
@@ -857,56 +859,56 @@ Would you like to ask about a specific section or concept?`
   const triggerContextualHelp = () => {
     const sectionId = `page-${currentPage}-section`
     const location = { page: currentPage, x: 100, y: 200 }
-    
+
     console.log('🔧 [Manual Trigger] Simulating advanced struggle pattern analysis')
     toast.info('🧠 Advanced AI Analysis Starting...', {
       description: 'Detecting reading patterns and comprehension difficulties',
       duration: 3000
     })
-    
+
     // Clear any existing patterns for this section first
     contextualAI.clearStrugglePatterns(sectionId)
-    
+
     // Simulate realistic highlighting behavior on Transformer paper abstract
     setTimeout(() => {
       contextualAI.trackHighlight(sectionId, 'The dominant sequence transduction models are based on complex recurrent or convolutional neural networks', location)
       toast.info('📊 Pattern Detection: Highlight #1', { duration: 1000 })
     }, 500)
-    
+
     setTimeout(() => {
       contextualAI.trackHighlight(sectionId, 'We propose a new simple network architecture, the Transformer, based solely on attention mechanisms', location)
       toast.info('📊 Pattern Detection: Highlight #2', { duration: 1000 })
     }, 1000)
-    
+
     setTimeout(() => {
       contextualAI.trackHighlight(sectionId, 'dispensing with recurrence and convolutions entirely', location)
       toast.info('📊 Pattern Detection: Highlight #3', { duration: 1000 })
     }, 1500)
-    
+
     // Simulate time spent on section
     setTimeout(() => {
       contextualAI.trackTimeSpent(sectionId, 180000, location) // 3 minutes
       toast.info('⏰ Time Analysis: Extended reading detected', { duration: 1000 })
     }, 2000)
-    
+
     // Simulate revisiting behavior
     setTimeout(() => {
       contextualAI.trackRevisit(sectionId, location)
       toast.info('🔄 Revisit Analysis: Return to section detected', { duration: 1000 })
     }, 2500)
-    
+
     // Simulate annotation behavior
     setTimeout(() => {
       contextualAI.trackAnnotation(sectionId, 'Need to understand attention mechanism better', location)
       toast.info('💭 Annotation Analysis: Note-taking detected', { duration: 1000 })
     }, 3000)
-    
+
     // Simulate another revisit
     setTimeout(() => {
       contextualAI.trackRevisit(sectionId, location)
       toast.info('🔄 Revisit Analysis: Second return detected', { duration: 1000 })
     }, 3500)
-    
+
     setTimeout(() => {
       console.log('✅ [Manual Trigger] Advanced contextual analysis complete!')
       toast.success('🎯 AI Research Assistant Activated!', {
@@ -923,13 +925,13 @@ Would you like to ask about a specific section or concept?`
     const fetchSummary = async () => {
       // Use the extracted text from our working extraction system
       let documentText = extractedText
-      
+
       // If no extracted text is available, try to extract it now
       if (!documentText) {
         console.log('[AI SUMMARY] No extracted text available, extracting now...')
         try {
           const requestId = Date.now()
-          
+
           const extractPromise = new Promise<string>((resolve, reject) => {
             const handleResponse = (event: CustomEvent) => {
               if (event.detail.requestId === requestId) {
@@ -941,30 +943,30 @@ Would you like to ask about a specific section or concept?`
                 window.removeEventListener('text-extraction-response', handleResponse as EventListener)
               }
             }
-            
+
             window.addEventListener('text-extraction-response', handleResponse as EventListener)
-            
+
             const timeout = setTimeout(() => {
               reject(new Error('Text extraction timeout'))
               window.removeEventListener('text-extraction-response', handleResponse as EventListener)
             }, 10000)
-            
+
             const extractionEvent = new CustomEvent('extract-text-request', {
               detail: { requestId }
             })
             window.dispatchEvent(extractionEvent)
-            
+
             // Clear timeout when response is received
             const originalHandleResponse = handleResponse
             const wrappedHandleResponse = (event: CustomEvent) => {
               clearTimeout(timeout)
               originalHandleResponse(event)
             }
-            
+
             window.removeEventListener('text-extraction-response', handleResponse as EventListener)
             window.addEventListener('text-extraction-response', wrappedHandleResponse as EventListener)
           })
-          
+
           documentText = await extractPromise
           console.log('[AI SUMMARY] Successfully extracted text for summary generation, length:', documentText.length)
         } catch (error) {
@@ -1049,46 +1051,46 @@ Would you like to ask about a specific section or concept?`
             </div>
           </div> */}
 
-         {/* Header */}
-{/* Header */}
-<header className="border-b border-gray-200 bg-white">
-  <div className="flex items-center justify-between px-4 py-2">
-    <div className="flex items-center space-x-3 flex-1 min-w-0 max-w-3xl">
-      <Button variant="ghost" size="sm" asChild className="flex-shrink-0">
-        <a href="/dashboard" className="flex items-center text-sm">
-          <ChevronLeft className="h-4 w-4" />
-          <span>Back</span>
-        </a>
-      </Button>
-      
-      <div className="flex items-center space-x-2 min-w-0 pl-3 border-l border-gray-200">
-        <BookOpen className="h-3.5 w-3.5 text-blue-600 flex-shrink-0" />
-        <div className="min-w-0">
-          <div className="font-medium text-xs text-gray-700 truncate" title={document.title.replace(/^Check:\s*/i, '')}>
-            {document.title.replace(/^Check:\s*/i, '')}
-          </div>
-          {document.authors && document.authors !== 'Unknown' && (
-            <div className="text-[10px] text-gray-500 truncate leading-tight">
-              {document.authors}
-            </div>
-          )}
-        </div>
-      </div>
-    </div>
+      {/* Header */}
+      {/* Header */}
+      <header className="border-b border-gray-200 bg-white">
+        <div className="flex items-center justify-between px-4 py-2">
+          <div className="flex items-center space-x-3 flex-1 min-w-0 max-w-3xl">
+            <Button variant="ghost" size="sm" asChild className="flex-shrink-0">
+              <a href="/dashboard" className="flex items-center text-sm">
+                <ChevronLeft className="h-4 w-4" />
+                <span>Back</span>
+              </a>
+            </Button>
 
-    <div className="flex items-center space-x-2">
-      {/* Collaboration Status */}
-      <div className="flex items-center space-x-2">
-        <div className="flex items-center space-x-1">
-          {collaboration.isConnected ? (
-            <Wifi className="h-4 w-4 text-green-500" />
-          ) : (
-            <WifiOff className="h-4 w-4 text-gray-400" />
-          )}
-          <span className="text-xs text-gray-600">
-            {collaboration.isConnected ? 'Connected' : 'Connecting...'}
-          </span>
-        </div>
+            <div className="flex items-center space-x-2 min-w-0 pl-3 border-l border-gray-200">
+              <BookOpen className="h-3.5 w-3.5 text-blue-600 flex-shrink-0" />
+              <div className="min-w-0">
+                <div className="font-medium text-xs text-gray-700 truncate" title={document.title.replace(/^Check:\s*/i, '')}>
+                  {document.title.replace(/^Check:\s*/i, '')}
+                </div>
+                {document.authors && document.authors !== 'Unknown' && (
+                  <div className="text-[10px] text-gray-500 truncate leading-tight">
+                    {document.authors}
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+
+          <div className="flex items-center space-x-2">
+            {/* Collaboration Status */}
+            <div className="flex items-center space-x-2">
+              <div className="flex items-center space-x-1">
+                {collaboration.isConnected ? (
+                  <Wifi className="h-4 w-4 text-green-500" />
+                ) : (
+                  <WifiOff className="h-4 w-4 text-gray-400" />
+                )}
+                <span className="text-xs text-gray-600">
+                  {collaboration.isConnected ? 'Connected' : 'Connecting...'}
+                </span>
+              </div>
               {/* Active Users */}
               {collaboration.activeUsers.length > 0 && (
                 <div className="flex items-center space-x-1">
@@ -1126,38 +1128,48 @@ Would you like to ask about a specific section or concept?`
               <span className="hidden md:inline">AI Summary</span>
             </Button>
 
-            
+
             {/* AI Research Assistant Trigger Button */}
-                    <Button
-          variant="outline"
-          size="sm"
-          className="bg-gradient-to-r from-purple-600 to-indigo-600 text-white font-semibold flex items-center justify-center shadow-md hover:scale-105 transition-transform border-purple-600 w-8 h-8 p-0"
-          onClick={triggerContextualHelp}
-          title="Activate AI Research Assistant - Advanced contextual help system"
-        >
-          <Brain className="h-4 w-4" />
-        </Button>
-        
-                  <Button
-            variant="outline"
-            size="sm"
-            className="bg-gradient-to-r from-green-600 to-emerald-600 text-white font-semibold flex items-center justify-center shadow-md hover:scale-105 transition-transform border-green-600 w-8 h-8 p-0"
-            onClick={extractTextFromWebViewer}
-            title="Extract and display text from PDF for debugging"
-          >
-            <FileText className="h-4 w-4" />
-          </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              className="bg-gradient-to-r from-purple-600 to-indigo-600 text-white font-semibold flex items-center justify-center shadow-md hover:scale-105 transition-transform border-purple-600 w-8 h-8 p-0"
+              onClick={triggerContextualHelp}
+              title="Activate AI Research Assistant - Advanced contextual help system"
+            >
+              <Brain className="h-4 w-4" />
+            </Button>
 
-          <Button
-            variant="outline"
-            size="sm"
-            className="bg-gradient-to-r from-orange-600 to-red-600 text-white font-semibold flex items-center justify-center shadow-md hover:scale-105 transition-transform border-orange-600 w-8 h-8 p-0"
-            onClick={() => setShowAddInsight(true)}
-            title="Add your reading insight to help other researchers"
-          >
-            <Star className="h-4 w-4" />
-          </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              className="bg-gradient-to-r from-green-600 to-emerald-600 text-white font-semibold flex items-center justify-center shadow-md hover:scale-105 transition-transform border-green-600 w-8 h-8 p-0"
+              onClick={extractTextFromWebViewer}
+              title="Extract and display text from PDF for debugging"
+            >
+              <FileText className="h-4 w-4" />
+            </Button>
 
+            <Button
+              variant="outline"
+              size="sm"
+              className="bg-gradient-to-r from-orange-600 to-red-600 text-white font-semibold flex items-center justify-center shadow-md hover:scale-105 transition-transform border-orange-600 w-8 h-8 p-0"
+              onClick={() => setShowAddInsight(true)}
+              title="Add your reading insight to help other researchers"
+            >
+              <Star className="h-4 w-4" />
+            </Button>
+
+
+            <Button
+              variant="outline"
+              size="sm"
+              className="bg-gradient-to-r from-blue-400 to-indigo-500 text-white font-semibold flex items-center justify-center shadow-md hover:scale-105 transition-transform border-blue-400 w-8 h-8 p-0"
+              onClick={() => setShowSituationSettings(true)}
+              title="Smart Notification Situations - Configure when to get AI help"
+            >
+              <Settings className="h-4 w-4" />
+            </Button>
 
             {/* User Menu */}
             <div className="relative group">
@@ -1180,9 +1192,9 @@ Would you like to ask about a specific section or concept?`
             </div>
           </div>
         </div>
-             </header>
+      </header>
 
-       <div className="flex flex-1 overflow-hidden">
+      <div className="flex flex-1 overflow-hidden">
         {/* Toolbar */}
         <div className="w-16 border-r border-gray-200 bg-muted/30 flex flex-col items-center py-4 space-y-2">
           <Button
@@ -1232,7 +1244,7 @@ Would you like to ask about a specific section or concept?`
         <div className="flex-1 flex flex-col">
           {/* PDF Content */}
           <div className="flex-1 flex flex-col">
-            <ApryseWebViewer 
+            <ApryseWebViewer
               documentUrl={document.url}
               documentId={documentId}
               userName={currentUser?.name || 'Anonymous'}
@@ -1263,48 +1275,48 @@ Would you like to ask about a specific section or concept?`
                   <EyeOff className="h-4 w-4" />
                 </Button>
               </div>
-              
-                           {/* Tab Navigation */}
-             <div className="bg-gray-100 rounded-lg p-1 overflow-x-auto">
-               <div className="flex space-x-1 min-w-max">
-                 <Button 
-                   variant={activeTab === 'chat' ? 'default' : 'ghost'} 
-                   size="sm" 
-                   className="h-8 whitespace-nowrap"
-                   onClick={() => setActiveTab('chat')}
-                 >
-                   <MessageCircle className="h-3 w-3 mr-1" />
-                   Chat
-                 </Button>
-                 <Button 
-                   variant={activeTab === 'ai' ? 'default' : 'ghost'} 
-                   size="sm" 
-                   className="h-8 whitespace-nowrap"
-                   onClick={() => setActiveTab('ai')}
-                 >
-                   <Sparkles className="h-3 w-3 mr-1" />
-                   AI Help
-                 </Button>
-                 <Button 
-                   variant={activeTab === 'metadata' ? 'default' : 'ghost'} 
-                   size="sm" 
-                   className="h-8 whitespace-nowrap"
-                   onClick={() => setActiveTab('metadata')}
-                 >
-                   <Brain className="h-3 w-3 mr-1" />
-                   Metadata
-                 </Button>
-                 <Button 
-                   variant={activeTab === 'annotations' ? 'default' : 'ghost'} 
-                   size="sm" 
-                   className="h-8 whitespace-nowrap"
-                   onClick={() => setActiveTab('annotations')}
-                 >
-                   <MessageSquare className="h-3 w-3 mr-1" />
-                   Annotations
-                 </Button>
-               </div>
-             </div>
+
+              {/* Tab Navigation */}
+              <div className="bg-gray-100 rounded-lg p-1 overflow-x-auto">
+                <div className="flex space-x-1 min-w-max">
+                  <Button
+                    variant={activeTab === 'chat' ? 'default' : 'ghost'}
+                    size="sm"
+                    className="h-8 whitespace-nowrap"
+                    onClick={() => setActiveTab('chat')}
+                  >
+                    <MessageCircle className="h-3 w-3 mr-1" />
+                    Chat
+                  </Button>
+                  <Button
+                    variant={activeTab === 'ai' ? 'default' : 'ghost'}
+                    size="sm"
+                    className="h-8 whitespace-nowrap"
+                    onClick={() => setActiveTab('ai')}
+                  >
+                    <Sparkles className="h-3 w-3 mr-1" />
+                    AI Help
+                  </Button>
+                  <Button
+                    variant={activeTab === 'metadata' ? 'default' : 'ghost'}
+                    size="sm"
+                    className="h-8 whitespace-nowrap"
+                    onClick={() => setActiveTab('metadata')}
+                  >
+                    <Brain className="h-3 w-3 mr-1" />
+                    Metadata
+                  </Button>
+                  <Button
+                    variant={activeTab === 'annotations' ? 'default' : 'ghost'}
+                    size="sm"
+                    className="h-8 whitespace-nowrap"
+                    onClick={() => setActiveTab('annotations')}
+                  >
+                    <MessageSquare className="h-3 w-3 mr-1" />
+                    Annotations
+                  </Button>
+                </div>
+              </div>
             </div>
 
             {/* Content Area */}
@@ -1393,56 +1405,56 @@ Would you like to ask about a specific section or concept?`
 
                   {/* Messages Container */}
                   <div className="p-3 space-y-2">
-                  {aiMessages.length === 0 ? (
-                    <div className="text-center py-4">
-                      <div className="text-gray-400 mb-1">💡</div>
-                      <p className="text-xs text-gray-500">Start a conversation with AI</p>
-                      <div className="mt-2 space-y-1">
-                        <p className="text-xs text-blue-600 font-medium">Try asking:</p>
-                        <div className="text-xs text-blue-600 space-y-0.5">
-                          <div>• "What is the main research question?"</div>
-                          <div>• "Explain the methodology section"</div>
-                          <div>• "What are the key findings?"</div>
+                    {aiMessages.length === 0 ? (
+                      <div className="text-center py-4">
+                        <div className="text-gray-400 mb-1">💡</div>
+                        <p className="text-xs text-gray-500">Start a conversation with AI</p>
+                        <div className="mt-2 space-y-1">
+                          <p className="text-xs text-blue-600 font-medium">Try asking:</p>
+                          <div className="text-xs text-blue-600 space-y-0.5">
+                            <div>• "What is the main research question?"</div>
+                            <div>• "Explain the methodology section"</div>
+                            <div>• "What are the key findings?"</div>
+                          </div>
                         </div>
                       </div>
-                    </div>
-                  ) : (
-                    aiMessages.map((msg) => (
-                      <div key={msg.id} className="space-y-1">
-                        {/* Question */}
-                        <div className="flex items-start space-x-2">
-                          <div className="w-6 h-6 rounded-full bg-blue-500 flex items-center justify-center text-xs text-white">
-                            👤
-                          </div>
-                          <div className="flex-1">
-                            <div className="bg-blue-50 border border-blue-200 rounded-lg p-2 text-sm">
-                              {msg.question}
+                    ) : (
+                      aiMessages.map((msg) => (
+                        <div key={msg.id} className="space-y-1">
+                          {/* Question */}
+                          <div className="flex items-start space-x-2">
+                            <div className="w-6 h-6 rounded-full bg-blue-500 flex items-center justify-center text-xs text-white">
+                              👤
+                            </div>
+                            <div className="flex-1">
+                              <div className="bg-blue-50 border border-blue-200 rounded-lg p-2 text-sm">
+                                {msg.question}
+                              </div>
                             </div>
                           </div>
-                        </div>
 
-                        {/* Answer */}
-                        <div className="flex items-start space-x-2">
-                          <div className="w-6 h-6 rounded-full bg-purple-500 flex items-center justify-center text-xs text-white">
-                            🤖
-                          </div>
-                          <div className="flex-1">
-                            <div className="bg-purple-50 border border-purple-200 rounded-lg p-2 text-sm">
-                              {msg.isLoading ? (
-                                <div className="flex items-center space-x-2">
-                                  <Loader2 className="h-3 w-3 animate-spin text-purple-600" />
-                                  <span className="text-purple-700 text-xs">Thinking...</span>
-                                </div>
-                              ) : (
-                                <div className="text-sm">{msg.answer}</div>
-                              )}
+                          {/* Answer */}
+                          <div className="flex items-start space-x-2">
+                            <div className="w-6 h-6 rounded-full bg-purple-500 flex items-center justify-center text-xs text-white">
+                              🤖
+                            </div>
+                            <div className="flex-1">
+                              <div className="bg-purple-50 border border-purple-200 rounded-lg p-2 text-sm">
+                                {msg.isLoading ? (
+                                  <div className="flex items-center space-x-2">
+                                    <Loader2 className="h-3 w-3 animate-spin text-purple-600" />
+                                    <span className="text-purple-700 text-xs">Thinking...</span>
+                                  </div>
+                                ) : (
+                                  <div className="text-sm">{msg.answer}</div>
+                                )}
+                              </div>
                             </div>
                           </div>
                         </div>
-                      </div>
-                    ))
-                  )}
-                  <div ref={aiMessagesEndRef} />
+                      ))
+                    )}
+                    <div ref={aiMessagesEndRef} />
                   </div>
                 </div>
 
@@ -1457,8 +1469,8 @@ Would you like to ask about a specific section or concept?`
                       className="flex-1"
                       disabled={isAILoading}
                     />
-                    <Button 
-                      size="sm" 
+                    <Button
+                      size="sm"
                       onClick={handleAIQuestion}
                       disabled={!aiQuestion.trim() || isAILoading}
                       className="bg-blue-600 hover:bg-blue-700"
@@ -1472,77 +1484,77 @@ Would you like to ask about a specific section or concept?`
                   </div>
                 </div>
               </div>
-                         ) : activeTab === 'annotations' ? (
-               /* Annotations Tab */
-               <div className="flex-1 overflow-y-auto p-4">
-                 <div className="mb-4">
-                   <h3 className="text-lg font-semibold text-gray-800 mb-2 flex items-center gap-2">
-                     <MessageSquare className="w-5 h-5 text-purple-500" />
-                     Research Annotations ({demoComments.length})
-                   </h3>
-                   <p className="text-sm text-gray-600">
-                     View and manage all annotations and comments on this document
-                   </p>
-                 </div>
-                 
-                 <div className="space-y-4">
-                   {demoComments.map((comment) => (
-                     <div key={comment.id} className="bg-white rounded-lg p-4 border border-gray-200 hover:border-purple-300 transition-colors shadow-sm">
-                       <div className="flex items-start justify-between mb-3">
-                         <div className="flex items-center gap-3">
-                           <div className="w-10 h-10 rounded-full bg-gradient-to-br from-purple-500 to-blue-500 flex items-center justify-center text-white font-medium">
-                             {comment.author.split(' ').map(n => n[0]).join('')}
-                           </div>
-                           <div>
-                             <span className="font-medium text-gray-800">{comment.author}</span>
-                             <div className="text-sm text-gray-500">Page {comment.page}</div>
-                           </div>
-                         </div>
-                         <div className="text-right">
-                           <span className="text-sm text-gray-500">
-                             {new Date(comment.timestamp).toLocaleDateString()}
-                           </span>
-                           <div className="text-xs text-gray-400">
-                             {new Date(comment.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-                           </div>
-                         </div>
-                       </div>
-                       <div className="bg-gray-50 rounded-lg p-3 border-l-4 border-purple-400">
-                         <p className="text-gray-700 leading-relaxed">{comment.text}</p>
-                       </div>
-                       <div className="flex items-center justify-between mt-3 pt-3 border-t border-gray-100">
-                         <div className="flex items-center gap-2">
-                           <span className="text-xs bg-purple-100 text-purple-700 px-2 py-1 rounded-full">
-                             {comment.type}
-                           </span>
-                           <span className="text-xs text-gray-500">
-                             Position: ({comment.x}, {comment.y})
-                           </span>
-                         </div>
-                         <div className="flex items-center gap-2">
-                           <Button variant="ghost" size="sm" className="h-7 px-2 text-xs">
-                             <ThumbsUp className="w-3 h-3 mr-1" />
-                             Like
-                           </Button>
-                           <Button variant="ghost" size="sm" className="h-7 px-2 text-xs">
-                             <Reply className="w-3 h-3 mr-1" />
-                             Reply
-                           </Button>
-                         </div>
-                       </div>
-                     </div>
-                   ))}
-                 </div>
-               </div>
-             ) : (
-               /* Metadata Tab */
-               <div className="flex-1 overflow-y-auto p-4 pr-20">
-                 <EnhancedMetadataDisplay 
-                   documentId={documentId} 
-                   filename={document?.filename || ''} 
-                 />
-               </div>
-             )}
+            ) : activeTab === 'annotations' ? (
+              /* Annotations Tab */
+              <div className="flex-1 overflow-y-auto p-4">
+                <div className="mb-4">
+                  <h3 className="text-lg font-semibold text-gray-800 mb-2 flex items-center gap-2">
+                    <MessageSquare className="w-5 h-5 text-purple-500" />
+                    Research Annotations ({demoComments.length})
+                  </h3>
+                  <p className="text-sm text-gray-600">
+                    View and manage all annotations and comments on this document
+                  </p>
+                </div>
+
+                <div className="space-y-4">
+                  {demoComments.map((comment) => (
+                    <div key={comment.id} className="bg-white rounded-lg p-4 border border-gray-200 hover:border-purple-300 transition-colors shadow-sm">
+                      <div className="flex items-start justify-between mb-3">
+                        <div className="flex items-center gap-3">
+                          <div className="w-10 h-10 rounded-full bg-gradient-to-br from-purple-500 to-blue-500 flex items-center justify-center text-white font-medium">
+                            {comment.author.split(' ').map(n => n[0]).join('')}
+                          </div>
+                          <div>
+                            <span className="font-medium text-gray-800">{comment.author}</span>
+                            <div className="text-sm text-gray-500">Page {comment.page}</div>
+                          </div>
+                        </div>
+                        <div className="text-right">
+                          <span className="text-sm text-gray-500">
+                            {new Date(comment.timestamp).toLocaleDateString()}
+                          </span>
+                          <div className="text-xs text-gray-400">
+                            {new Date(comment.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                          </div>
+                        </div>
+                      </div>
+                      <div className="bg-gray-50 rounded-lg p-3 border-l-4 border-purple-400">
+                        <p className="text-gray-700 leading-relaxed">{comment.text}</p>
+                      </div>
+                      <div className="flex items-center justify-between mt-3 pt-3 border-t border-gray-100">
+                        <div className="flex items-center gap-2">
+                          <span className="text-xs bg-purple-100 text-purple-700 px-2 py-1 rounded-full">
+                            {comment.type}
+                          </span>
+                          <span className="text-xs text-gray-500">
+                            Position: ({comment.x}, {comment.y})
+                          </span>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <Button variant="ghost" size="sm" className="h-7 px-2 text-xs">
+                            <ThumbsUp className="w-3 h-3 mr-1" />
+                            Like
+                          </Button>
+                          <Button variant="ghost" size="sm" className="h-7 px-2 text-xs">
+                            <Reply className="w-3 h-3 mr-1" />
+                            Reply
+                          </Button>
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            ) : (
+              /* Metadata Tab */
+              <div className="flex-1 overflow-y-auto p-4 pr-20">
+                <EnhancedMetadataDisplay
+                  documentId={documentId}
+                  filename={document?.filename || ''}
+                />
+              </div>
+            )}
           </div>
         )}
 
@@ -1574,7 +1586,13 @@ Would you like to ask about a specific section or concept?`
 
       {/* Contextual Help Popup */}
       <ContextualHelpPopup />
-      
+
+      {/* Situation Settings Modal */}
+      <SituationSettings
+        isOpen={showSituationSettings}
+        onClose={() => setShowSituationSettings(false)}
+      />
+
       {/* Extracted Text Modal */}
       {showExtractedText && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
@@ -1696,8 +1714,8 @@ Would you like to ask about a specific section or concept?`
 
             {/* Content */}
             <div className="flex-1 overflow-y-auto p-6">
-              <LiveActivityFeed 
-                documentId={documentId} 
+              <LiveActivityFeed
+                documentId={documentId}
                 isVisible={true}
                 onNavigateToPage={(pageNumber, position) => {
                   // Close the modal first
