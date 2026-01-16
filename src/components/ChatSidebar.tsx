@@ -4,14 +4,16 @@ import React, { useState, useEffect, useRef } from 'react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Badge } from '@/components/ui/badge'
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import { Card, CardContent } from '@/components/ui/card'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import { Separator } from '@/components/ui/separator'
 import {
   MessageSquare, Send, Bot, User, Users, HelpCircle,
   Brain, Lightbulb, AlertCircle, CheckCircle, Clock,
-  X, ChevronRight, MessageCircleQuestion
+  X, ChevronRight, MessageCircleQuestion, Sparkles,
+  Zap, Hash, GraduationCap
 } from 'lucide-react'
+import { cn } from '@/lib/utils'
 
 interface ChatMessage {
   id: string
@@ -20,15 +22,6 @@ interface ChatMessage {
   userName: string
   content: string
   type: 'TEXT' | 'AI_RESPONSE' | 'SYSTEM'
-  timestamp: string
-}
-
-interface AIResponse {
-  id: string
-  question: string
-  answer: string
-  confidence: number
-  sources: { page: number; section: string }[]
   timestamp: string
 }
 
@@ -41,6 +34,8 @@ interface ChatSidebarProps {
   }
   isOpen: boolean
   onClose: () => void
+  topic?: string // New prop for discussion topic
+  onSendMessage?: (message: string) => void // Optional custom send handler
   collaboration?: {
     chatMessages: ChatMessage[]
     typingUsers: string[]
@@ -48,7 +43,15 @@ interface ChatSidebarProps {
   }
 }
 
-export default function ChatSidebar({ documentId, currentUser, isOpen, onClose, collaboration }: ChatSidebarProps) {
+export default function ChatSidebar({
+  documentId,
+  currentUser,
+  isOpen,
+  onClose,
+  topic = "General Discussion",
+  onSendMessage,
+  collaboration
+}: ChatSidebarProps) {
   const [messages, setMessages] = useState<ChatMessage[]>([])
   const [newMessage, setNewMessage] = useState('')
   const [aiQuestion, setAiQuestion] = useState('')
@@ -71,7 +74,7 @@ export default function ChatSidebar({ documentId, currentUser, isOpen, onClose, 
   useEffect(() => {
     if (isOpen && documentId) {
       loadMessages()
-      
+
       // Join the chat room
       fetch('/api/socket', {
         method: 'POST',
@@ -83,12 +86,12 @@ export default function ChatSidebar({ documentId, currentUser, isOpen, onClose, 
           userName: currentUser.name
         })
       })
-      
+
       // Set up real-time polling for new messages
       const interval = setInterval(() => {
         loadMessages()
       }, 2000) // Poll every 2 seconds
-      
+
       return () => {
         clearInterval(interval)
         // Leave the chat room
@@ -109,7 +112,7 @@ export default function ChatSidebar({ documentId, currentUser, isOpen, onClose, 
   // Auto-scroll to bottom when new messages arrive
   useEffect(() => {
     scrollToBottom()
-  }, [messages])
+  }, [messages, displayMessages, activeTab])
 
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
@@ -135,12 +138,13 @@ export default function ChatSidebar({ documentId, currentUser, isOpen, onClose, 
     }
   }
 
-  const sendMessage = async () => {
-    if (!newMessage.trim() || isSending) return
+  const sendMessage = async (isAiRequest: boolean = false) => {
+    const content = isAiRequest ? aiQuestion : newMessage
+    if (!content.trim() || isSending) return
 
     setIsSending(true)
-    const messageContent = newMessage.trim()
-    setNewMessage('')
+    if (!isAiRequest) setNewMessage('')
+    else setAiQuestion('')
 
     // Create optimistic message
     const optimisticMessage: ChatMessage = {
@@ -148,7 +152,7 @@ export default function ChatSidebar({ documentId, currentUser, isOpen, onClose, 
       documentId,
       userId: currentUser.id,
       userName: currentUser.name,
-      content: messageContent,
+      content: content.trim(),
       type: 'TEXT',
       timestamp: new Date().toISOString()
     }
@@ -157,6 +161,14 @@ export default function ChatSidebar({ documentId, currentUser, isOpen, onClose, 
     setMessages(prev => [...prev, optimisticMessage])
 
     try {
+      // Check for custom handler (e.g. for peer chat)
+      if (onSendMessage && !isAiRequest) {
+        onSendMessage(content.trim())
+        setIsSending(false)
+        return
+      }
+
+      // 1. Send user message via default socket
       const response = await fetch('/api/socket', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -166,7 +178,7 @@ export default function ChatSidebar({ documentId, currentUser, isOpen, onClose, 
           userId: currentUser.id,
           userName: currentUser.name,
           messageData: {
-            content: messageContent,
+            content: content.trim(),
             type: 'TEXT'
           }
         })
@@ -176,124 +188,95 @@ export default function ChatSidebar({ documentId, currentUser, isOpen, onClose, 
         const result = await response.json()
         if (result.success) {
           // Replace optimistic message with real one
-          setMessages(prev => prev.map(msg => 
+          setMessages(prev => prev.map(msg =>
             msg.id === optimisticMessage.id ? { ...msg, id: result.chatMessage.id } : msg
           ))
-        } else {
-          // Remove optimistic message if failed
-          setMessages(prev => prev.filter(msg => msg.id !== optimisticMessage.id))
-          console.error('Failed to send message')
         }
-      } else {
-        // Remove optimistic message if failed
-        setMessages(prev => prev.filter(msg => msg.id !== optimisticMessage.id))
-        console.error('Failed to send message')
       }
+
+      // 2. If it's an AI request or explicitly tagged, trigger AI
+      if (isAiRequest || content.toLowerCase().includes('@ai')) {
+        setIsLoading(true)
+        const aiResponse = await fetch('/api/ai-help', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            documentId,
+            question: content,
+            userId: currentUser.id,
+            context: `Topic: ${topic}` // Pass topic context
+          })
+        })
+
+        const aiData = await aiResponse.json()
+        if (aiData.answer) {
+          // Send AI response to socket so everyone sees it
+          await fetch('/api/socket', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              action: 'send-message',
+              documentId,
+              userId: 'ai-assistant',
+              userName: 'AI Facilitator',
+              messageData: {
+                content: aiData.answer,
+                type: 'AI_RESPONSE'
+              }
+            })
+          })
+
+          // Also update local state immediately
+          const aiMessage: ChatMessage = {
+            id: `ai_${Date.now()}`,
+            documentId,
+            userId: 'ai-assistant',
+            userName: 'AI Facilitator',
+            content: aiData.answer,
+            type: 'AI_RESPONSE',
+            timestamp: new Date().toISOString()
+          }
+          setMessages(prev => [...prev, aiMessage])
+        }
+        setIsLoading(false)
+      }
+
     } catch (error) {
-      // Remove optimistic message if failed
-      setMessages(prev => prev.filter(msg => msg.id !== optimisticMessage.id))
       console.error('Failed to send message:', error)
+      // Remove optimistic message if absolutely failed (optional)
     } finally {
       setIsSending(false)
     }
   }
 
-  const askAI = async () => {
-    if (!aiQuestion.trim()) return
-
-    setIsLoading(true)
-    try {
-      const response = await fetch('/api/ai-help', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          documentId,
-          question: aiQuestion,
-          userId: currentUser.id
-        })
-      })
-
-      const data = await response.json()
-      if (data.answer) {
-        const aiMessage: ChatMessage = {
-          id: Date.now().toString(),
-          documentId,
-          userId: 'ai-assistant',
-          userName: 'AI Assistant',
-          content: data.answer,
-          type: 'AI_RESPONSE',
-          timestamp: new Date().toISOString()
-        }
-        setMessages(prev => [...prev, aiMessage])
-      }
-    } catch (error) {
-      console.error('Failed to get AI response:', error)
-    }
-    setIsLoading(false)
-    setAiQuestion('')
-  }
-
   const handleKeyPress = (e: React.KeyboardEvent, action: 'chat' | 'ai') => {
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault()
-      if (action === 'chat') {
-        sendMessage()
-      } else {
-        askAI()
-      }
+      if (action === 'chat') sendMessage(false)
+      else sendMessage(true)
     }
   }
 
   const formatTime = (timestamp: string) => {
     const date = new Date(timestamp)
-    const now = new Date()
-    const diffInMinutes = Math.floor((now.getTime() - date.getTime()) / (1000 * 60))
-    
-    // Show exact time for recent messages (within 1 hour)
-    if (diffInMinutes < 60) {
-      return date.toLocaleTimeString([], { 
-        hour: '2-digit', 
-        minute: '2-digit',
-        hour12: true 
-      })
-    }
-    
-    // Show relative time for older messages
-    if (diffInMinutes < 1) return 'Just now'
-    if (diffInMinutes < 60) return `${diffInMinutes}m ago`
-    if (diffInMinutes < 1440) return `${Math.floor(diffInMinutes / 60)}h ago`
-    
-    // Show date and time for older messages
-    return date.toLocaleDateString() + ' ' + date.toLocaleTimeString([], { 
-      hour: '2-digit', 
-      minute: '2-digit',
-      hour12: true 
-    })
+    return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
   }
 
-  const getMessageIcon = (type: string, userId: string) => {
-    if (type === 'AI_RESPONSE') {
+  // Premium Icon Component
+  const Avatar = ({ name, color, isAi }: { name: string, color?: string, isAi?: boolean }) => {
+    if (isAi) {
       return (
-        <div className="w-7 h-7 rounded-full bg-gradient-to-br from-purple-500 to-blue-500 flex items-center justify-center flex-shrink-0">
-          <Bot className="h-4 w-4 text-white" />
+        <div className="w-8 h-8 rounded-xl bg-gradient-to-br from-indigo-500 via-purple-500 to-pink-500 flex items-center justify-center shadow-md ring-2 ring-white">
+          <Sparkles className="h-4 w-4 text-white animate-pulse" />
         </div>
       )
     }
-    
-    if (userId === currentUser.id) {
-      return (
-        <div
-          className="w-7 h-7 rounded-full flex items-center justify-center text-white text-sm font-medium flex-shrink-0"
-          style={{ backgroundColor: currentUser.color }}
-        >
-          {(currentUser.name || 'A').charAt(0).toUpperCase()}
-        </div>
-      )
-    }
-    
     return (
-      <div className="w-7 h-7 rounded-full bg-gray-300 flex items-center justify-center flex-shrink-0">
-        <User className="h-4 w-4 text-gray-600" />
+      <div
+        className="w-8 h-8 rounded-xl flex items-center justify-center text-white text-xs font-bold shadow-sm ring-2 ring-white"
+        style={{ backgroundColor: color || '#6B7280' }}
+      >
+        {name.charAt(0).toUpperCase()}
       </div>
     )
   }
@@ -301,281 +284,206 @@ export default function ChatSidebar({ documentId, currentUser, isOpen, onClose, 
   if (!isOpen) return null
 
   return (
-    <div className="w-80 h-full bg-white border-l border-gray-100 flex flex-col">
-      {/* Clean Header - Anara Style */}
-      <div className="px-4 py-3 border-b border-gray-100">
-        <div className="flex items-center justify-between">
-          <div>
-            <h2 className="font-semibold text-gray-900">Research Assistant</h2>
-            {displayActiveUsers.length > 0 && (
-              <div className="flex items-center space-x-1 mt-1">
-                <div className="w-2 h-2 bg-green-500 rounded-full"></div>
-                <span className="text-xs text-gray-600">
-                  {displayActiveUsers.length} active
-                </span>
-              </div>
-            )}
+    <div className="w-full md:w-[380px] h-full flex flex-col bg-white/90 backdrop-blur-xl border-l border-white/20 shadow-2xl relative">
+      {/* Background Decor */}
+      <div className="absolute inset-0 overflow-hidden pointer-events-none z-0">
+        <div className="absolute top-0 right-0 w-64 h-64 bg-blue-500/5 rounded-full blur-3xl -translate-y-1/2 translate-x-1/2"></div>
+        <div className="absolute bottom-0 left-0 w-64 h-64 bg-purple-500/5 rounded-full blur-3xl translate-y-1/2 -translate-x-1/2"></div>
+      </div>
+
+      {/* Header */}
+      <div className="relative z-10 px-6 py-4 border-b border-gray-100/50 bg-white/50 backdrop-blur-sm">
+        <div className="flex items-center justify-between mb-2">
+          <div className="flex items-center gap-2">
+            <div className="p-2 bg-blue-50 rounded-lg text-blue-600">
+              <MessageSquare className="h-5 w-5" />
+            </div>
+            <div>
+              <h2 className="font-bold text-gray-900 leading-tight">Discussion</h2>
+              <p className="text-xs text-gray-500 font-medium flex items-center gap-1">
+                {displayActiveUsers.length} online <span className="w-1 h-1 bg-green-500 rounded-full"></span>
+              </p>
+            </div>
           </div>
-          <Button variant="ghost" size="sm" onClick={onClose} className="h-6 w-6 p-0 hover:bg-gray-100">
-            <X className="h-4 w-4" />
+          <Button variant="ghost" size="icon" onClick={onClose} className="hover:bg-gray-100 rounded-full h-8 w-8">
+            <X className="h-4 w-4 text-gray-500" />
           </Button>
+        </div>
+
+        {/* Topic Badge */}
+        <div className="flex items-center gap-2 px-3 py-1.5 bg-gradient-to-r from-blue-50 to-indigo-50 border border-blue-100 rounded-lg">
+          <Hash className="h-3.5 w-3.5 text-blue-500" />
+          <span className="text-xs font-medium text-blue-700 truncate">{topic}</span>
         </div>
       </div>
 
-      {/* Clean Tab Navigation */}
-      <div className="border-b border-gray-100 overflow-x-auto">
-        <div className="flex min-w-max">
-          <Button
-            variant="ghost"
-            size="sm"
-            className={`rounded-none border-b-2 transition-colors whitespace-nowrap ${
-              activeTab === 'chat' 
-                ? 'border-blue-500 text-blue-600 bg-blue-50' 
-                : 'border-transparent text-gray-600 hover:text-gray-900 hover:bg-gray-50'
-            }`}
-            onClick={() => setActiveTab('chat')}
-          >
-            <MessageSquare className="h-4 w-4 mr-1" />
-            <span className="text-sm font-medium">Chat</span>
-          </Button>
-          <Button
-            variant="ghost"
-            size="sm"
-            className={`rounded-none border-b-2 transition-colors whitespace-nowrap ${
-              activeTab === 'ai' 
-                ? 'border-purple-500 text-purple-600 bg-purple-50' 
-                : 'border-transparent text-gray-600 hover:text-gray-900 hover:bg-gray-50'
-            }`}
-            onClick={() => setActiveTab('ai')}
-          >
-            <Brain className="h-4 w-4 mr-1" />
-            <span className="text-sm font-medium">AI</span>
-          </Button>
-          <Button
-            variant="ghost"
-            size="sm"
-            className={`rounded-none border-b-2 transition-colors whitespace-nowrap ${
-              activeTab === 'help' 
-                ? 'border-orange-500 text-orange-600 bg-orange-50' 
-                : 'border-transparent text-gray-600 hover:text-gray-900 hover:bg-gray-50'
-            }`}
-            onClick={() => setActiveTab('help')}
-          >
-            <HelpCircle className="h-4 w-4 mr-1" />
-            <span className="text-sm font-medium">Help</span>
-          </Button>
+      {/* Tabs */}
+      <div className="relative z-10 px-4 py-3">
+        <div className="bg-gray-100/80 p-1 rounded-xl flex gap-1">
+          {['chat', 'ai', 'help'].map((tab) => (
+            <button
+              key={tab}
+              onClick={() => setActiveTab(tab as any)}
+              className={cn(
+                "flex-1 py-1.5 px-3 rounded-lg text-xs font-semibold capitalize transition-all duration-200 flex items-center justify-center gap-2",
+                activeTab === tab
+                  ? "bg-white text-gray-900 shadow-sm ring-1 ring-gray-200"
+                  : "text-gray-500 hover:text-gray-700 hover:bg-gray-200/50"
+              )}
+            >
+              {tab === 'chat' && <Users className="h-3.5 w-3.5" />}
+              {tab === 'ai' && <Sparkles className="h-3.5 w-3.5" />}
+              {tab === 'help' && <HelpCircle className="h-3.5 w-3.5" />}
+              {tab.toUpperCase()}
+            </button>
+          ))}
         </div>
       </div>
 
       {/* Content Area */}
-      <div className="flex-1 flex flex-col overflow-hidden">
+      <div className="flex-1 flex flex-col min-h-0 relative z-10">
         {activeTab === 'chat' && (
           <>
-            {/* Chat Messages */}
-            <ScrollArea className="flex-1 custom-scrollbar">
-              <div className="p-4 space-y-4">
+            <ScrollArea className="flex-1 px-4">
+              <div className="py-4 space-y-6">
                 {displayMessages.length === 0 ? (
-                  <div className="text-center py-12">
-                    <div className="w-12 h-12 bg-gray-100 rounded-full flex items-center justify-center mx-auto mb-3">
-                      <MessageSquare className="h-6 w-6 text-gray-400" />
+                  <div className="flex flex-col items-center justify-center h-64 text-center px-6">
+                    <div className="w-16 h-16 bg-gradient-to-br from-blue-100 to-indigo-100 rounded-full flex items-center justify-center mb-4 animate-pulse">
+                      <MessageSquare className="h-8 w-8 text-blue-500" />
                     </div>
-                    <p className="text-sm text-gray-600 font-medium">Start the conversation</p>
-                    <p className="text-xs text-gray-500 mt-1">Collaborate with your team on this document</p>
+                    <h3 className="text-sm font-semibold text-gray-900 mb-1">Start the Conversation</h3>
+                    <p className="text-xs text-gray-500">
+                      Discussing <span className="font-medium text-blue-600">{topic}</span>.
+                      Ask questions, share insights, or tag @AI for help!
+                    </p>
                   </div>
                 ) : (
-                  displayMessages.map((message) => (
-                    <div key={message.id} className={`flex items-start space-x-3 ${message.userId === currentUser.id ? 'flex-row-reverse space-x-reverse' : ''}`}>
-                      {getMessageIcon(message.type, message.userId)}
-                      <div className={`flex-1 min-w-0 ${message.userId === currentUser.id ? 'text-right' : ''}`}>
-                        <div className={`flex items-baseline space-x-2 mb-1 ${message.userId === currentUser.id ? 'justify-end' : ''}`}>
-                          <span className={`text-sm font-medium truncate ${
-                            message.userId === currentUser.id 
-                              ? 'text-blue-600' 
-                              : message.type === 'AI_RESPONSE' 
-                                ? 'text-purple-600' 
-                                : 'text-gray-900'
-                          }`}>
-                            {message.userName}
-                            {message.userId === currentUser.id && ' (You)'}
-                          </span>
-                          <span className="text-xs text-gray-500">
-                            {formatTime(message.timestamp)}
-                          </span>
-                        </div>
-                        <div className={`text-sm leading-relaxed ${
-                          message.userId === currentUser.id 
-                            ? 'bg-blue-500 text-white rounded-lg px-3 py-2 ml-4' 
-                            : message.type === 'AI_RESPONSE'
-                              ? 'bg-purple-50 text-purple-900 rounded-lg px-3 py-2 border border-purple-200'
-                              : 'bg-gray-100 text-gray-700 rounded-lg px-3 py-2 mr-4'
-                        }`}>
-                          {message.content.includes('**') ? (
-                            <div dangerouslySetInnerHTML={{
-                              __html: message.content
-                                .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
-                                .replace(/\n/g, '<br>')
-                            }} />
-                          ) : (
-                            message.content
+                  displayMessages.map((message, i) => {
+                    const isMe = message.userId === currentUser.id
+                    const isAi = message.type === 'AI_RESPONSE'
+                    const prevMsg = displayMessages[i - 1]
+                    const isSequence = prevMsg && prevMsg.userId === message.userId && (new Date(message.timestamp).getTime() - new Date(prevMsg.timestamp).getTime()) < 60000
+
+                    return (
+                      <div key={message.id} className={cn("flex gap-3 max-w-[90%]", isMe ? "ml-auto flex-row-reverse" : "")}>
+                        {!isSequence && (
+                          <div className="flex-shrink-0 mt-1">
+                            <Avatar name={message.userName} color={isMe ? currentUser.color : undefined} isAi={isAi} />
+                          </div>
+                        )}
+                        <div className={cn("flex flex-col", isSequence ? (!isMe ? "ml-11" : "mr-11") : "")}>
+                          {!isSequence && (
+                            <span className={cn("text-[10px] text-gray-400 mb-1 px-1", isMe ? "text-right" : "")}>
+                              {message.userName} • {formatTime(message.timestamp)}
+                            </span>
                           )}
+                          <div className={cn(
+                            "rounded-2xl px-4 py-2.5 text-sm shadow-sm leading-relaxed",
+                            isMe
+                              ? "bg-gradient-to-br from-blue-600 to-indigo-600 text-white rounded-tr-sm"
+                              : isAi
+                                ? "bg-gradient-to-br from-white to-purple-50 border border-purple-100 text-gray-800 rounded-tl-sm ring-1 ring-purple-100"
+                                : "bg-white border border-gray-100 text-gray-800 rounded-tl-sm"
+                          )}>
+                            {isAi && (
+                              <div className="flex items-center gap-1.5 mb-1 text-[10px] font-bold text-purple-600 uppercase tracking-wider">
+                                <Sparkles className="h-3 w-3" /> AI Insight
+                              </div>
+                            )}
+                            <p className="whitespace-pre-wrap">{message.content}</p>
+                          </div>
                         </div>
                       </div>
+                    )
+                  })
+                )}
+                {displayTypingUsers.length > 0 && (
+                  <div className="flex items-center gap-2 ml-1 text-xs text-gray-400 animate-pulse px-4">
+                    <div className="flex gap-0.5">
+                      <div className="w-1.5 h-1.5 bg-gray-400 rounded-full animate-bounce" style={{ animationDelay: '0s' }} />
+                      <div className="w-1.5 h-1.5 bg-gray-400 rounded-full animate-bounce" style={{ animationDelay: '0.15s' }} />
+                      <div className="w-1.5 h-1.5 bg-gray-400 rounded-full animate-bounce" style={{ animationDelay: '0.3s' }} />
                     </div>
-                  ))
+                    {displayTypingUsers.length} typing...
+                  </div>
                 )}
                 <div ref={messagesEndRef} />
               </div>
             </ScrollArea>
 
-            {/* Typing Indicator */}
-            {displayTypingUsers.length > 0 && (
-              <div className="px-4 py-2 border-t border-gray-100 bg-gray-50">
-                <div className="flex items-center space-x-2">
-                  <div className="flex space-x-1">
-                    <div className="w-2 h-2 bg-gray-400 rounded-full animate-bounce"></div>
-                    <div className="w-2 h-2 bg-gray-400 rounded-full animate-bounce" style={{ animationDelay: '0.1s' }}></div>
-                    <div className="w-2 h-2 bg-gray-400 rounded-full animate-bounce" style={{ animationDelay: '0.2s' }}></div>
-                  </div>
-                  <span className="text-xs text-gray-600">
-                    {displayTypingUsers.length === 1 
-                      ? `${displayTypingUsers[0]} is typing...`
-                      : `${displayTypingUsers.join(', ')} are typing...`
-                    }
-                  </span>
-                </div>
-              </div>
-            )}
-
             {/* Chat Input */}
-            <div className="p-4 border-t border-gray-100">
-              <div className="flex space-x-2">
+            <div className="p-4 bg-white/50 backdrop-blur-md border-t border-gray-100 flex flex-col gap-2">
+              <div className="flex items-center gap-2 bg-white rounded-xl shadow-sm border border-gray-200 p-1.5 focus-within:ring-2 focus-within:ring-blue-100 transition-all">
                 <Input
                   ref={chatInputRef}
                   value={newMessage}
-                  onChange={(e) => {
-                    setNewMessage(e.target.value)
-                    // Send typing indicator
-                    if (e.target.value.length > 0) {
-                      fetch('/api/socket', {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({
-                          action: 'typing-start',
-                          documentId,
-                          userId: currentUser.id,
-                          userName: currentUser.name
-                        })
-                      })
-                    } else {
-                      fetch('/api/socket', {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({
-                          action: 'typing-stop',
-                          documentId,
-                          userId: currentUser.id,
-                          userName: currentUser.name
-                        })
-                      })
-                    }
-                  }}
-                  onBlur={() => {
-                    // Stop typing indicator when input loses focus
-                    fetch('/api/socket', {
-                      method: 'POST',
-                      headers: { 'Content-Type': 'application/json' },
-                      body: JSON.stringify({
-                        action: 'typing-stop',
-                        documentId,
-                        userId: currentUser.id,
-                        userName: currentUser.name
-                      })
-                    })
-                  }}
-                  placeholder="Type a message..."
-                  className="flex-1 border-gray-200 focus:border-blue-500 focus:ring-blue-500"
-                  onKeyPress={(e) => e.key === 'Enter' && !e.shiftKey && sendMessage()}
+                  onChange={(e) => setNewMessage(e.target.value)}
+                  onKeyDown={(e) => handleKeyPress(e, 'chat')}
+                  placeholder={`Type @AI to ask the facilitator...`}
+                  className="border-0 focus-visible:ring-0 shadow-none bg-transparent h-9 text-sm"
                   disabled={isSending}
                 />
-                <Button 
-                  onClick={sendMessage} 
-                  size="sm"
-                  className="bg-blue-600 hover:bg-blue-700 text-white px-3"
-                  disabled={!newMessage.trim() || isSending}
-                >
-                  {isSending ? (
-                    <div className="animate-spin rounded-full h-4 w-4 border-2 border-white border-t-transparent" />
-                  ) : (
-                    <Send className="h-4 w-4" />
-                  )}
-                </Button>
+                <div className="flex items-center gap-1 pr-1">
+                  <Button
+                    size="icon"
+                    variant="ghost"
+                    className="h-8 w-8 rounded-lg text-purple-500 hover:text-purple-600 hover:bg-purple-50"
+                    title="Ask AI Facilitator"
+                    onClick={() => {
+                      setNewMessage('@AI ' + newMessage)
+                      chatInputRef.current?.focus()
+                    }}
+                  >
+                    <Sparkles className="h-4 w-4" />
+                  </Button>
+                  <Button
+                    size="icon"
+                    className={cn("h-8 w-8 rounded-lg transition-all", newMessage.trim() ? "bg-blue-600 hover:bg-blue-700" : "bg-gray-200 text-gray-400")}
+                    onClick={() => sendMessage(false)}
+                    disabled={!newMessage.trim() || isSending}
+                  >
+                    <Send className="h-3.5 w-3.5" />
+                  </Button>
+                </div>
               </div>
+              <p className="text-[10px] text-center text-gray-400">
+                AI Facilitator is active. Tag <strong className="text-purple-500">@AI</strong> for help.
+              </p>
             </div>
           </>
         )}
 
         {activeTab === 'ai' && (
-          <div className="flex-1 flex flex-col">
-            {/* AI Help Content */}
-            <div className="p-4">
-              <div className="bg-purple-50 rounded-lg p-4 mb-4">
-                <div className="flex items-center mb-2">
-                  <Brain className="h-5 w-5 text-purple-600 mr-2" />
-                  <h3 className="font-medium text-purple-900">AI Research Assistant</h3>
-                </div>
-                <p className="text-sm text-purple-700">
-                  Ask questions about this document and get instant, AI-powered insights.
-                </p>
+          <div className="flex-1 flex flex-col p-6">
+            <div className="flex-1 flex flex-col items-center justify-center text-center space-y-4">
+              <div className="w-20 h-20 bg-gradient-to-tr from-purple-500 to-indigo-500 rounded-3xl flex items-center justify-center shadow-lg shadow-purple-500/20 mb-4">
+                <Brain className="h-10 w-10 text-white" />
               </div>
+              <h3 className="text-lg font-bold text-gray-900">Research Facilitator</h3>
+              <p className="text-sm text-gray-500 max-w-[260px]">
+                I can explain complex concepts, summarize findings, and help you connect with the right topic.
+              </p>
 
-              <div className="space-y-3">
-                <Input
-                  ref={aiInputRef}
-                  value={aiQuestion}
-                  onChange={(e) => setAiQuestion(e.target.value)}
-                  placeholder="Ask about this document..."
-                  className="border-gray-200 focus:border-purple-500 focus:ring-purple-500"
-                  onKeyPress={(e) => e.key === 'Enter' && askAI()}
-                />
-                <Button 
-                  onClick={askAI} 
-                  disabled={!aiQuestion.trim() || isLoading}
-                  className="w-full bg-purple-600 hover:bg-purple-700 text-white"
-                >
-                  {isLoading ? (
-                    <>
-                      <div className="animate-spin rounded-full h-4 w-4 border-2 border-white border-t-transparent mr-2" />
-                      Thinking...
-                    </>
-                  ) : (
-                    <>
-                      <Brain className="h-4 w-4 mr-2" />
-                      Ask AI
-                    </>
-                  )}
-                </Button>
-              </div>
-            </div>
-
-            {/* AI Suggestions */}
-            <div className="px-4 pb-4">
-              <h4 className="text-sm font-medium text-gray-900 mb-3">Quick Questions</h4>
-              <div className="space-y-2">
+              <div className="grid grid-cols-1 gap-2 w-full mt-6">
                 {[
-                  "Summarize this document",
-                  "What are the key findings?",
-                  "Explain the methodology",
-                  "What are the main conclusions?"
-                ].map((suggestion, index) => (
+                  "Explain this section deeply",
+                  "What is the main contribution?",
+                  "Connect this to related work",
+                  "Summarize for a novice"
+                ].map((q, i) => (
                   <Button
-                    key={index}
+                    key={i}
                     variant="outline"
-                    size="sm"
-                    className="w-full justify-start text-left h-auto py-2 px-3 text-sm text-gray-700 border-gray-200 hover:bg-purple-50 hover:border-purple-300"
-                    onClick={() => setAiQuestion(suggestion)}
+                    className="w-full justify-start text-xs h-9 bg-white hover:bg-purple-50 hover:text-purple-700 border-gray-200"
+                    onClick={() => {
+                      setAiQuestion(q)
+                      // Switch to chat and send as AI request
+                      setActiveTab('chat')
+                      sendMessage(true)
+                    }}
                   >
-                    <MessageCircleQuestion className="h-4 w-4 mr-2 flex-shrink-0" />
-                    <span className="truncate">{suggestion}</span>
+                    <MessageCircleQuestion className="mr-2 h-3.5 w-3.5 opacity-60" />
+                    {q}
                   </Button>
                 ))}
               </div>
@@ -584,44 +492,34 @@ export default function ChatSidebar({ documentId, currentUser, isOpen, onClose, 
         )}
 
         {activeTab === 'help' && (
-          <div className="flex-1 p-4">
-            <div className="bg-orange-50 rounded-lg p-4 mb-4">
-              <div className="flex items-center mb-2">
-                <HelpCircle className="h-5 w-5 text-orange-600 mr-2" />
-                <h3 className="font-medium text-orange-900">Need Help?</h3>
+          <div className="flex-1 p-6">
+            <div className="flex items-center gap-3 mb-6">
+              <div className="p-3 bg-orange-100 rounded-xl text-orange-600">
+                <Lightbulb className="h-6 w-6" />
               </div>
-              <p className="text-sm text-orange-700">
-                Mark sections where you're stuck and get help from the community.
-              </p>
+              <div>
+                <h3 className="font-bold text-gray-900">Help Requests</h3>
+                <p className="text-xs text-gray-500">Stuck? See where others need help.</p>
+              </div>
             </div>
 
             {stuckRequests.length === 0 ? (
-              <div className="text-center py-8">
-                <div className="w-12 h-12 bg-orange-100 rounded-full flex items-center justify-center mx-auto mb-3">
-                  <Lightbulb className="h-6 w-6 text-orange-500" />
-                </div>
-                <p className="text-sm text-gray-600 font-medium">No help requests yet</p>
-                <p className="text-xs text-gray-500 mt-1">Use the "Stuck Here" tool to mark difficult sections</p>
+              <div className="text-center py-10 bg-gray-50 rounded-2xl border border-gray-100 border-dashed">
+                <p className="text-sm text-gray-500 font-medium">No open help requests</p>
+                <p className="text-xs text-gray-400 mt-1">You're doing great availability!</p>
               </div>
             ) : (
               <div className="space-y-3">
-                {stuckRequests.map((request, index) => (
-                  <Card key={index} className="border-orange-200">
+                {stuckRequests.map((req, i) => (
+                  <Card key={i} className="border-l-4 border-l-orange-500 shadow-sm overflow-hidden">
                     <CardContent className="p-3">
-                      <div className="flex items-start space-x-2">
-                        <AlertCircle className="h-4 w-4 text-orange-500 mt-0.5 flex-shrink-0" />
-                        <div className="flex-1">
-                          <p className="text-sm text-gray-700">{request.description}</p>
-                          <div className="flex items-center space-x-2 mt-2">
-                            <Badge variant="outline" className="text-xs">
-                              Page {request.page}
-                            </Badge>
-                            <span className="text-xs text-gray-500">
-                              {formatTime(request.timestamp)}
-                            </span>
-                          </div>
-                        </div>
+                      <div className="flex justify-between items-start mb-1">
+                        <Badge variant="outline" className="bg-orange-50 text-orange-700 border-orange-200 text-[10px] px-1.5">
+                          Page {req.page}
+                        </Badge>
+                        <span className="text-[10px] text-gray-400">{formatTime(req.timestamp)}</span>
                       </div>
+                      <p className="text-sm font-medium text-gray-800 line-clamp-2">{req.description}</p>
                     </CardContent>
                   </Card>
                 ))}
@@ -632,4 +530,4 @@ export default function ChatSidebar({ documentId, currentUser, isOpen, onClose, 
       </div>
     </div>
   )
-} 
+}

@@ -8,6 +8,8 @@ import { agent4_annotationsAnalysis } from './Agent4_AnnotationsAnalysis'
 import { agent5_storyboardCurator } from './Agent5_StoryboardCurator'
 import { agent6_contentComprehension } from './Agent6_ContentComprehension'
 import { agent7_implicitAssistance } from './Agent7_ImplicitAssistance'
+import { agent8_factChecking } from './Agent8_FactChecking'
+import { agent9_relatedWorkAnalysis } from './Agent9_RelatedWorkAnalysis'
 import { interactionCollector } from '../interactionCollector'
 import { interactionAnalyzer } from '../interactionAnalyzer'
 
@@ -65,6 +67,8 @@ class AICoordinationCoreService {
     agent4_annotationsAnalysis.activate()
     agent6_contentComprehension.activate()
     agent7_implicitAssistance.activate()
+    agent8_factChecking.activate()
+    agent9_relatedWorkAnalysis.activate()
 
     this.isInitialized = true
     console.log('✅ [AI Coordination Core] System initialized')
@@ -82,6 +86,8 @@ class AICoordinationCoreService {
     agent5_storyboardCurator.deactivate()
     agent6_contentComprehension.deactivate()
     agent7_implicitAssistance.deactivate()
+    agent8_factChecking.deactivate()
+    agent9_relatedWorkAnalysis.deactivate()
 
     this.isInitialized = false
     console.log('✅ [AI Coordination Core] System shut down')
@@ -122,6 +128,16 @@ class AICoordinationCoreService {
       case 'analysis-requested':
         // Activate all agents for comprehensive analysis
         this.runComprehensiveAnalysis()
+        break
+
+      case 'fixation-detected':
+        // Agent 1: Analyze specific fixation (Semantic Dwell?)
+        this.activateAgent('agent1', 'analyze-fixation', data)
+
+        // Agent 8: If text is long, verify if it's a claim
+        if (data.text && data.text.length > 20) {
+          this.activateAgent('agent8', 'verify-content', data)
+        }
         break
     }
   }
@@ -381,63 +397,100 @@ class AICoordinationCoreService {
       agents.push('Agent 4: Annotations Analysis')
     }
 
+
     if (agent7_implicitAssistance.getStatus().active) {
       agents.push('Agent 7: Implicit Assistance')
+    }
+
+    if (agent8_factChecking.getStatus().active) {
+      agents.push('Agent 8: Fact Checking')
+    }
+
+    if (agent9_relatedWorkAnalysis.getStatus().active) {
+      agents.push('Agent 9: Related Work Analysis')
     }
 
     return agents
   }
 
   getAgentActivities(): AgentActivity[] {
+    const session = interactionCollector.getCurrentSession()
+    const now = Date.now()
+
+    // Default: Check if session is active (user did something in last 30s)
+    const isSessionActive = session ? (now - session.lastActiveTime < 30000) : false
+
+    // Check specific recent events (last 5s)
+    const recentHighlight = session?.highlights.slice().reverse().find(h => now - h.timestamp < 5000)
+    const recentAnnotation = session?.annotations.slice().reverse().find(a => now - a.timestamp < 5000)
+    const recentPageVisit = session?.pageVisits.slice().reverse().find(p => p.endTime ? (now - p.endTime < 5000) : (now - p.startTime < 5000))
+
+    // Helper to determine status
+    const getStatus = (isActive: boolean): 'active' | 'idle' => isActive ? 'active' : 'idle'
+
     return [
       {
         agentId: 'agent-1',
         agentName: 'Understanding Detection',
-        lastActivity: 'Monitoring understanding levels',
-        timestamp: Date.now(),
-        status: agent1_understandingDetection.getStatus().active ? 'active' : 'idle'
+        lastActivity: isSessionActive ? 'Tracking eye movement & hesitation' : 'Waiting for user activity',
+        timestamp: now,
+        status: getStatus(isSessionActive)
       },
       {
         agentId: 'agent-2',
         agentName: 'Collaboration Orchestrator',
-        lastActivity: 'Matching peers for collaboration',
-        timestamp: Date.now(),
-        status: agent2_collaborationOrchestrator.getStatus().active ? 'active' : 'idle'
+        lastActivity: recentAnnotation ? 'Syncing annotation with peers' : 'Monitoring peer availability',
+        timestamp: now,
+        status: getStatus(!!recentAnnotation)
       },
       {
         agentId: 'agent-3',
         agentName: 'Discussion Facilitator',
-        lastActivity: 'Managing conversations',
-        timestamp: Date.now(),
-        status: agent3_discussionFacilitator.getStatus().active ? 'active' : 'idle'
+        lastActivity: recentAnnotation ? 'Analyzing comment for discussion' : 'Idle',
+        timestamp: now,
+        status: getStatus(!!recentAnnotation)
       },
       {
         agentId: 'agent-4',
         agentName: 'Annotations Analysis',
-        lastActivity: 'Analyzing highlight patterns',
-        timestamp: Date.now(),
-        status: agent4_annotationsAnalysis.getStatus().active ? 'active' : 'idle'
+        lastActivity: recentHighlight ? `Analyzing highlight: "${recentHighlight.reason}"` : 'Scanning for new highlights',
+        timestamp: recentHighlight ? recentHighlight.timestamp : now,
+        status: getStatus(!!recentHighlight)
       },
       {
         agentId: 'agent-5',
         agentName: 'Storyboard Curator',
-        lastActivity: 'Logging reading journey',
-        timestamp: Date.now(),
-        status: agent5_storyboardCurator.getStatus().active ? 'active' : 'idle'
+        lastActivity: recentPageVisit ? 'Logging reading journey step' : 'Tracking session progress',
+        timestamp: now,
+        status: getStatus(!!recentPageVisit || isSessionActive)
       },
       {
         agentId: 'agent-6',
         agentName: 'Content Comprehension',
-        lastActivity: 'Preparing explanations',
-        timestamp: Date.now(),
-        status: agent6_contentComprehension.getStatus().active ? 'active' : 'idle'
+        lastActivity: recentPageVisit ? 'Parsing new page content' : 'Structuring current section',
+        timestamp: now,
+        status: getStatus(!!recentPageVisit)
       },
       {
         agentId: 'agent-7',
         agentName: 'Implicit Assistance',
-        lastActivity: 'Generating notifications',
-        timestamp: Date.now(),
-        status: agent7_implicitAssistance.getStatus().active ? 'active' : 'idle'
+        lastActivity: 'Monitoring for struggle patterns',
+        timestamp: now,
+        status: getStatus(isSessionActive)
+      },
+      {
+        agentId: 'agent-8',
+        agentName: 'Fact Checking',
+        lastActivity: recentHighlight?.reason === 'confusion' ? 'Verifying selected claim' : 'Standing by for facts',
+        timestamp: now,
+        status: getStatus(recentHighlight?.reason === 'confusion')
+      },
+      {
+        agentId: 'agent-9',
+        agentName: 'Related Work Analysis',
+        lastActivity: recentHighlight ? 'Searching related papers for context' : 'Scanning citations',
+        timestamp: now,
+        status: getStatus(!!recentHighlight)
       }
     ]
   }

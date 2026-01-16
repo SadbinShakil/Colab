@@ -33,6 +33,8 @@ import { agent5_storyboardCurator } from '@/lib/agents/Agent5_StoryboardCurator'
 import { agent7_implicitAssistance } from '@/lib/agents/Agent7_ImplicitAssistance'
 
 import InteractionAnalysisDashboard from '@/components/InteractionAnalysisDashboard'
+import { SystemFlowVisualizer } from '@/components/SystemFlowVisualizer'
+import ChatSidebar from './ChatSidebar'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
@@ -505,6 +507,52 @@ export default function ApryseWebViewer({
   const [showWikiPanel, setShowWikiPanel] = useState(true)
 
 
+
+
+  // --------------------------------------------------------------------------
+  // EYE TRACKING INTEGRATION (The Real-Time Bridge)
+  // --------------------------------------------------------------------------
+
+  // Use a Ref to access latest sections inside the closure-bound callback
+  const pdfSectionsRef = useRef<PDFSection[]>([])
+  useEffect(() => {
+    pdfSectionsRef.current = pdfSections
+  }, [pdfSections])
+
+  // Initialize Listener Once
+  useEffect(() => {
+    console.log('👁️ [ApryseWebViewer] Setting up Eye Tracking Listener')
+
+    eyeTracker.setFixationListener((text, x, y, page) => {
+      console.log(`👁️ Fixation Received on Page ${page}: "${text.substring(0, 20)}..."`)
+
+      // 1. Map to Section
+      const section = pdfSectionsRef.current.find(s => page >= s.startPage && page <= s.endPage) || pdfSectionsRef.current[0]
+      const sectionId = section?.heading.id || `page-${page}`
+
+      // 2. Feed Data to Collector (Driving Agent 1)
+      interactionCollector.trackFixation(sectionId)
+
+      // 3. Route to AI Core (Driving Agent 7)
+      aiCoordinationCore.routeUserAction('fixation-detected', {
+        sectionId,
+        sectionName: section?.heading.text || 'Unknown Section',
+        text,
+        page,
+        timestamp: Date.now()
+      })
+
+      // 4. Immediate Visual Feedback (Since we don't have popups yet)
+      toast("Fixation Detected", {
+        description: `Agent 1 analyzing attention on "${section?.heading.text || 'Section'}"`,
+        duration: 2000
+      })
+    })
+
+    return () => {
+      // Cleanup if needed
+    }
+  }, [])
 
 
   // Highlight assigned sections in the PDF
@@ -5749,12 +5797,10 @@ ${documentContent}
         }}
       />
 
-
-
-
       {/* Collective Wiki Panel (Floating Left) */}
+      {/* Collective Wiki Panel (Sidebar Overlay) */}
       {showWikiPanel && (
-        <div className="fixed left-4 bottom-20 z-[9000] h-[500px] shadow-2xl animate-in slide-in-from-left-10 fade-in duration-300">
+        <div className="fixed right-0 top-0 h-full z-[50] shadow-2xl animate-in slide-in-from-right-10 fade-in duration-300">
           <CollectiveWikiPanel
             entries={wikiEntries}
             insights={wikiInsights}
@@ -5774,15 +5820,32 @@ ${documentContent}
                 likes: i.likes + 1
               } : i))
             }}
+            onClose={() => setShowWikiPanel(false)}
           />
-          {/* Close/Minimize Button */}
-          <button
-            onClick={() => setShowWikiPanel(false)}
-            className="absolute -top-3 -right-3 bg-slate-800 text-white rounded-full p-1 shadow-md hover:bg-slate-700"
-          >
-            <X className="w-4 h-4" />
-          </button>
         </div>
+      )}
+
+      {/* Floating Trigger when Closed */}
+      {!showWikiPanel && (
+        <button
+          onClick={() => setShowWikiPanel(true)}
+          className="fixed right-6 bottom-6 z-[60] bg-indigo-600 text-white p-3.5 rounded-full shadow-xl hover:bg-indigo-700 transition-all hover:scale-105 group flex flex-row-reverse items-center gap-0 overflow-hidden"
+          title="Open Collective Memory"
+        >
+          <Book className="w-5 h-5 flex-shrink-0" />
+          <span className="max-w-0 opacity-0 group-hover:max-w-[140px] group-hover:opacity-100 group-hover:mr-2 transition-all duration-300 ease-in-out whitespace-nowrap text-sm font-semibold">
+            Collective Memory
+          </span>
+          {/* Notification Badge */}
+          {(wikiEntries.length + wikiInsights.length) > 0 && (
+            <span className="absolute -top-1 -right-1 flex h-3.5 w-3.5">
+              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-pink-400 opacity-75"></span>
+              <span className="relative inline-flex rounded-full h-3.5 w-3.5 bg-pink-500 border border-white text-[8px] text-white items-center justify-center font-bold shadow-sm">
+                {wikiEntries.length + wikiInsights.length}
+              </span>
+            </span>
+          )}
+        </button>
       )}
 
       {/* PDF Viewer Container */}
@@ -6525,90 +6588,35 @@ ${documentContent}
 
 
         {/* Peer Chat Modal */}
+        {/* Peer Chat Modal */}
         {peerChatOpen && peerChatData && (
-          <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-            <div className="bg-white rounded-lg shadow-xl w-[500px] h-[600px] flex flex-col">
-              {/* Header */}
-              <div className="flex items-center justify-between p-4 border-b">
-                <h3 className="font-semibold text-lg">
-                  💬 Chat with {peerChatData.peerName}
-                </h3>
-                <button
-                  onClick={() => setPeerChatOpen(false)}
-                  className="text-gray-500 hover:text-gray-700"
-                >
-                  ✕
-                </button>
-              </div>
-
-              {/* Messages Area */}
-              <div className="flex-1 p-4 overflow-y-auto bg-gray-50 flex flex-col-reverse">
-                <div className="space-y-3">
-                  {peerChatMessages
-                    .filter(msg => {
-                      // Show messages between me and this specific peer
-                      // (Wait, some messages might be from user to me)
-                      return (msg.fromUserId === String(userId) && msg.toUserId === peerChatData.peerId) ||
-                        (msg.fromUserId === peerChatData.peerId && msg.toUserId === String(userId))
-                    })
-                    .map((msg, idx) => (
-                      <div key={idx} className={`flex ${msg.fromUserId === String(userId) ? 'justify-end' : 'justify-start'}`}>
-                        <div className={`max-w-[80%] rounded-lg p-3 ${msg.fromUserId === String(userId)
-                          ? 'bg-blue-600 text-white'
-                          : 'bg-white border border-gray-200 text-gray-800'
-                          }`}>
-                          <p className="text-xs font-semibold mb-1 opacity-70">
-                            {msg.fromUserName} • {new Date(msg.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-                          </p>
-                          <p className="text-sm">{msg.message}</p>
-                        </div>
-                      </div>
-                    ))}
-
-                  {peerChatMessages.length === 0 && (
-                    <div className="text-center text-sm text-gray-400 mt-8">
-                      Start the conversation by typing below
-                    </div>
-                  )}
-                </div>
-              </div>
-
-              {/* Input Area */}
-              <div className="p-4 border-t">
-                <div className="flex gap-2">
-                  <input
-                    type="text"
-                    placeholder="Type your message..."
-                    className="flex-1 px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-                    onKeyPress={(e) => {
-                      if (e.key === 'Enter') {
-                        const input = e.currentTarget
-                        const message = input.value.trim()
-                        if (message) {
-                          handlePeerChatMessageSend(message)
-                          input.value = ''
-                        }
-                      }
-                    }}
-                  />
-                  <button
-                    onClick={(e) => {
-                      const input = (e.currentTarget.previousElementSibling as HTMLInputElement)
-                      const message = input.value.trim()
-                      if (message) {
-                        handlePeerChatMessageSend(message)
-                        input.value = ''
-                      }
-                    }}
-                    className="px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition"
-                  >
-                    Send
-                  </button>
-                </div>
-              </div>
+          <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-[100]">
+            <div className="w-[450px] h-[650px] rounded-2xl overflow-hidden shadow-2xl ring-1 ring-white/20">
+              <ChatSidebar
+                documentId={documentId}
+                currentUser={{ id: userId, name: userName, color: '#3b82f6' }}
+                isOpen={true}
+                onClose={() => setPeerChatOpen(false)}
+                topic={`Chat with ${peerChatData.peerName}`}
+                collaboration={{
+                  chatMessages: peerChatMessages.map(msg => ({
+                    id: String(msg.timestamp),
+                    documentId: msg.documentId,
+                    userId: msg.fromUserId,
+                    userName: msg.fromUserName,
+                    content: msg.message,
+                    type: 'TEXT',
+                    timestamp: new Date(msg.timestamp).toISOString()
+                  })),
+                  typingUsers: [],
+                  activeUsers: [peerChatData.peerName]
+                }}
+                onSendMessage={handlePeerChatMessageSend}
+              />
             </div>
           </div>
         )}
+        <SystemFlowVisualizer />
       </div>
 
     </div>
