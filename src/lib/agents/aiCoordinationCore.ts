@@ -176,7 +176,8 @@ class AICoordinationCoreService {
         })
 
         // Step 1.5: Trigger IMPLICIT PULSE (no toast, just UI glow)
-        if (data.severity === 'high') {
+        // COMMENTED OUT TO PREVENT OVERLAP
+        /* if (data.severity === 'high') {
           agent7_implicitAssistance.generateNotification({
             type: 'pulse',
             title: 'Implicit Pulse',
@@ -189,7 +190,7 @@ class AICoordinationCoreService {
               action: 'glow-section'
             }
           })
-        }
+        } */
 
         // Step 2: Find peers who can help
         const session = interactionCollector.getCurrentSession()

@@ -28,9 +28,16 @@ export interface InsightEntry {
     timestamp: number
 }
 
+export interface Activity {
+    event: string
+    agent: string
+    timestamp: number
+}
+
 interface CollectiveWikiPanelProps {
     entries: WikiEntry[]
     insights: InsightEntry[]
+    activities?: Activity[] // Optional for now
     onVerifyEntry: (entryId: string) => void
     onLikeInsight: (insightId: string) => void
     onClose?: () => void
@@ -39,6 +46,7 @@ interface CollectiveWikiPanelProps {
 export default function CollectiveWikiPanel({
     entries,
     insights,
+    activities = [],
     onVerifyEntry,
     onLikeInsight,
     onClose
@@ -74,23 +82,32 @@ export default function CollectiveWikiPanel({
             {/* Tabs */}
             <Tabs defaultValue="definitions" className="flex-1 flex flex-col overflow-hidden">
                 <div className="px-3 pt-3 pb-2">
-                    <TabsList className="w-full grid grid-cols-2 bg-slate-100/50 p-1 rounded-xl">
+                    <TabsList className="w-full grid grid-cols-3 bg-slate-100/50 p-1 rounded-xl">
                         <TabsTrigger
                             value="definitions"
-                            className="text-xs font-medium data-[state=active]:bg-white data-[state=active]:text-indigo-600 data-[state=active]:shadow-sm rounded-lg transition-all"
+                            className="text-[10px] font-medium data-[state=active]:bg-white data-[state=active]:text-indigo-600 data-[state=active]:shadow-sm rounded-lg transition-all"
                         >
-                            Definitions
-                            <span className={`ml-1.5 px-1.5 py-0.5 rounded-full text-[10px] transition-colors ${entries.length > 0 ? 'bg-indigo-100 text-indigo-700' : 'bg-slate-200/50 text-slate-500'}`}>
+                            Defs
+                            <span className={`ml-1 px-1 py-0.5 rounded-full text-[9px] transition-colors ${entries.length > 0 ? 'bg-indigo-100 text-indigo-700' : 'bg-slate-200/50 text-slate-500'}`}>
                                 {entries.length}
                             </span>
                         </TabsTrigger>
                         <TabsTrigger
                             value="insights"
-                            className="text-xs font-medium data-[state=active]:bg-white data-[state=active]:text-orange-600 data-[state=active]:shadow-sm rounded-lg transition-all"
+                            className="text-[10px] font-medium data-[state=active]:bg-white data-[state=active]:text-orange-600 data-[state=active]:shadow-sm rounded-lg transition-all"
                         >
                             Insights
-                            <span className={`ml-1.5 px-1.5 py-0.5 rounded-full text-[10px] transition-colors ${insights.length > 0 ? 'bg-orange-100 text-orange-700' : 'bg-slate-200/50 text-slate-500'}`}>
+                            <span className={`ml-1 px-1 py-0.5 rounded-full text-[9px] transition-colors ${insights.length > 0 ? 'bg-orange-100 text-orange-700' : 'bg-slate-200/50 text-slate-500'}`}>
                                 {insights.length}
+                            </span>
+                        </TabsTrigger>
+                        <TabsTrigger
+                            value="activities"
+                            className="text-[10px] font-medium data-[state=active]:bg-white data-[state=active]:text-blue-600 data-[state=active]:shadow-sm rounded-lg transition-all"
+                        >
+                            Activity
+                            <span className={`ml-1 px-1 py-0.5 rounded-full text-[9px] transition-colors ${activities.length > 0 ? 'bg-blue-100 text-blue-700' : 'bg-slate-200/50 text-slate-500'}`}>
+                                {activities.length}
                             </span>
                         </TabsTrigger>
                     </TabsList>
@@ -207,6 +224,37 @@ export default function CollectiveWikiPanel({
                                         </div>
                                     </div>
                                 ))
+                            )}
+                        </div>
+                    </ScrollArea>
+                </TabsContent>
+
+                {/* NEW: Activities Tab */}
+                <TabsContent value="activities" className="flex-1 overflow-hidden mt-0">
+                    <ScrollArea className="h-full px-3 pb-4">
+                        <div className="space-y-4 pt-4 relative pl-2 border-l border-slate-200 ml-4">
+                            {activities?.map((activity, i) => (
+                                <div key={i} className="relative mb-6 last:mb-0">
+                                    <div className="absolute -left-[13px] top-1.5 w-2.5 h-2.5 rounded-full border-2 border-white bg-indigo-400 ring-2 ring-indigo-50" />
+                                    <div className="flex flex-col">
+                                        <div className="flex items-center gap-2 mb-1">
+                                            <span className="text-[10px] font-mono text-slate-400 bg-slate-50 px-1.5 rounded">
+                                                {new Date(activity.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })}
+                                            </span>
+                                            <span className="text-[10px] uppercase tracking-wider font-bold text-indigo-900/60">
+                                                {activity.agent}
+                                            </span>
+                                        </div>
+                                        <span className="text-xs font-medium text-slate-700 leading-snug">
+                                            {activity.event.replace(/-/g, ' ').replace(/\b\w/g, c => c.toUpperCase())}
+                                        </span>
+                                    </div>
+                                </div>
+                            ))}
+                            {(!activities || activities.length === 0) && (
+                                <div className="text-center text-slate-400 py-10 text-xs italic">
+                                    No monitored activities yet.
+                                </div>
                             )}
                         </div>
                     </ScrollArea>

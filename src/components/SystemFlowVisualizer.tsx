@@ -4,6 +4,7 @@ import React, { useEffect, useState } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { aiCoordinationCore, AgentActivity } from '@/lib/agents/aiCoordinationCore'
 import { toast } from 'sonner'
+import SessionReport from './SessionReport'
 
 // Icons for the nodes
 const Icons = {
@@ -33,14 +34,39 @@ const Icons = {
     )
 }
 
-export function SystemFlowVisualizer() {
+interface SystemFlowVisualizerProps {
+    summary?: any
+}
+
+export function SystemFlowVisualizer({ summary }: SystemFlowVisualizerProps) {
     const [agents, setAgents] = useState<AgentActivity[]>([])
     const [recentEvents, setRecentEvents] = useState<any[]>([])
     const [activeStage, setActiveStage] = useState(0) // 0: Init, 1: Reflection, 2: Assignment, 3: Execution
     const [isOpen, setIsOpen] = useState(false)
     const [hasOnboarded, setHasOnboarded] = useState(false)
+    const [showSummary, setShowSummary] = useState(false)
+    const [showReport, setShowReport] = useState(false)
 
-    // Polling for updates
+    // Helper to format summary content
+    const formatSummary = (data: any) => {
+        if (!data) return "Analyzing document content... Please wait while our AI extracts the key insights."
+        if (typeof data === 'string') return data
+
+        // It's an object, let's pretty print it
+        return Object.entries(data).map(([key, value]) => {
+            if (key === 'Note') return null // Skip internal notes
+            return (
+                <div key={key} className="mb-3">
+                    <span className="font-bold text-indigo-700 uppercase text-xs tracking-wider block mb-1">{key.replace(/([A-Z])/g, ' $1').trim()}</span>
+                    <span className="text-gray-700">{String(value)}</span>
+                </div>
+            )
+        })
+    }
+
+    const displaySummaryContent = formatSummary(summary)
+
+    // Polling for update
     useEffect(() => {
         const update = () => {
             const allAgents = aiCoordinationCore.getAgentActivities()
@@ -88,7 +114,7 @@ export function SystemFlowVisualizer() {
             })
 
             // Simulate reflection time
-            await new Promise(r => setTimeout(r, 6000))
+            await new Promise(r => setTimeout(r, 120000))
 
             // PHASE 2: ROLE ASSIGNMENT
             setActiveStage(2)
@@ -97,13 +123,12 @@ export function SystemFlowVisualizer() {
                 duration: 3000,
             })
             await new Promise(r => setTimeout(r, 1500))
-            toast.message('Step 2: Role Assignment', {
-                description: 'Assigning you the "Critical Reviewer" role to verify these findings.',
-                duration: 5000,
-            })
+
+            // NOTE: Toast removed in favor of floating dashboard
+            // toast.message('Step 2: Role Assignment', { ... })
 
             // Simulate assignment time
-            await new Promise(r => setTimeout(r, 4000))
+            await new Promise(r => setTimeout(r, 15000))
 
             // PHASE 3: PARALLEL EXECUTION
             setActiveStage(3)
@@ -183,6 +208,120 @@ export function SystemFlowVisualizer() {
 
     return (
         <>
+            {/* Session Report Modal */}
+            <SessionReport
+                isOpen={showReport}
+                onClose={() => setShowReport(false)}
+                summary={summary}
+            />
+
+            {/* ✅ ADVANCED REFLECTION & GUIDANCE DASHBOARD */}
+            <AnimatePresence>
+                {activeStage >= 1 && activeStage <= 3 && !hasOnboarded && (
+                    <motion.div
+                        initial={{ opacity: 0, y: 20, scale: 0.95 }}
+                        animate={{ opacity: 1, y: 0, scale: 1 }}
+                        exit={{ opacity: 0, y: 20, scale: 0.95 }}
+                        className="fixed bottom-14 left-1/2 -translate-x-1/2 z-[45] flex flex-col items-center gap-2 pointer-events-none"
+                    >
+                        {/* Main Glass Card */}
+                        <div className={`bg-white/80 backdrop-blur-md border shadow-2xl rounded-2xl p-4 flex items-center gap-6 pointer-events-auto ring-1 ring-black/5 max-w-2xl transition-colors duration-500
+                            ${activeStage === 3 ? 'border-green-200 bg-green-50/80' : 'border-white/50'}
+                        `}>
+
+                            {/* DYNAMIC ICON & TIMER */}
+                            <div className="relative w-12 h-12 flex-shrink-0 flex items-center justify-center">
+                                {/* PHASE 1 & 2: TIMER RINGS */}
+                                {activeStage < 3 && (
+                                    <>
+                                        <svg className="w-full h-full -rotate-90">
+                                            <circle className="text-gray-200" strokeWidth="3" stroke="currentColor" fill="transparent" r="22" cx="24" cy="24" />
+                                            <motion.circle
+                                                className={activeStage === 1 ? "text-indigo-600" : "text-purple-600"}
+                                                strokeWidth="3"
+                                                stroke="currentColor"
+                                                fill="transparent"
+                                                r="22" cx="24" cy="24"
+                                                initial={{ pathLength: 0 }}
+                                                animate={{ pathLength: 1 }}
+                                                transition={{ duration: activeStage === 1 ? 120 : 15, ease: "linear" }}
+                                            />
+                                        </svg>
+                                        <div className="absolute inset-0 flex items-center justify-center text-[10px] font-bold text-gray-600">
+                                            {activeStage === 1 ? '2m' : '15s'}
+                                        </div>
+                                    </>
+                                )}
+                                {/* PHASE 3: ACTIVE CHECK */}
+                                {activeStage === 3 && (
+                                    <div className="w-10 h-10 bg-green-500 rounded-full flex items-center justify-center text-white shadow-lg animate-pulse">
+                                        <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12" /></svg>
+                                    </div>
+                                )}
+                            </div>
+
+                            {/* DYNAMIC CONTENT */}
+                            <div className="flex flex-col">
+                                <h3 className="text-sm font-bold text-gray-800 flex items-center gap-2">
+                                    <span className={`w-2 h-2 rounded-full animate-pulse 
+                                        ${activeStage === 1 ? 'bg-indigo-500' : activeStage === 2 ? 'bg-purple-500' : 'bg-green-500'}
+                                    `} />
+                                    {activeStage === 1 && "Reflection Analysis"}
+                                    {activeStage === 2 && "Assigning Role"}
+                                    {activeStage === 3 && "System Online"}
+                                </h3>
+
+                                <AnimatePresence mode="wait">
+                                    <motion.p
+                                        key={activeStage}
+                                        initial={{ opacity: 0, y: 5 }}
+                                        animate={{ opacity: 1, y: 0 }}
+                                        exit={{ opacity: 0, y: -5 }}
+                                        className="text-xs text-gray-600 max-w-[320px] leading-relaxed"
+                                    >
+                                        {activeStage === 1 && "Please skim the abstract. We are analyzing reading patterns to assign an optimal role."}
+                                        {activeStage === 2 && (
+                                            <span>
+                                                Matching pattern to <b>Critical Reviewer</b> logic. Preparing agent swarm...
+                                            </span>
+                                        )}
+                                        {activeStage === 3 && "Deep reading agents are now active and monitoring for confusion."}
+                                    </motion.p>
+                                </AnimatePresence>
+                            </div>
+
+                            {/* Right: ACTION (Only for Phase 1 currently) */}
+                            {activeStage === 1 && (
+                                <>
+                                    <div className="h-8 w-[1px] bg-gray-300 mx-2" />
+                                    <button
+                                        onClick={() => setShowSummary(!showSummary)}
+                                        className={`px-4 py-2 rounded-lg text-xs font-semibold transition-all ${showSummary ? 'bg-indigo-100 text-indigo-700' : 'bg-gray-100 hover:bg-indigo-50 text-gray-700'}`}
+                                    >
+                                        {showSummary ? 'Hide' : 'Quick Summary'}
+                                    </button>
+                                </>
+                            )}
+                            {/* Phase 3 Dismiss */}
+                            {activeStage === 3 && (
+                                <>
+                                    <div className="h-8 w-[1px] bg-gray-300 mx-2" />
+                                    <button
+                                        onClick={() => setHasOnboarded(true)}
+                                        className="p-2 rounded-full hover:bg-green-100 text-green-700 transition-colors"
+                                    >
+                                        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
+                                    </button>
+                                </>
+                            )}
+                        </div>
+
+
+
+                    </motion.div>
+                )}
+            </AnimatePresence>
+
             {/* MINIMIZED STATUS BAR (Click to Open) */}
             <AnimatePresence>
                 {!isOpen && (
@@ -213,9 +352,48 @@ export function SystemFlowVisualizer() {
                             </div>
                         )}
 
-                        {/* Right: Expand Hint */}
-                        <div className="text-gray-500">
-                            <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="m18 15-6-6-6 6" /></svg>
+                        {/* Right: Expand Hint & Summary Toggle */}
+                        <div className="flex items-center gap-4">
+                            <button
+                                onClick={(e) => {
+                                    e.stopPropagation();
+                                    setShowSummary(!showSummary);
+                                }}
+                                className={`flex items-center gap-2 text-xs font-medium transition-colors ${showSummary ? 'text-indigo-400' : 'text-gray-400 hover:text-indigo-300'}`}
+                                title="Toggle AI Summary"
+                            >
+                                <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20" /><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z" /></svg>
+                                <span>Quick Summary</span>
+                            </button>
+                            <div className="h-4 w-[1px] bg-gray-700" />
+                            <div className="text-gray-500">
+                                <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="m18 15-6-6-6 6" /></svg>
+                            </div>
+                        </div>
+                    </motion.div>
+                )}
+            </AnimatePresence>
+
+            {/* ✅ PERSISTENT SUMMARY OVERLAY */}
+            <AnimatePresence>
+                {showSummary && (
+                    <motion.div
+                        initial={{ opacity: 0, scale: 0.95, y: 10 }}
+                        animate={{ opacity: 1, scale: 1, y: 0 }}
+                        exit={{ opacity: 0, scale: 0.95, y: 10 }}
+                        className="fixed bottom-20 left-1/2 -translate-x-1/2 z-[55] w-full max-w-xl bg-white/95 backdrop-blur-xl border border-gray-200 shadow-2xl rounded-xl p-6 pointer-events-auto overflow-hidden text-left"
+                    >
+                        <div className="flex items-center justify-between mb-4">
+                            <div className="flex items-center gap-2 text-xs font-bold text-indigo-600 uppercase tracking-widest">
+                                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" /></svg>
+                                AI Quick Summary
+                            </div>
+                            <button onClick={() => setShowSummary(false)} className="text-gray-400 hover:text-gray-600">
+                                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
+                            </button>
+                        </div>
+                        <div className="text-sm text-gray-700 leading-relaxed max-h-[60vh] overflow-y-auto pr-2 custom-scrollbar">
+                            {displaySummaryContent}
                         </div>
                     </motion.div>
                 )}
@@ -245,6 +423,15 @@ export function SystemFlowVisualizer() {
 
                             <div className="flex items-center gap-4">
                                 <div className="flex items-center gap-2 text-xs text-gray-400">
+                                    <button
+                                        onClick={(e) => {
+                                            e.stopPropagation();
+                                            setShowSummary(!showSummary);
+                                        }}
+                                        className={`mr-4 text-xs font-semibold px-2 py-1 rounded border transition-colors ${showSummary ? 'bg-indigo-50 border-indigo-200 text-indigo-600' : 'border-gray-200 hover:bg-gray-100 text-gray-600'}`}
+                                    >
+                                        📄 Quick Summary
+                                    </button>
                                     <span>{getPhaseInstruction()}</span>
                                 </div>
                                 <button
@@ -289,7 +476,7 @@ export function SystemFlowVisualizer() {
                                                         r="18" cx="20" cy="20"
                                                         initial={{ pathLength: 0 }}
                                                         animate={{ pathLength: 1 }}
-                                                        transition={{ duration: 6, ease: "linear" }}
+                                                        transition={{ duration: 120, ease: "linear" }}
                                                     />
                                                 </svg>
                                             </div>
@@ -310,7 +497,7 @@ export function SystemFlowVisualizer() {
                                             animate={{ opacity: 1 }}
                                             className="text-[10px] text-blue-500 font-medium pl-1 animate-pulse"
                                         >
-                                            ~6s remaining...
+                                            ~2m remaining...
                                         </motion.span>
                                     )}
                                 </div>

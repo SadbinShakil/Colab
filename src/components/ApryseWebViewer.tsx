@@ -98,7 +98,7 @@ import SmartPrerequisiteHelper from './SmartPrerequisiteHelper'
 import AIResearchPrerequisites from './AIResearchPrerequisites'
 import TextSelectionPopup from './TextSelectionPopup'
 import JourneyReplayPanel from './JourneyReplayPanel'
-import CollectiveWikiPanel, { WikiEntry, InsightEntry } from './CollectiveWikiPanel'
+import CollectiveWikiPanel, { WikiEntry, InsightEntry, Activity as WikiActivity } from './CollectiveWikiPanel'
 import { analyzeChatMessage } from '@/lib/chatAnalyzer'
 import { isMathematicalContent } from '../utils/contentDetector'
 
@@ -153,6 +153,7 @@ interface ApryseWebViewerProps {
   onPageChange?: (newPage: number) => void
   onScroll?: (page: number, scrollY: number) => void
   extractedText?: string // Add prop for extracted text from document page
+  summary?: any // Add prop for AI summary
 }
 
 interface Collaborator {
@@ -212,7 +213,8 @@ export default function ApryseWebViewer({
   onAnnotationAdd,
   onPageChange,
   onScroll,
-  extractedText
+  extractedText,
+  summary
 }: ApryseWebViewerProps) {
   const viewer = useRef<HTMLDivElement>(null)
   const webViewerRef = useRef<any>(null) // ✅ Ref to hold latest instance avoiding stale closures
@@ -286,6 +288,11 @@ export default function ApryseWebViewer({
   const [showPdfReplacePrompt, setShowPdfReplacePrompt] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [showCollaborationPanel, setShowCollaborationPanel] = useState(false)
+
+  // ✅ LOCAL DWELL REFS
+  const dwellTimerRef = useRef<NodeJS.Timeout | null>(null)
+  const lastHoveredSectionRef = useRef<string | null>(null)
+  const notifiedSectionsRef = useRef<Set<string>>(new Set()) // Track sections we've ALREADY bothered the user about
   const [showMathExplainer, setShowMathExplainer] = useState(false)
   const [selectedEquation, setSelectedEquation] = useState('')
   const [equationContext, setEquationContext] = useState('')
@@ -436,6 +443,21 @@ export default function ApryseWebViewer({
   const [showAIResearchPrerequisites, setShowAIResearchPrerequisites] = useState(false)
   const [showInteractionAnalysis, setShowInteractionAnalysis] = useState(false)
 
+  // Collective Memory State
+  const [wikiActivities, setWikiActivities] = useState<WikiActivity[]>([])
+
+  useEffect(() => {
+    const interval = setInterval(() => {
+      const recent = aiCoordinationCore.getRecentEvents(50).reverse().map(e => ({
+        event: e.event,
+        agent: e.agent,
+        timestamp: e.timestamp
+      }))
+      setWikiActivities(recent)
+    }, 3000)
+    return () => clearInterval(interval)
+  }, [])
+
 
   const [activeTab, setActiveTab] = useState('doc1')
   const [openTabs, setOpenTabs] = useState([
@@ -565,8 +587,25 @@ export default function ApryseWebViewer({
     // Agent 1 emits window events, but Core needs a direct routing call to trigger Agent 7
     const onStruggleDetected = (e: Event) => {
       const customEvent = e as CustomEvent
-      console.log('🌉 [ApryseWebViewer] Bridging struggle event to Core:', customEvent.detail)
-      aiCoordinationCore.routeAgentEvent('agent-1', 'struggle-detected', customEvent.detail)
+      const data = customEvent.detail
+
+      // ✅ DEDUPLICATION: Check if we already handled this section
+      if (data.sectionId && notifiedSectionsRef.current.has(data.sectionId)) {
+        // console.log(`🔕 [Bridge] Ignoring Agent 1 signal for ${data.sectionId} - already notified`)
+        return
+      }
+
+      // Mark as notified
+      if (data.sectionId) {
+        notifiedSectionsRef.current.add(data.sectionId)
+      }
+
+      // DEBUG: Verify Agent 1 is firing
+      console.log('🌉 [ApryseWebViewer] Bridging struggle event to Core:', data)
+
+      // toast.info("Spy: Agent 1 saw you!", { duration: 1000 }) (Debug disabled)
+
+      aiCoordinationCore.routeAgentEvent('agent-1', 'struggle-detected', data)
     }
 
     if (typeof window !== 'undefined') {
@@ -1306,8 +1345,8 @@ export default function ApryseWebViewer({
         console.log(`✅ [Event] ACCEPTED - Adding to notifications`)
 
         // ✅ VISIBLE FEEDBACK: Show Toast immediately
-        // This ensures the user SEES the notification immediately
-        toast(notification.title, {
+        // COMMENTED OUT to avoid duplication with SmartNotification component
+        /* toast(notification.title, {
           description: notification.message,
           duration: 8000,
           action: notification.actionButton ? {
@@ -1321,7 +1360,7 @@ export default function ApryseWebViewer({
               setDismissedNotifications(prev => new Set(prev).add(notification.id))
             }
           }
-        })
+        }) */
 
         setSmartNotifications(prev => {
           // Also check for duplicates in the current list
@@ -1762,30 +1801,56 @@ export default function ApryseWebViewer({
   const renderGhostLayer = useCallback(() => {
     if (!webViewerInstance || !ghostHighlights.length || !showGhostLayer) return
 
-    const { annotationManager, Annotations } = webViewerInstance.Core
+    const { annotationManager, Annotations, documentViewer } = webViewerInstance.Core
 
-    // Clear old ghost marks
-    const oldGhosts = annotationManager.getAnnotationsList().filter((a: any) => a.CustomData?.ghost === true)
-    annotationManager.deleteAnnotations(oldGhosts)
+    // Check if document is loaded before getting page count
+    if (!documentViewer.getDocument()) {
+      console.warn('[GhostLayer] Document not loaded yet, skipping render')
+      return
+    }
 
-    ghostHighlights.forEach(ghost => {
-      const rect = new Annotations.RectangleAnnotation({
-        PageNumber: ghost.page,
-        X: ghost.x,
-        Y: ghost.y,
-        Width: ghost.width,
-        Height: ghost.height,
-        StrokeThickness: 0,
-        FillColor: new Annotations.Color(255, 100, 0, 0.15), // Very faint orange
-        Opacity: 0.8,
+    const pageCount = documentViewer.getPageCount()
+
+    try {
+      // Clear old ghost marks
+      const oldGhosts = annotationManager.getAnnotationsList().filter((a: any) => a.CustomData?.ghost === true)
+      if (oldGhosts.length > 0) {
+        annotationManager.deleteAnnotations(oldGhosts)
+      }
+
+      const annotationsToAdd: any[] = []
+
+      ghostHighlights.forEach(ghost => {
+        // Validation: Ensure valid page index (1-based)
+        if (ghost.page < 1 || ghost.page > pageCount) {
+          console.warn(`[GhostLayer] Skipping invalid page index: ${ghost.page} (Total: ${pageCount})`)
+          return
+        }
+
+        const rect = new Annotations.RectangleAnnotation({
+          PageNumber: ghost.page,
+          X: ghost.x,
+          Y: ghost.y,
+          Width: ghost.width,
+          Height: ghost.height,
+          StrokeThickness: 0,
+          FillColor: new Annotations.Color(255, 100, 0, 0.15), // Very faint orange
+          Opacity: 0.8,
+        })
+        rect.setCustomData('ghost', true)
+        rect.NoDelete = true
+        rect.NoMove = true
+        annotationsToAdd.push(rect)
       })
-      rect.setCustomData('ghost', true)
-      rect.NoDelete = true
-      rect.NoMove = true
-      annotationManager.addAnnotation(rect)
-    })
 
-    annotationManager.drawAnnotationsFromList(annotationManager.getAnnotationsList())
+      if (annotationsToAdd.length > 0) {
+        annotationManager.addAnnotations(annotationsToAdd)
+        annotationManager.drawAnnotationsFromList(annotationsToAdd)
+      }
+
+    } catch (error) {
+      console.error("Error rendering ghost layer:", error)
+    }
   }, [webViewerInstance, ghostHighlights, showGhostLayer])
 
   useEffect(() => {
@@ -1864,6 +1929,8 @@ export default function ApryseWebViewer({
 
     initEyeTracking()
 
+
+
     // ✅ FALLBACK: Mouse Tracking as Pseudo-Eye-Tracking
     // If user has no eye tracker, we assume they are reading where their mouse is (or the center of screen)
     const handleMouseMove = (e: MouseEvent) => {
@@ -1873,16 +1940,9 @@ export default function ApryseWebViewer({
       const viewerRect = viewer.current?.getBoundingClientRect()
       if (!viewerRect) return
 
-      // VISUAL CONFIRMATION FOR USER (Remove later)
-      // toast.info("Tracking active...", { duration: 1000 })
-
       // Calculate relative position (0-1)
       const relY = (e.clientY - viewerRect.top) / viewerRect.height
 
-      // Simple mapping: Map visible page area to sections
-      // This is an approximation since Apryse handles internal scrolling
-      // Simple mapping: Map visible page area to sections
-      // This is an approximation since Apryse handles internal scrolling
       if (webViewerRef.current?.Core) {
         const docViewer = webViewerRef.current.Core.documentViewer
         const currentPage = docViewer.getCurrentPage()
@@ -1890,18 +1950,50 @@ export default function ApryseWebViewer({
         // Find section on this page
         // Just default to the first section on this page for now to ensure we get ANY signal
         const section = pdfSectionsRef.current.find(s => s.startPage === currentPage)
+        const currentSectionId = section ? section.heading.id : `page-${currentPage}`
 
-        if (section) {
-          // Trigger fixation on this section
-          interactionCollector.trackFixation(section.heading.id)
-        } else {
-          // Fallback if no sections are defined yet
-          interactionCollector.trackFixation(`page-${currentPage}`)
+        // Track fixations for the complex agents
+        interactionCollector.trackFixation(currentSectionId)
+
+        // ✅ LOCAL DWELL DETECTION (The "Mega Force" Check)
+        // If we stay on the same section for 3 seconds, manually trigger the help
+        if (lastHoveredSectionRef.current !== currentSectionId) {
+          // We moved to a new section! Reset timer.
+          if (dwellTimerRef.current) clearTimeout(dwellTimerRef.current)
+          lastHoveredSectionRef.current = currentSectionId
+
+          dwellTimerRef.current = setTimeout(() => {
+            // 3 Seconds have passed on this section!
+
+            // 🚫 PREVENT SHOWER: Check if we already notified for this section
+            if (notifiedSectionsRef.current.has(currentSectionId)) {
+              console.log(`🔕 [Local Dwell] Ignoring ${currentSectionId} - already notified`)
+              return
+            }
+
+            console.log(`⏱️ [Local Dwell] 3s Timer Hit for ${currentSectionId}`)
+
+            // Mark as notified so we don't shower the user
+            notifiedSectionsRef.current.add(currentSectionId)
+
+            // Trigger the flow manually to ensure it happens
+            aiCoordinationCore.routeAgentEvent('agent-1', 'struggle-detected', {
+              sectionId: currentSectionId,
+              severity: 'high',
+              confidence: 1.0,
+              timestamp: Date.now()
+            })
+
+            // Also fire the visible debug spy
+            // toast.info("Spy: Local Dwell Timer Hit!", { duration: 1000 })
+
+          }, 60000) // 1 Minute Threshold
         }
       }
     }
 
     // ✅ FORCE GLOBAL LISTENER: Catch mouse even over iframes/canvas
+    // console.log("[Setup] Adding global mouse listener")
     window.addEventListener('mousemove', handleMouseMove)
 
     return () => {
@@ -5935,6 +6027,7 @@ ${documentContent}
           <CollectiveWikiPanel
             entries={wikiEntries}
             insights={wikiInsights}
+            activities={wikiActivities}
             onVerifyEntry={(entryId) => {
               // Verify logic
               setWikiEntries(prev => prev.map(e => e.id === entryId ? {
@@ -6798,7 +6891,9 @@ ${documentContent}
             </div>
           </div>
         )}
-        <SystemFlowVisualizer />
+        <SystemFlowVisualizer
+          summary={summary}
+        />
       </div>
 
     </div>
