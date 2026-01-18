@@ -151,7 +151,7 @@ export default function SectionAssignmentPanel({
 
         const minutesAgo = (Date.now() - new Date(assignment.assignedAt).getTime()) / 60000
 
-        if (minutesAgo > 10 && minutesAgo < 11) {
+        if (minutesAgo > 30 && minutesAgo < 31) {
           const section = sections.find(s => s.heading.id === assignment.sectionId)
           toast.info(`Reminder: You have "${section?.heading.text}" assigned`, {
             duration: 5000

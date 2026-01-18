@@ -29,6 +29,7 @@ interface SmartHelpPanelProps {
   availablePeers: PeerInfo[]
   documentId: string
   sectionId?: string
+  sectionText?: string // ✅ ADDED: Capture full text content for context
   onSendInvitation?: (peerId: string, peerName: string) => void
 }
 
@@ -44,6 +45,7 @@ export default function SmartHelpPanel({
   availablePeers,
   documentId,
   sectionId,
+  sectionText,
   onSendInvitation
 }: SmartHelpPanelProps) {
   const [activeTab, setActiveTab] = useState<TabType>('ai')
@@ -62,9 +64,9 @@ export default function SmartHelpPanel({
   //     setPeerMessages([])
   //     setMessage('')
   //     setSelectedPeer(null)
-      
+
   //     const onlineProficientPeers = availablePeers.filter(p => p.status === 'online' && p.isProficient)
-      
+
   //     if (onlineProficientPeers.length > 0) {
   //       setActiveTab('peers')
   //       setSelectedPeer(onlineProficientPeers[0])
@@ -84,22 +86,22 @@ export default function SmartHelpPanel({
       setPeerMessages([])
       setMessage('')
       setSelectedPeer(null)
-      
+
       const onlineProficientPeers = availablePeers.filter(p => p.status === 'online' && p.isProficient)
-      
+
       if (onlineProficientPeers.length > 0) {
         setActiveTab('peers')
         setSelectedPeer(onlineProficientPeers[0])
       } else {
         setActiveTab('ai')
       }
-  
+
       // Generate initial AI greeting
       generateInitialAIGreeting()
-      
+
       setHasInitialized(true)
     }
-    
+
     // Reset initialization flag when panel closes
     if (!isOpen && hasInitialized) {
       setHasInitialized(false)
@@ -109,43 +111,43 @@ export default function SmartHelpPanel({
   const generateInitialAIGreeting = () => {
     if (confusedHighlights.length > 0) {
       const highlightTexts = confusedHighlights.map(h => `"${h.text.substring(0, 50)}..."`).join(', ')
-      
+
       setAiMessages([{
         role: 'ai',
-        content: `Hi! I see you're working on **${sectionName}** and marked ${confusedHighlights.length} section${confusedHighlights.length > 1 ? 's' : ''} as confusing.\n\nI'm here to help explain these concepts in simpler terms. What would you like to understand better?\n\nYou can ask me to:\n• Explain concepts in simpler terms\n• Provide examples\n• Visualize complex ideas\n• Answer specific questions about this section`
+        content: `Hi! I see you're working on **${sectionName}** and marked ${confusedHighlights.length} section${confusedHighlights.length > 1 ? 's' : ''} as confusing.\n\nI'm here to help explain these concepts in simpler terms. What would you like to understand better?`
       }])
     } else {
-      setAiMessages([{
-        role: 'ai',
-        content: `Hi! I'm here to help you understand **${sectionName}**.\n\nFeel free to ask me anything about this section. I can:\n• Explain concepts in simpler terms\n• Provide examples\n• Visualize complex ideas\n• Answer specific questions\n\nWhat would you like to know?`
-      }])
+      // ✅ Don't auto-send message when just section struggle is detected
+      // Instead, we'll let the user choose from the "Welcome Options" UI
+      setAiMessages([])
     }
   }
 
-  const handleSendAIMessage = async () => {
-    if (!message.trim() || isAiLoading) return
+  const handleQuickAction = async (text: string) => {
+    // Directly send message without setting input state
+    await sendAIMessage(text)
+  }
 
-    const userMessage = message
-    setMessage('')
-    
-    // Add user message immediately for better UX
-    setAiMessages(prev => [...prev, { role: 'user', content: userMessage }])
+  const sendAIMessage = async (textToSend: string) => {
+    if (!textToSend.trim() || isAiLoading) return
+
+    setAiMessages(prev => [...prev, { role: 'user', content: textToSend }])
     setIsAiLoading(true)
 
     try {
       // Prepare context from confused highlights
-      const context = confusedHighlights.length > 0 
+      const context = confusedHighlights.length > 0
         ? confusedHighlights.map(h => h.text).join('\n\n')
-        : `Section: ${sectionName}`
-      
-      console.log('🤖 [AI Help] Sending message:', userMessage)
+        : (sectionText && sectionText.length > 20 ? `Section Text from PDF:\n${sectionText}` : `User is asking about section: ${sectionName}`)
+
+      console.log('🤖 [AI Help] Sending message:', textToSend)
       console.log('📋 [AI Help] Context:', context.substring(0, 200))
-      
+
       const response = await fetch('/api/ai-tutor', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          message: userMessage,
+          message: textToSend,
           context: context,
           sectionName: sectionName,
           conversationHistory: aiMessages,
@@ -160,7 +162,7 @@ export default function SmartHelpPanel({
       }
 
       const data = await response.json()
-      
+
       if (data.response) {
         setAiMessages(prev => [...prev, { role: 'ai', content: data.response }])
       } else if (data.error) {
@@ -171,16 +173,23 @@ export default function SmartHelpPanel({
     } catch (error: any) {
       console.error('❌ [AI Help] Error:', error)
       const errorMessage = error?.message || 'Unknown error'
-      setAiMessages(prev => [...prev, { 
-        role: 'ai', 
-        content: `Sorry, I encountered an error: ${errorMessage}\n\nPlease try:\n• Checking your internet connection\n• Refreshing the page\n• Trying again in a moment\n\nIf the problem persists, the AI service might be temporarily unavailable.` 
+      setAiMessages(prev => [...prev, {
+        role: 'ai',
+        content: `Sorry, I encountered an error: ${errorMessage}\n\nPlease try:\n• Checking your internet connection\n• Refreshing the page\n• Trying again in a moment`
       }])
       toast.error('AI Help Error', {
-        description: errorMessage || 'Failed to get AI response. Please try again.'
+        description: errorMessage || 'Failed to get AI response'
       })
     } finally {
       setIsAiLoading(false)
     }
+  }
+
+  const handleSendAIMessage = async () => {
+    if (!message.trim()) return
+    const msg = message
+    setMessage('')
+    await sendAIMessage(msg)
   }
 
   const handleSendPeerMessage = () => {
@@ -213,7 +222,7 @@ export default function SmartHelpPanel({
   return (
     <>
       {/* Overlay - Only covers right side where panel is */}
-      <div 
+      <div
         className="fixed top-0 right-0 bottom-0 w-[450px] bg-black bg-opacity-20 z-40 transition-opacity"
         onClick={onClose}
       />
@@ -228,7 +237,7 @@ export default function SmartHelpPanel({
             </h2>
             <p className="text-sm text-blue-100">{sectionName}</p>
           </div>
-          <button 
+          <button
             onClick={onClose}
             className="text-white hover:bg-blue-800 p-2 rounded-lg transition"
           >
@@ -261,11 +270,10 @@ export default function SmartHelpPanel({
         <div className="flex border-b border-gray-200 bg-gray-50">
           <button
             onClick={() => setActiveTab('ai')}
-            className={`flex-1 py-3 px-4 text-sm font-medium transition flex items-center justify-center gap-2 ${
-              activeTab === 'ai'
-                ? 'bg-white text-blue-600 border-b-2 border-blue-600'
-                : 'text-gray-600 hover:text-gray-800 hover:bg-gray-100'
-            }`}
+            className={`flex-1 py-3 px-4 text-sm font-medium transition flex items-center justify-center gap-2 ${activeTab === 'ai'
+              ? 'bg-white text-blue-600 border-b-2 border-blue-600'
+              : 'text-gray-600 hover:text-gray-800 hover:bg-gray-100'
+              }`}
           >
             <Bot className="w-4 h-4" />
             AI Help
@@ -273,11 +281,10 @@ export default function SmartHelpPanel({
 
           <button
             onClick={() => setActiveTab('peers')}
-            className={`flex-1 py-3 px-4 text-sm font-medium transition flex items-center justify-center gap-2 relative ${
-              activeTab === 'peers'
-                ? 'bg-white text-blue-600 border-b-2 border-blue-600'
-                : 'text-gray-600 hover:text-gray-800 hover:bg-gray-100'
-            }`}
+            className={`flex-1 py-3 px-4 text-sm font-medium transition flex items-center justify-center gap-2 relative ${activeTab === 'peers'
+              ? 'bg-white text-blue-600 border-b-2 border-blue-600'
+              : 'text-gray-600 hover:text-gray-800 hover:bg-gray-100'
+              }`}
           >
             <MessageCircle className="w-4 h-4" />
             Peers
@@ -290,11 +297,10 @@ export default function SmartHelpPanel({
 
           <button
             onClick={() => setActiveTab('group')}
-            className={`flex-1 py-3 px-4 text-sm font-medium transition flex items-center justify-center gap-2 ${
-              activeTab === 'group'
-                ? 'bg-white text-blue-600 border-b-2 border-blue-600'
-                : 'text-gray-600 hover:text-gray-800 hover:bg-gray-100'
-            }`}
+            className={`flex-1 py-3 px-4 text-sm font-medium transition flex items-center justify-center gap-2 ${activeTab === 'group'
+              ? 'bg-white text-blue-600 border-b-2 border-blue-600'
+              : 'text-gray-600 hover:text-gray-800 hover:bg-gray-100'
+              }`}
             disabled={strugglingCount < 2}
           >
             <Users className="w-4 h-4" />
@@ -311,17 +317,86 @@ export default function SmartHelpPanel({
           {activeTab === 'ai' && (
             <div className="h-full flex flex-col">
               <div className="flex-1 overflow-y-auto p-4 space-y-4">
+                {/* ✅ WELCOME OPTIONS - Show when no messages */}
+                {aiMessages.length === 0 && (
+                  <div className="flex flex-col gap-3 mt-4 animate-slide-in">
+                    <p className="text-sm text-gray-600 mb-2 text-center">
+                      I noticed you might be stuck on <strong>{sectionName}</strong>.<br />
+                      How can I help you?
+                    </p>
+
+                    <button
+                      onClick={() => handleQuickAction('Explain this section in simple terms')}
+                      className="text-left p-4 bg-white border border-blue-200 rounded-xl hover:bg-blue-50 hover:border-blue-300 transition shadow-sm group"
+                    >
+                      <div className="flex items-center gap-3">
+                        <div className="bg-blue-100 p-2 rounded-lg group-hover:bg-blue-200 text-blue-600">
+                          <Bot className="w-5 h-5" />
+                        </div>
+                        <div>
+                          <p className="font-semibold text-gray-800 text-sm">Explain Content</p>
+                          <p className="text-xs text-gray-500">Get a simple summary of this section</p>
+                        </div>
+                      </div>
+                    </button>
+
+                    <button
+                      onClick={() => handleQuickAction('Define key terms in this section')}
+                      className="text-left p-4 bg-white border border-purple-200 rounded-xl hover:bg-purple-50 hover:border-purple-300 transition shadow-sm group"
+                    >
+                      <div className="flex items-center gap-3">
+                        <div className="bg-purple-100 p-2 rounded-lg group-hover:bg-purple-200 text-purple-600">
+                          <MessageCircle className="w-5 h-5" />
+                        </div>
+                        <div>
+                          <p className="font-semibold text-gray-800 text-sm">Definitions</p>
+                          <p className="text-xs text-gray-500">Clarify difficult vocabulary</p>
+                        </div>
+                      </div>
+                    </button>
+
+                    <button
+                      onClick={() => handleQuickAction('Give me a real-world example')}
+                      className="text-left p-4 bg-white border border-green-200 rounded-xl hover:bg-green-50 hover:border-green-300 transition shadow-sm group"
+                    >
+                      <div className="flex items-center gap-3">
+                        <div className="bg-green-100 p-2 rounded-lg group-hover:bg-green-200 text-green-600">
+                          <Send className="w-5 h-5" />
+                        </div>
+                        <div>
+                          <p className="font-semibold text-gray-800 text-sm">Give Example</p>
+                          <p className="text-xs text-gray-500">See a practical scenario</p>
+                        </div>
+                      </div>
+                    </button>
+
+                    <button
+                      onClick={() => handleQuickAction('Visualize this concept')}
+                      className="text-left p-4 bg-white border border-orange-200 rounded-xl hover:bg-orange-50 hover:border-orange-300 transition shadow-sm group"
+                    >
+                      <div className="flex items-center gap-3">
+                        <div className="bg-orange-100 p-2 rounded-lg group-hover:bg-orange-200 text-orange-600">
+                          <Users className="w-5 h-5" />
+                        </div>
+                        <div>
+                          <p className="font-semibold text-gray-800 text-sm">Visualize</p>
+                          <p className="text-xs text-gray-500">Create a mental model or diagram</p>
+                        </div>
+                      </div>
+                    </button>
+                  </div>
+                )}
+
                 {aiMessages.map((msg, idx) => (
                   <div
                     key={idx}
                     className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}
                   >
                     <div
-                      className={`max-w-[80%] rounded-lg p-3 ${
-                        msg.role === 'user'
-                          ? 'bg-blue-600 text-white'
-                          : 'bg-white border border-gray-200 text-gray-800'
-                      }`}
+                      className={`max-w-[80%] rounded-lg p-3 ${msg.role === 'user'
+                        ? 'bg-blue-600 text-white'
+                        : 'bg-white border border-gray-200 text-gray-800'
+                        }`}
                     >
                       {msg.role === 'ai' && (
                         <div className="flex items-center gap-2 mb-2">
@@ -356,9 +431,9 @@ export default function SmartHelpPanel({
                       setAiMessages(prev => [...prev, { role: 'user', content: msg }])
                       setIsAiLoading(true)
                       try {
-                        const context = confusedHighlights.length > 0 
+                        const context = confusedHighlights.length > 0
                           ? confusedHighlights.map(h => h.text).join('\n\n')
-                          : `Section: ${sectionName}`
+                          : (sectionText ? `Section Text:\n${sectionText}` : `Section: ${sectionName}`)
                         const response = await fetch('/api/ai-tutor', {
                           method: 'POST',
                           headers: { 'Content-Type': 'application/json' },
@@ -390,9 +465,9 @@ export default function SmartHelpPanel({
                       setAiMessages(prev => [...prev, { role: 'user', content: msg }])
                       setIsAiLoading(true)
                       try {
-                        const context = confusedHighlights.length > 0 
+                        const context = confusedHighlights.length > 0
                           ? confusedHighlights.map(h => h.text).join('\n\n')
-                          : `Section: ${sectionName}`
+                          : (sectionText ? `Section Text:\n${sectionText}` : `Section: ${sectionName}`)
                         const response = await fetch('/api/ai-tutor', {
                           method: 'POST',
                           headers: { 'Content-Type': 'application/json' },
@@ -424,9 +499,9 @@ export default function SmartHelpPanel({
                       setAiMessages(prev => [...prev, { role: 'user', content: msg }])
                       setIsAiLoading(true)
                       try {
-                        const context = confusedHighlights.length > 0 
+                        const context = confusedHighlights.length > 0
                           ? confusedHighlights.map(h => h.text).join('\n\n')
-                          : `Section: ${sectionName}`
+                          : (sectionText ? `Section Text:\n${sectionText}` : `Section: ${sectionName}`)
                         const response = await fetch('/api/ai-tutor', {
                           method: 'POST',
                           headers: { 'Content-Type': 'application/json' },
@@ -528,10 +603,9 @@ export default function SmartHelpPanel({
                             </div>
                           </button>
                           <div className="flex items-center gap-2">
-                            <span className={`w-2 h-2 rounded-full ${
-                              peer.status === 'online' ? 'bg-green-500' :
+                            <span className={`w-2 h-2 rounded-full ${peer.status === 'online' ? 'bg-green-500' :
                               peer.status === 'busy' ? 'bg-yellow-500' : 'bg-gray-400'
-                            }`} />
+                              }`} />
                             <span className="text-xs text-gray-500 capitalize">{peer.status}</span>
                             {peer.status === 'online' && onSendInvitation && (
                               <button
@@ -569,9 +643,8 @@ export default function SmartHelpPanel({
                       <div>
                         <p className="font-medium text-gray-900">{selectedPeer.userName}</p>
                         <p className="text-xs text-gray-600 flex items-center gap-1">
-                          <span className={`w-1.5 h-1.5 rounded-full ${
-                            selectedPeer.status === 'online' ? 'bg-green-500' : 'bg-gray-400'
-                          }`} />
+                          <span className={`w-1.5 h-1.5 rounded-full ${selectedPeer.status === 'online' ? 'bg-green-500' : 'bg-gray-400'
+                            }`} />
                           {selectedPeer.status}
                         </p>
                       </div>
@@ -603,11 +676,10 @@ export default function SmartHelpPanel({
                         className={`flex ${msg.userId === userId ? 'justify-end' : 'justify-start'}`}
                       >
                         <div
-                          className={`max-w-[80%] rounded-lg p-3 ${
-                            msg.userId === userId
-                              ? 'bg-blue-600 text-white'
-                              : 'bg-white border border-gray-200 text-gray-800'
-                          }`}
+                          className={`max-w-[80%] rounded-lg p-3 ${msg.userId === userId
+                            ? 'bg-blue-600 text-white'
+                            : 'bg-white border border-gray-200 text-gray-800'
+                            }`}
                         >
                           <p className="text-xs font-semibold mb-1 opacity-75">
                             {msg.userName}
@@ -654,7 +726,7 @@ export default function SmartHelpPanel({
                       {strugglingCount} student{strugglingCount !== 1 ? 's are' : ' is'} working on this section. Join them to learn together!
                     </p>
                   </div>
-                  
+
                   <div className="bg-gray-50 rounded-lg p-3">
                     <p className="text-xs font-semibold text-gray-700 mb-2">What you can do:</p>
                     <ul className="text-xs text-gray-600 space-y-1 list-disc list-inside">
@@ -665,7 +737,7 @@ export default function SmartHelpPanel({
                     </ul>
                   </div>
 
-                  <button 
+                  <button
                     onClick={() => {
                       // Switch to peers tab to see all struggling users
                       setActiveTab('peers')
@@ -677,7 +749,7 @@ export default function SmartHelpPanel({
                   >
                     Join Group Study
                   </button>
-                  
+
                   {/* Show list of struggling peers */}
                   <div className="mt-4 space-y-2">
                     <p className="text-xs font-semibold text-gray-700">Struggling Students:</p>

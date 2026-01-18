@@ -160,14 +160,14 @@ class AICoordinationCoreService {
         // Step 1: Notify the struggling user with basic help message
         agent7_implicitAssistance.generateNotification({
           type: 'struggle-awareness',
-          title: '🧠 Complex Section Detected',
-          message: `This section appears to be challenging. Would you like AI assistance to break it down?`,
+          title: 'Confusion Detected',
+          message: `This section seems tricky. How can I help?`,
           priority: data.severity === 'high' ? 'high' : 'medium',
           sectionId: data.sectionId,
           targetUserId: strugglingUserId,
           actionButton: {
-            label: 'Get AI Help',
-            action: 'open-ai-help'
+            label: 'Show Options',
+            action: 'open-ai-help' // Keep action ID same effectively to open panel, but label changes perception
           },
           secondaryButton: {
             label: 'Visualize',

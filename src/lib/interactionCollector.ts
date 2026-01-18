@@ -101,6 +101,8 @@ export interface SectionInteraction {
 class InteractionCollectorService {
   private currentSession: InteractionSession | null = null
   private idleTimeout: NodeJS.Timeout | null = null
+  private trackingInterval: NodeJS.Timeout | null = null
+  private currentSectionId: string | null = null
   private readonly IDLE_THRESHOLD = 60000 // 1 minute
   private readonly STORAGE_KEY = 'litsense_interaction_data'
 
@@ -132,6 +134,7 @@ class InteractionCollectorService {
 
     console.log('📊 [InteractionCollector] Session started:', sessionId)
     this.startIdleDetection()
+    this.startTrackingInterval()
     this.saveToStorage()
 
     return sessionId
@@ -143,6 +146,7 @@ class InteractionCollectorService {
     this.currentSession.endTime = Date.now()
     this.currentSession.totalActiveTime = this.calculateActiveTime()
     this.stopIdleDetection()
+    this.stopTrackingInterval()
 
     console.log('📊 [InteractionCollector] Session ended:', this.currentSession.sessionId)
     this.saveToStorage()
@@ -180,6 +184,31 @@ class InteractionCollectorService {
   private stopIdleDetection() {
     if (this.idleTimeout) {
       clearTimeout(this.idleTimeout)
+    }
+  }
+
+  private startTrackingInterval() {
+    this.stopTrackingInterval()
+    this.trackingInterval = setInterval(() => {
+      this.updateActiveTime()
+    }, 1000)
+  }
+
+  private stopTrackingInterval() {
+    if (this.trackingInterval) clearInterval(this.trackingInterval)
+  }
+
+  private updateActiveTime() {
+    if (!this.currentSession || !this.currentSectionId) return
+
+    // Don't count time if user is idle (simple check, could be more robust)
+    if (Date.now() - this.currentSession.lastActiveTime > this.IDLE_THRESHOLD) return
+
+    const section = this.currentSession.sectionInteractions.get(this.currentSectionId)
+    if (section) {
+      section.totalTimeSpent += 1000
+      // DEBUG LOG
+      // console.log(`⏱️ [Collector] Active on ${this.currentSectionId}: ${section.totalTimeSpent}ms`)
     }
   }
 
@@ -267,6 +296,9 @@ class InteractionCollectorService {
   trackFixation(sectionId: string) {
     if (!this.currentSession) return
 
+    // Update active section context
+    this.currentSectionId = sectionId
+
     // Update section stats
     this.updateSectionInteraction(sectionId, 'fixation')
 
@@ -303,8 +335,9 @@ class InteractionCollectorService {
       this.currentSession.pagesVisited.push(page)
     }
 
-    // Update section interaction
+    // Switch active section
     if (sectionId) {
+      this.currentSectionId = sectionId
       this.updateSectionInteraction(sectionId, 'visit')
     }
 

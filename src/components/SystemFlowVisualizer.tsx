@@ -153,6 +153,8 @@ export function SystemFlowVisualizer() {
                 }
 
                 // TRIGGER REAL UI FEEDBACK (Simulation) - these toasts are now independent of the core's internal logging
+                // ❌ DISABLED: User requested to remove fake/simulated pop-ups
+                /*
                 if (randomEvent.event === 'confusion-detected') {
                     toast.warning('Confusion Detected', { description: 'Would you like an AI explanation for this section?', action: { label: 'Explain', onClick: () => console.log('Explain clicked') } })
                 } else if (randomEvent.event === 'skimming-detected') {
@@ -160,6 +162,7 @@ export function SystemFlowVisualizer() {
                 } else if (randomEvent.event === 'peer-joined') {
                     toast("Collaborator Nearby", { description: `${randomEvent.data.peerName} is also reading the Results section.` })
                 }
+                */
             }
         }, 3000)
 

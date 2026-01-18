@@ -105,7 +105,7 @@ class Agent1_UnderstandingDetection {
   // ============================================================================
 
   private startMonitoring() {
-    // Monitor every 5 seconds
+    // Monitor every 1 second for testing
     this.monitoringInterval = setInterval(() => {
       if (!this.isActive) return
 
@@ -127,7 +127,7 @@ class Agent1_UnderstandingDetection {
           this.emitEvent('breakthrough-detected', breakthrough)
         }
       })
-    }, 5000)
+    }, 1000)
   }
 
   private emitEvent(eventType: string, data: any) {
@@ -174,8 +174,8 @@ class Agent1_UnderstandingDetection {
     const patterns: BehavioralPattern[] = []
 
     // 1. Semantic Dwell Detection (Assuming ~200 words per section avg, 250wpm read speed)
-    // If user spends > 5 minutes on a standard section without understood highlights
-    if (section.totalTimeSpent > 5 * 60000 && section.understoodHighlights === 0) {
+    // If user spends > 3s (TESTING MODE - SUPER FAST) on a standard section without understood highlights
+    if (section.totalTimeSpent > 3000 && section.understoodHighlights === 0) {
       patterns.push('semantic-dwell')
     }
 
@@ -187,7 +187,7 @@ class Agent1_UnderstandingDetection {
     }
 
     // 3. Gaze Panic (Concentrated fixations in a tiny area)
-    if (section.gazeFixations > 50 && section.totalTimeSpent < 30000) {
+    if (section.gazeFixations > 30 && section.totalTimeSpent < 45000) {
       patterns.push('gaze-panic')
     }
 
@@ -210,8 +210,9 @@ class Agent1_UnderstandingDetection {
     let score = section.struggleScore
 
     // Amplify score based on behavioral patterns
+    // Amplify score based on behavioral patterns
     if (patterns.includes('re-read-loop')) score += 30
-    if (patterns.includes('semantic-dwell')) score += 20
+    if (patterns.includes('semantic-dwell')) score += 45 // Increased to ensure it triggers 'low' severity (limit 40)
     if (patterns.includes('gaze-panic')) score += 40
     if (patterns.includes('erratic-scan')) score += 15
 

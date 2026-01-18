@@ -215,12 +215,23 @@ export default function ApryseWebViewer({
   extractedText
 }: ApryseWebViewerProps) {
   const viewer = useRef<HTMLDivElement>(null)
+  const webViewerRef = useRef<any>(null) // ✅ Ref to hold latest instance avoiding stale closures
   const [isLoading, setIsLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [webViewerInstance, setWebViewerInstance] = useState<any>(null)
+
+  // ✅ Sync ref with state
+  useEffect(() => {
+    webViewerRef.current = webViewerInstance
+  }, [webViewerInstance])
+
   const [currentPage, setCurrentPage] = useState(1)
   const isJumpingRef = useRef(false)  // ✅ ADD THIS LINE RIGHT AFTER
   const [totalPages, setTotalPages] = useState(0)
+
+  // DEBUG STATE
+  const [isDebugMode, setIsDebugMode] = useState(false) // Toggle with Ctrl+Shift+D or UI button if you prefer
+
   const [showDownloadMenu, setShowDownloadMenu] = useState(false)
   const [showShareMenu, setShowShareMenu] = useState(false)
   const [copied, setCopied] = useState(false)
@@ -297,6 +308,7 @@ export default function ApryseWebViewer({
       page: number
     }>
     sectionName: string
+    sectionText?: string // ✅ ADDED
     isGroupSession?: boolean  // ✅ ADD THIS LINE
   }>({
     confusedHighlights: [],
@@ -543,14 +555,28 @@ export default function ApryseWebViewer({
       })
 
       // 4. Immediate Visual Feedback (Since we don't have popups yet)
-      toast("Fixation Detected", {
-        description: `Agent 1 analyzing attention on "${section?.heading.text || 'Section'}"`,
-        duration: 2000
-      })
+      // toast("Fixation Detected", {
+      //   description: `Agent 1 analyzing attention on "${section?.heading.text || 'Section'}"`,
+      //   duration: 2000
+      // })
     })
 
+    // ✅ ADD: Bridge for Agent 1 events -> AI Core
+    // Agent 1 emits window events, but Core needs a direct routing call to trigger Agent 7
+    const onStruggleDetected = (e: Event) => {
+      const customEvent = e as CustomEvent
+      console.log('🌉 [ApryseWebViewer] Bridging struggle event to Core:', customEvent.detail)
+      aiCoordinationCore.routeAgentEvent('agent-1', 'struggle-detected', customEvent.detail)
+    }
+
+    if (typeof window !== 'undefined') {
+      window.addEventListener('agent1:struggle-detected', onStruggleDetected)
+    }
+
     return () => {
-      // Cleanup if needed
+      if (typeof window !== 'undefined') {
+        window.removeEventListener('agent1:struggle-detected', onStruggleDetected)
+      }
     }
   }, [])
 
@@ -646,7 +672,7 @@ export default function ApryseWebViewer({
   }, [webViewerInstance, sectionAssignments, pdfSections, userId, collaborators])
 
 
-  const handleNotificationAction = (notification: any) => {
+  const handleNotificationAction = async (notification: any) => {
     const action = notification.actionButton?.action
 
     console.log('🔘 [Action] Button clicked:', action, notification)
@@ -657,10 +683,46 @@ export default function ApryseWebViewer({
       case 'get-help':
       case 'open-stuck-here':
         const session = interactionCollector.getCurrentSession()
+        const sectionId = notification.sectionId || ''
+
+        // ✅ Extract text from PDF if possible
+        let sectionText = ''
+        if (webViewerInstance && sectionId) {
+          try {
+            // Find section in our extracted list
+            const section = pdfSections.find(s => s.heading.id === sectionId)
+
+            // Handle fallback/page-based IDs
+            let pageToLoad = section ? section.startPage : (notification.page || 1)
+
+            // If sectionId is 'page-X', parse X
+            const pageMatch = sectionId.match(/page-(\d+)/)
+            if (pageMatch) {
+              pageToLoad = parseInt(pageMatch[1])
+            } else if (!section && webViewerInstance.Core) {
+              // If we have a weird ID but no section, default to current page
+              pageToLoad = webViewerInstance.Core.documentViewer.getCurrentPage()
+            }
+
+            console.log(`📄 [AI Help] Loading text for context from page ${pageToLoad} (Section: ${sectionId})`)
+            const doc = webViewerInstance.Core.documentViewer.getDocument()
+            sectionText = await doc.loadPageText(pageToLoad)
+
+            // Limit text length to avoid token limits
+            if (sectionText && sectionText.length > 2000) sectionText = sectionText.substring(0, 2000) + '...'
+
+            // If text is empty/null, provide a fallback message so AI knows SOMETHING
+            if (!sectionText || sectionText.trim().length === 0) {
+              sectionText = `(No text extractable from page ${pageToLoad}. User is looking at section: ${sectionId})`
+            }
+          } catch (e) {
+            console.warn('⚠️ Failed to extract text for context:', e)
+            sectionText = "(Error extracting text context)"
+          }
+        }
+
         if (session) {
           // Get confused highlights for this section
-          // Try to match sectionId exactly, or match by page if sectionId format differs
-          const sectionId = notification.sectionId || ''
           const confusedHighlights = session.highlights
             .filter(h => {
               // Match by exact sectionId
@@ -681,7 +743,8 @@ export default function ApryseWebViewer({
 
           setHelpPanelContext({
             confusedHighlights,
-            sectionName: notification.sectionName || `Section ${sectionId}`
+            sectionName: notification.sectionName || `Section ${sectionId}`,
+            sectionText // ✅ Pass extracted text
           })
 
           setShowHelpPanel(true)
@@ -690,7 +753,8 @@ export default function ApryseWebViewer({
           console.warn('⚠️ [AI Help] No active session, opening panel with empty context')
           setHelpPanelContext({
             confusedHighlights: [],
-            sectionName: notification.sectionName || `Section ${notification.sectionId || 'Unknown'}`
+            sectionName: notification.sectionName || `Section ${notification.sectionId || 'Unknown'}`,
+            sectionText // ✅ Pass extracted text
           })
           setShowHelpPanel(true)
         }
@@ -1240,6 +1304,25 @@ export default function ApryseWebViewer({
       // Only add if not already dismissed
       if (!dismissedNotifications.has(notification.id)) {
         console.log(`✅ [Event] ACCEPTED - Adding to notifications`)
+
+        // ✅ VISIBLE FEEDBACK: Show Toast immediately
+        // This ensures the user SEES the notification immediately
+        toast(notification.title, {
+          description: notification.message,
+          duration: 8000,
+          action: notification.actionButton ? {
+            label: notification.actionButton.label,
+            onClick: () => handleNotificationAction(notification)
+          } : undefined,
+          cancel: {
+            label: 'Ignore',
+            onClick: () => {
+              console.log('❌ Implicit help ignored by user')
+              setDismissedNotifications(prev => new Set(prev).add(notification.id))
+            }
+          }
+        })
+
         setSmartNotifications(prev => {
           // Also check for duplicates in the current list
           const exists = prev.some(n => n.id === notification.id)
@@ -1781,8 +1864,49 @@ export default function ApryseWebViewer({
 
     initEyeTracking()
 
+    // ✅ FALLBACK: Mouse Tracking as Pseudo-Eye-Tracking
+    // If user has no eye tracker, we assume they are reading where their mouse is (or the center of screen)
+    const handleMouseMove = (e: MouseEvent) => {
+      // Rate limit to every 500ms to avoid spamming
+      if (Date.now() % 500 > 50) return
+
+      const viewerRect = viewer.current?.getBoundingClientRect()
+      if (!viewerRect) return
+
+      // VISUAL CONFIRMATION FOR USER (Remove later)
+      // toast.info("Tracking active...", { duration: 1000 })
+
+      // Calculate relative position (0-1)
+      const relY = (e.clientY - viewerRect.top) / viewerRect.height
+
+      // Simple mapping: Map visible page area to sections
+      // This is an approximation since Apryse handles internal scrolling
+      // Simple mapping: Map visible page area to sections
+      // This is an approximation since Apryse handles internal scrolling
+      if (webViewerRef.current?.Core) {
+        const docViewer = webViewerRef.current.Core.documentViewer
+        const currentPage = docViewer.getCurrentPage()
+
+        // Find section on this page
+        // Just default to the first section on this page for now to ensure we get ANY signal
+        const section = pdfSectionsRef.current.find(s => s.startPage === currentPage)
+
+        if (section) {
+          // Trigger fixation on this section
+          interactionCollector.trackFixation(section.heading.id)
+        } else {
+          // Fallback if no sections are defined yet
+          interactionCollector.trackFixation(`page-${currentPage}`)
+        }
+      }
+    }
+
+    // ✅ FORCE GLOBAL LISTENER: Catch mouse even over iframes/canvas
+    window.addEventListener('mousemove', handleMouseMove)
+
     return () => {
       eyeTracker.end()
+      window.removeEventListener('mousemove', handleMouseMove)
     }
   }, [])
 
@@ -1790,50 +1914,57 @@ export default function ApryseWebViewer({
 
 
   useEffect(() => {
-    if (incomingHighlights.length > 0 && webViewerInstance?.Core) {
-      const { annotationManager } = webViewerInstance.Core;
+    const processHighlights = async () => {
+      // console.log('🔄 Processing highlights...')
+      if (incomingHighlights.length > 0 && webViewerInstance?.Core) {
+        const { annotationManager } = webViewerInstance.Core;
 
-      incomingHighlights.forEach(async (highlight) => {
-        try {
-          console.log('📥 Importing XFDF highlight:', highlight);
-          await annotationManager.importAnnotations(highlight.xfdf, { imported: true });
+        for (const highlight of incomingHighlights) {
+          try {
+            console.log('📥 Importing XFDF highlight:', highlight);
+            // Wrap in try-catch individually to prevent one fail blocking others
+            await annotationManager.importAnnotations(highlight.xfdf, { imported: true }).catch((e: any) => console.warn('Failed to import single annotation:', e));
 
-          // Set custom data on imported annotations if not already set by XFDF
-          // This ensures the annotation listener can access reason and authorId
-          if (highlight.reason || highlight.user || highlight.userId) {
-            const allAnnotations = annotationManager.getAnnotationsList();
-            const importedAnnotations = allAnnotations.filter((ann: any) => {
-              const isHighlight = ann.Subject === 'Highlight' || ann.Subject === 'highlight';
-              const isCorrectPage = ann.PageNumber === highlight.pageNumber;
-              const hasNoReason = !ann.getCustomData('reason');
-              return isHighlight && isCorrectPage && hasNoReason;
-            });
+            // Set custom data on imported annotations if not already set by XFDF
+            // This ensures the annotation listener can access reason and authorId
+            if (highlight.reason || highlight.user || highlight.userId) {
+              const allAnnotations = annotationManager.getAnnotationsList();
+              const importedAnnotations = allAnnotations.filter((ann: any) => {
+                const isHighlight = ann.Subject === 'Highlight' || ann.Subject === 'highlight';
+                const isCorrectPage = ann.PageNumber === highlight.pageNumber;
+                const hasNoReason = !ann.getCustomData('reason');
+                return isHighlight && isCorrectPage && hasNoReason;
+              });
 
-            // Set custom data on the most recently imported annotation
-            if (importedAnnotations.length > 0) {
-              const annotation = importedAnnotations[importedAnnotations.length - 1];
-              if (highlight.reason) {
-                annotation.setCustomData('reason', highlight.reason);
+              // Set custom data on the most recently imported annotation
+              if (importedAnnotations.length > 0) {
+                const annotation = importedAnnotations[importedAnnotations.length - 1];
+                if (highlight.reason) {
+                  annotation.setCustomData('reason', highlight.reason);
+                }
+                // Use userId if available, otherwise fall back to user name
+                const authorId = highlight.userId || highlight.user;
+                if (authorId) {
+                  annotation.setCustomData('authorId', authorId);
+                  annotation.setCustomData('authorName', highlight.user || authorId);
+                }
+                annotationManager.redrawAnnotation(annotation);
               }
-              // Use userId if available, otherwise fall back to user name
-              const authorId = highlight.userId || highlight.user;
-              if (authorId) {
-                annotation.setCustomData('authorId', authorId);
-                annotation.setCustomData('authorName', highlight.user || authorId);
-              }
-              annotationManager.redrawAnnotation(annotation);
             }
+          } catch (error) {
+            console.error('Error processing incoming highlight:', error);
           }
-
-          console.log('✅ XFDF highlight imported successfully!');
-        } catch (error) {
-          console.error('❌ Error importing XFDF:', error);
         }
-      });
 
-      clearIncomingHighlights();
+        // Clear processed highlights
+        if (clearIncomingHighlights) {
+          clearIncomingHighlights();
+        }
+      }
     }
-  }, [incomingHighlights, webViewerInstance, clearIncomingHighlights]);
+
+    processHighlights()
+  }, [incomingHighlights, webViewerInstance, clearIncomingHighlights])
 
   // Update eye tracking page when PDF page changes
   useEffect(() => {
@@ -5921,8 +6052,58 @@ ${documentContent}
               <BookOpen className="w-4 h-4 mr-1" />
               Assign Sections
             </button>
+
+            {/* DEBUG TRIGGER TOGGLE */}
+            {/* <button
+              onClick={() => setIsDebugMode(v => !v)}
+              className={`ml-2 px-2 py-1 text-xs rounded border ${isDebugMode ? 'bg-red-100 border-red-300 text-red-700' : 'bg-gray-100 border-gray-300 text-gray-500'}`}
+              title="Toggle Debug Toolbar"
+            >
+              🐞
+            </button> */}
           </div>
         </div>
+
+        {/* DEBUG TOOLBAR */}
+        {isDebugMode && (
+          <div className="bg-red-50 border-b border-red-200 p-2 flex items-center gap-2 overflow-x-auto">
+            <span className="text-xs font-bold text-red-700 uppercase tracking-wider mr-2">Debug Mode:</span>
+
+            <button
+              onClick={() => {
+                const notif = {
+                  id: `debug-${Date.now()}`,
+                  title: 'TEST: Confusion Detected',
+                  message: 'This is a forced test notification to verify rendering.',
+                  actionButton: { label: 'Explain', action: 'open-ai-help' },
+                  targetUserId: userId
+                }
+                // Trigger via window event effectively simulating Agent 7
+                window.dispatchEvent(new CustomEvent('agent7:notification', { detail: notif }))
+              }}
+              className="px-2 py-1 bg-white border border-red-300 text-red-700 text-xs rounded hover:bg-red-100"
+            >
+              Force Render Toast
+            </button>
+
+            <button
+              onClick={() => {
+                // Trigger via Agent 1 event effectively simulating Detection
+                aiCoordinationCore.routeAgentEvent('agent1', 'struggle-detected', {
+                  userId: userId,
+                  userName: userName,
+                  sectionId: 'debug-section',
+                  sectionName: 'Debug Section',
+                  severity: 'high',
+                  indicators: { confusionHighlights: 0, stuckMarkers: 0, revisitCount: 5, timeSpent: 30000, understandingScore: 10 }
+                })
+              }}
+              className="px-2 py-1 bg-white border border-orange-300 text-orange-700 text-xs rounded hover:bg-orange-100 ml-2"
+            >
+              Force Agent Signal
+            </button>
+          </div>
+        )}
 
         {/* Tab Content Area */}
         <div className="flex-1 relative" style={{ height: 'calc(100vh - 40px)' }}>
@@ -6577,6 +6758,7 @@ ${documentContent}
           availablePeers={getAvailablePeers()}
           documentId={documentId}
           sectionId={helpPanelContext.confusedHighlights?.[0]?.sectionId}
+          sectionText={helpPanelContext.sectionText} // ✅ Pass extracted text
           onSendInvitation={(peerId, peerName) => {
             const sectionId = helpPanelContext.confusedHighlights?.[0]?.sectionId || 'section-page-1'
             openPeerChat(peerId, peerName, sectionId)
