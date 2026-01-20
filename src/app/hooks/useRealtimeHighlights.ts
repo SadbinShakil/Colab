@@ -89,6 +89,13 @@ export function useRealtimeHighlights({
       window.dispatchEvent(new CustomEvent('peer-chat-message', { detail: data }))
     })
 
+    // ✅ ADD: Listen for Start Signal
+    socket.on('session-start', (data) => {
+      console.log('🚀 Received remote session start:', data)
+      // Dispatch to window so SystemFlowVisualizer can pick it up
+      window.dispatchEvent(new CustomEvent('remote-session-start', { detail: data.timestamp }))
+    })
+
     return () => {
       socket.disconnect()
       setIsConnected(false)
@@ -121,6 +128,17 @@ export function useRealtimeHighlights({
     if (socketRef.current?.connected) {
       console.log('💬 Broadcasting peer message:', data)
       socketRef.current.emit('peer-chat-message', data)
+    }
+  }
+
+  // ✅ ADD: Function to trigger session start
+  const broadcastSessionStart = (timestamp: number) => {
+    if (socketRef.current?.connected) {
+      console.log('🚀 Broadcasting Session Start:', timestamp)
+      socketRef.current.emit('session-start', {
+        documentId,
+        timestamp
+      })
     }
   }
 
@@ -162,6 +180,7 @@ export function useRealtimeHighlights({
     broadcastPeerInvitation,
     broadcastPeerAcceptance,
     broadcastPeerMessage,
+    broadcastSessionStart, // Export this
     incomingHighlights,
     clearIncomingHighlights,
     broadcastHighlightDeletion: () => { },

@@ -88,9 +88,9 @@ class Agent2_CollaborationOrchestrator {
   registerPeer(userId: string, userName: string) {
     // ✅ Ensure userId is string
     const userIdStr = String(userId)
-    
+
     console.log(`🤖 [Agent 2] Registering peer: ${userName} (userId: ${userIdStr})`)
-    
+
     if (!this.peerProfiles.has(userIdStr)) {
       const profile: PeerProfile = {
         userId: userIdStr,
@@ -105,6 +105,23 @@ class Agent2_CollaborationOrchestrator {
       this.peerProfiles.set(userIdStr, profile)
       console.log(`🤖 [Agent 2] Peer registered: ${userName}`)
     }
+  }
+
+  /**
+   * SIMULATION HELPER: Injects a fake peer for demo purposes
+   */
+  injectFakePeer(userId: string, userName: string, sectionId: string, status: 'proficient' | 'struggling') {
+    const profile: PeerProfile = {
+      userId,
+      userName,
+      sectionId,
+      understandingScore: status === 'proficient' ? 85 : 30,
+      status,
+      availableToHelp: true,
+      currentlyHelping: null
+    }
+    this.peerProfiles.set(userId, profile)
+    console.log(`🤖 [Agent 2] Fake peer injected: ${userName} (${status})`)
   }
 
   updatePeerStatus(userId: string, sectionId: string, understandingScore: number) {

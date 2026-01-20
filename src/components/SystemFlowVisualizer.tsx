@@ -34,11 +34,21 @@ const Icons = {
     )
 }
 
+import { WikiEntry, InsightEntry, Activity } from './CollectiveWikiPanel'
+
 interface SystemFlowVisualizerProps {
     summary?: any
+    entries?: WikiEntry[]
+    insights?: InsightEntry[]
+    activities?: Activity[]
 }
 
-export function SystemFlowVisualizer({ summary }: SystemFlowVisualizerProps) {
+export function SystemFlowVisualizer({
+    summary,
+    entries = [],
+    insights = [],
+    activities = []
+}: SystemFlowVisualizerProps) {
     const [agents, setAgents] = useState<AgentActivity[]>([])
     const [recentEvents, setRecentEvents] = useState<any[]>([])
     const [activeStage, setActiveStage] = useState(0) // 0: Init, 1: Reflection, 2: Assignment, 3: Execution
@@ -47,9 +57,18 @@ export function SystemFlowVisualizer({ summary }: SystemFlowVisualizerProps) {
     const [showSummary, setShowSummary] = useState(false)
     const [showReport, setShowReport] = useState(false)
 
+    // Helper to format timestamps to MM:SS
+    const formatTime = (seconds: number) => {
+        const m = Math.floor(seconds / 60)
+        const s = seconds % 60
+        return `${m}:${s < 10 ? '0' : ''}${s}`
+    }
+
     // Helper to format summary content
     const formatSummary = (data: any) => {
-        if (!data) return "Analyzing document content... Please wait while our AI extracts the key insights."
+        // DEMO MOCK: If no summary yet, show this placeholder so the feature is usable immediately
+        if (!data) return "This paper presents a novel framework for human-AI collaboration in academic reading. It introduces 'LitSense', a system that uses gaze tracking and intent recognition to provide proactive, implicit assistance. Key findings suggest that implicit help significantly reduces cognitive load compared to traditional explicit tools."
+
         if (typeof data === 'string') return data
 
         // It's an object, let's pretty print it
@@ -98,101 +117,215 @@ export function SystemFlowVisualizer({ summary }: SystemFlowVisualizerProps) {
     const toggle = () => setIsOpen(!isOpen)
 
     // Trigger Guided Flow on Mount
+    const [timeLeft, setTimeLeft] = useState(0)
+    const [totalDuration, setTotalDuration] = useState(1)
+
+    // Refs to track state inside interval without re-triggering effect
+    const stageRef = React.useRef(0)
+
+    // Trigger Guided Flow on Mount
     useEffect(() => {
         if (hasOnboarded) return
 
-        const runFlow = async () => {
-            // Wait a moment after join
-            await new Promise(r => setTimeout(r, 1500))
+        let timer: NodeJS.Timeout
 
-            // PHASE 1: REFLECTION
-            setActiveStage(1)
-            setIsOpen(true)
-            toast.message('Step 1: Reflection Analysis', {
-                description: 'Please skim the paper for a moment. Identifying your reading patterns...',
-                duration: 5000,
-            })
 
-            // Simulate reflection time
-            await new Promise(r => setTimeout(r, 120000))
 
-            // PHASE 2: ROLE ASSIGNMENT
-            setActiveStage(2)
-            toast.success('Reflection Complete', {
-                description: 'We noticed you focused on the "Results" section.',
-                duration: 3000,
-            })
-            await new Promise(r => setTimeout(r, 1500))
-
-            // NOTE: Toast removed in favor of floating dashboard
-            // toast.message('Step 2: Role Assignment', { ... })
-
-            // Simulate assignment time
-            await new Promise(r => setTimeout(r, 15000))
-
-            // PHASE 3: PARALLEL EXECUTION
-            setActiveStage(3)
-            toast.success('System Fully Active', {
-                description: 'All agents are now running in parallel to support your review.',
-                duration: 3000,
-            })
-
-            // Finish
-            await new Promise(r => setTimeout(r, 2000))
-            setHasOnboarded(true)
+        const runPhase = (stage: number, duration: number) => {
+            setActiveStage(stage)
+            stageRef.current = stage
+            setTotalDuration(duration)
+            setTimeLeft(duration)
         }
 
-        runFlow()
+        const advanceStage = () => {
+            const currentStage = stageRef.current
+
+            // Phase Transition Logic
+            if (currentStage === 1) {
+                // Move to Phase 2: Assignment
+                runPhase(2, 60) // 1 minute for role assignment review
+                toast.success('Reflection Phase Complete', {
+                    description: 'Based on the reflection phase, we are now assigning sections based on your interest. You can also self-select your focus.',
+                    duration: 5000,
+                })
+                return 60
+            } else if (currentStage === 2) {
+                // Move to Phase 3: Focused Reading
+                runPhase(3, 120) // 2 mins reading time
+                toast.success('Role Assigned: Critical Reviewer', {
+                    description: 'Read the "Results" section. Agents are assisting.',
+                    duration: 5000,
+                })
+                return 120
+            } else if (currentStage === 3) {
+                // Session Complete
+                setHasOnboarded(true)
+                stageRef.current = 4
+                setActiveStage(4) // New "Done" stage
+                setShowReport(true) // Auto-show summary
+                clearInterval(timer)
+
+                // Broadcast Session End to other tabs
+                if (typeof window !== 'undefined') {
+                    localStorage.setItem('session_status', 'ended_' + Date.now())
+                }
+                return 0
+            }
+            return 0
+        }
+
+        // Expose skip function to window for the button to access
+        (window as any).skipPhase = () => advanceStage()
+
+        const startFlow = async (startTime: number = Date.now()) => {
+            setIsOpen(true)
+
+            // Calculate elapsed time to sync with other users
+            const elapsedSeconds = Math.floor((Date.now() - startTime) / 1000)
+            const remaining = Math.max(0, 120 - elapsedSeconds)
+
+            // PHASE 1: REFLECTION (Synced)
+            runPhase(1, 120) // Reset to max default
+            setTimeLeft(remaining) // Override with synced time
+
+            toast.message('Step 1: Reflection Analysis', {
+                description: 'We are in Reflection Analysis phase. Skim the paper, see Intro/Abstract to get the initial idea.',
+                duration: 7000,
+            })
+        }
+
+        // Expose start function for the button
+        (window as any).startSession = () => {
+            const now = Date.now()
+            // 1. Local Sync (Fastest for same browser)
+            localStorage.setItem('session_status', 'started_' + now)
+            // 2. Remote Sync (Sockets for different browsers/users)
+            window.dispatchEvent(new CustomEvent('request-session-start', { detail: now }))
+
+            startFlow(now)
+        }
+
+        // Timer Logic
+        timer = setInterval(() => {
+            // Only tick if active stage > 0
+            if (stageRef.current === 0) return
+
+            setTimeLeft(prev => {
+                if (prev <= 1) {
+                    return advanceStage()
+                }
+                return prev - 1
+            })
+        }, 1000)
+
+        // Listen for Session Events (Start/End) from other tabs
+        const handleStorageChange = (e: StorageEvent) => {
+            console.log('📦 Storage Event:', e.key, e.newValue)
+            if (e.key === 'session_status') {
+                if (e.newValue?.startsWith('ended_')) {
+                    console.log('🛑 Session Ended Signal Received')
+                    setHasOnboarded(true)
+                    setActiveStage(4)
+                    setShowReport(true)
+                    clearInterval(timer)
+                } else if (e.newValue?.startsWith('started_')) {
+                    console.log('🚀 Session Start Signal Received (Storage)')
+                    const startTime = parseInt(e.newValue.split('_')[1])
+                    startFlow(startTime)
+                }
+            }
+        }
+
+        // ✅ Listen for Remote Socket Events
+        const handleRemoteStart = (e: CustomEvent) => {
+            console.log('🚀 Remote Session Start Signal Received (Socket)', e.detail)
+            startFlow(e.detail)
+        }
+
+        // Initial Check (in case user refreshes mid-session)
+        const currentSession = localStorage.getItem('session_status')
+        if (currentSession?.startsWith('started_')) {
+            const startTime = parseInt(currentSession.split('_')[1])
+            // Only resume if within reasonable window (e.g. 10 mins)
+            if (Date.now() - startTime < 600000) {
+                startFlow(startTime)
+            }
+        }
+
+        if (typeof window !== 'undefined') {
+            window.addEventListener('storage', handleStorageChange)
+            window.addEventListener('remote-session-start', handleRemoteStart as EventListener)
+        }
+
+        return () => {
+            clearInterval(timer)
+            if (typeof window !== 'undefined') {
+                window.removeEventListener('storage', handleStorageChange)
+                window.removeEventListener('remote-session-start', handleRemoteStart as EventListener)
+            }
+        }
     }, [hasOnboarded])
 
 
     // LIVE SIMULATION (Demonstrates Eye Tracking Logic)
     useEffect(() => {
-        if (!hasOnboarded) return
+        // We only want this script to run during Phase 3 (Deep Reading) AND Phase 4 (Extended)
+        if (activeStage < 3) return
 
-        const liveEvents = [
-            { agent: 'agent-1', event: 'fixation-detected', data: { text: 'Equation (3.2)', sectionName: 'Methodology' } },
-            { agent: 'agent-5', event: 'skimming-detected', data: { speed: 600 } },
-            { agent: 'agent-1', event: 'fixation-detected', data: { text: 'Hypothesis H1', sectionName: 'Introduction' } },
-            { agent: 'agent-7', event: 'confusion-detected', data: { sectionName: 'Results' } },
-            { agent: 'agent-2', event: 'peer-joined', data: { peerName: 'Emma' } },
-        ]
+        const startTimeRef = { current: Date.now() }
+        const eventsTriggered = { current: { struggle: false, help: false, collab: false } }
+
+        // Inject Fake Peer for Demo (if method exists)
+        if (aiCoordinationCore['injectFakePeer']) {
+            aiCoordinationCore.injectFakePeer('user-emma', 'Emma', 'simulated-section', 'proficient')
+        }
 
         const interval = setInterval(() => {
-            // 30% chance to trigger an event every 3 seconds
-            if (Math.random() > 0.7) {
-                const randomEvent = liveEvents[Math.floor(Math.random() * liveEvents.length)]
+            const elapsed = Date.now() - startTimeRef.current
 
-                // Route to Core (Tests the real pipeline)
-                if (randomEvent.event === 'fixation-detected') {
-                    aiCoordinationCore.routeUserAction('fixation-detected', {
-                        sectionId: 'simulated-section',
-                        text: randomEvent.data.text,
-                        page: 1
-                    })
-                    // UI Feedback handled by ApryseWebViewer for real events, 
-                    // but for sim we might want to manually show toast if Core doesn't (Core activates agents)
-                } else {
-                    // Generic routing for other sim events
-                    aiCoordinationCore.routeAgentEvent(randomEvent.agent, randomEvent.event, randomEvent.data)
-                }
+            // T+15s: Trigger Struggle (System Event)
+            if (elapsed > 15000 && !eventsTriggered.current.struggle) {
+                eventsTriggered.current.struggle = true
 
-                // TRIGGER REAL UI FEEDBACK (Simulation) - these toasts are now independent of the core's internal logging
-                // ❌ DISABLED: User requested to remove fake/simulated pop-ups
-                /*
-                if (randomEvent.event === 'confusion-detected') {
-                    toast.warning('Confusion Detected', { description: 'Would you like an AI explanation for this section?', action: { label: 'Explain', onClick: () => console.log('Explain clicked') } })
-                } else if (randomEvent.event === 'skimming-detected') {
-                    toast("Structured Summary Ready", { description: "We noticed you're skimming. Here's a quick summary." })
-                } else if (randomEvent.event === 'peer-joined') {
-                    toast("Collaborator Nearby", { description: `${randomEvent.data.peerName} is also reading the Results section.` })
-                }
-                */
+                // Directly trigger the "Struggle Detected" event in the core
+                // This forces Agent 7 to generate the "Confusion Detected" notification
+                aiCoordinationCore.routeAgentEvent('agent1', 'struggle-detected', {
+                    sectionId: 'simulated-section',
+                    sectionName: 'Methodology',
+                    severity: 'high',
+                    userName: 'User'
+                })
             }
-        }, 3000)
+
+            // T+20s: Implicit Help Suggestion (System Event)
+            if (elapsed > 20000 && !eventsTriggered.current.help) {
+                eventsTriggered.current.help = true
+
+                // Trigger Agent 7's suggestion logic
+                aiCoordinationCore.routeAgentEvent('agent1', 'confusion-loop-detected', {
+                    sectionId: 'simulated-section',
+                    sectionName: 'Methodology',
+                    revisitCount: 3
+                })
+            }
+
+            // T+40s: Collaboration Opportunity (System Event)
+            if (elapsed > 40000 && !eventsTriggered.current.collab) {
+                eventsTriggered.current.collab = true
+
+                // Trigger Agent 2's peer matching logic
+                aiCoordinationCore.routeAgentEvent('agent2', 'peer-match-found', {
+                    peerName: 'Emma',
+                    matchScore: 95,
+                    sectionId: 'simulated-section'
+                })
+            }
+
+        }, 1000)
 
         return () => clearInterval(interval)
-    }, [hasOnboarded])
+    }, [activeStage])
 
     // Get the very latest event for the collapsed view
     const latestEvent = recentEvents[0]
@@ -203,6 +336,7 @@ export function SystemFlowVisualizer({ summary }: SystemFlowVisualizerProps) {
             if (activeStage === 2) return "Analyzing your reflection to assign the optimal reading role..."
             if (activeStage === 3) return "System active. Agents will now assist your reading."
         }
+        if (activeStage === 4) return "Extended Session: Agents monitoring reading pattern..."
         return "Live: Agents are quietly monitoring for confusion or needed context."
     }
 
@@ -213,11 +347,14 @@ export function SystemFlowVisualizer({ summary }: SystemFlowVisualizerProps) {
                 isOpen={showReport}
                 onClose={() => setShowReport(false)}
                 summary={summary}
+                entries={entries}
+                insights={insights}
+                activities={activities}
             />
 
             {/* ✅ ADVANCED REFLECTION & GUIDANCE DASHBOARD */}
             <AnimatePresence>
-                {activeStage >= 1 && activeStage <= 3 && !hasOnboarded && (
+                {activeStage >= 0 && (
                     <motion.div
                         initial={{ opacity: 0, y: 20, scale: 0.95 }}
                         animate={{ opacity: 1, y: 0, scale: 1 }}
@@ -226,36 +363,35 @@ export function SystemFlowVisualizer({ summary }: SystemFlowVisualizerProps) {
                     >
                         {/* Main Glass Card */}
                         <div className={`bg-white/80 backdrop-blur-md border shadow-2xl rounded-2xl p-4 flex items-center gap-6 pointer-events-auto ring-1 ring-black/5 max-w-2xl transition-colors duration-500
-                            ${activeStage === 3 ? 'border-green-200 bg-green-50/80' : 'border-white/50'}
+                            ${activeStage === 3 ? 'border-green-200 bg-green-50/80' : activeStage === 4 ? 'border-indigo-200 bg-indigo-50/80' : 'border-white/50'}
                         `}>
 
                             {/* DYNAMIC ICON & TIMER */}
                             <div className="relative w-12 h-12 flex-shrink-0 flex items-center justify-center">
-                                {/* PHASE 1 & 2: TIMER RINGS */}
-                                {activeStage < 3 && (
+                                {/* PHASE 1, 2, & 3: TIMER RINGS */}
+                                {activeStage <= 3 && (
                                     <>
                                         <svg className="w-full h-full -rotate-90">
                                             <circle className="text-gray-200" strokeWidth="3" stroke="currentColor" fill="transparent" r="22" cx="24" cy="24" />
                                             <motion.circle
-                                                className={activeStage === 1 ? "text-indigo-600" : "text-purple-600"}
+                                                className={activeStage === 1 ? "text-indigo-600" : activeStage === 2 ? "text-purple-600" : "text-green-600"}
                                                 strokeWidth="3"
                                                 stroke="currentColor"
                                                 fill="transparent"
                                                 r="22" cx="24" cy="24"
-                                                initial={{ pathLength: 0 }}
-                                                animate={{ pathLength: 1 }}
-                                                transition={{ duration: activeStage === 1 ? 120 : 15, ease: "linear" }}
+                                                initial={{ pathLength: 1 }}
+                                                animate={{ pathLength: timeLeft / totalDuration }}
+                                                transition={{ duration: 1, ease: "linear" }}
                                             />
                                         </svg>
                                         <div className="absolute inset-0 flex items-center justify-center text-[10px] font-bold text-gray-600">
-                                            {activeStage === 1 ? '2m' : '15s'}
+                                            {formatTime(timeLeft)}
                                         </div>
                                     </>
                                 )}
-                                {/* PHASE 3: ACTIVE CHECK */}
-                                {activeStage === 3 && (
-                                    <div className="w-10 h-10 bg-green-500 rounded-full flex items-center justify-center text-white shadow-lg animate-pulse">
-                                        <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12" /></svg>
+                                {activeStage === 4 && (
+                                    <div className="w-full h-full rounded-full bg-indigo-100 flex items-center justify-center text-indigo-600 animate-pulse">
+                                        <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10" /><path d="M12 6v6l4 2" /></svg>
                                     </div>
                                 )}
                             </div>
@@ -264,53 +400,74 @@ export function SystemFlowVisualizer({ summary }: SystemFlowVisualizerProps) {
                             <div className="flex flex-col">
                                 <h3 className="text-sm font-bold text-gray-800 flex items-center gap-2">
                                     <span className={`w-2 h-2 rounded-full animate-pulse 
-                                        ${activeStage === 1 ? 'bg-indigo-500' : activeStage === 2 ? 'bg-purple-500' : 'bg-green-500'}
+                                        ${activeStage === 0 ? 'bg-gray-400' : activeStage === 1 ? 'bg-indigo-500' : activeStage === 2 ? 'bg-purple-500' : 'bg-green-500'}
                                     `} />
+                                    {activeStage === 0 && "Waiting for Team"}
                                     {activeStage === 1 && "Reflection Analysis"}
                                     {activeStage === 2 && "Assigning Role"}
                                     {activeStage === 3 && "System Online"}
+                                    {activeStage === 4 && "Extended Session"}
                                 </h3>
 
                                 <AnimatePresence mode="wait">
-                                    <motion.p
+                                    <motion.div
                                         key={activeStage}
                                         initial={{ opacity: 0, y: 5 }}
                                         animate={{ opacity: 1, y: 0 }}
                                         exit={{ opacity: 0, y: -5 }}
                                         className="text-xs text-gray-600 max-w-[320px] leading-relaxed"
                                     >
-                                        {activeStage === 1 && "Please skim the abstract. We are analyzing reading patterns to assign an optimal role."}
+                                        {activeStage === 0 && (
+                                            <div className="flex flex-col gap-2">
+                                                <span>Session ready. Waiting for all users to join...</span>
+                                                <button
+                                                    onClick={() => (window as any).startSession()}
+                                                    className="bg-indigo-600 hover:bg-indigo-700 text-white px-3 py-1.5 rounded-lg shadow-sm font-semibold transition-colors w-fit"
+                                                >
+                                                    Start Reflection Phase
+                                                </button>
+                                            </div>
+                                        )}
+                                        {activeStage === 1 && "We are in Reflection Analysis phase. In this phase, we are going to skim the paper, see Intro, Abstract, and important points to have the initial idea. We can also see the short summary."}
                                         {activeStage === 2 && (
                                             <span>
-                                                Matching pattern to <b>Critical Reviewer</b> logic. Preparing agent swarm...
+                                                Based on your reflection, we are assigning you specific sections. You can also self-select your focus.
                                             </span>
                                         )}
-                                        {activeStage === 3 && "Deep reading agents are now active and monitoring for confusion."}
-                                    </motion.p>
+                                        {activeStage === 3 && "Deep reading agents are active. At the end, everyone's understanding will be merged to build a shared understanding."}
+                                        {activeStage === 4 && (
+                                            <div className="flex flex-col gap-2">
+                                                <span>Session timer ended, but agents remain active. You can continue researching.</span>
+                                                <button
+                                                    onClick={() => setShowReport(true)}
+                                                    className="bg-indigo-600 hover:bg-indigo-700 text-white px-3 py-1.5 rounded-lg shadow-sm font-semibold transition-colors w-fit text-xs"
+                                                >
+                                                    Open Analysis Report
+                                                </button>
+                                            </div>
+                                        )}
+                                    </motion.div>
                                 </AnimatePresence>
                             </div>
 
-                            {/* Right: ACTION (Only for Phase 1 currently) */}
-                            {activeStage === 1 && (
+                            {/* Skip Button (Available in all active phases) */}
+                            {activeStage >= 1 && activeStage <= 3 && (
                                 <>
-                                    <div className="h-8 w-[1px] bg-gray-300 mx-2" />
                                     <button
                                         onClick={() => setShowSummary(!showSummary)}
-                                        className={`px-4 py-2 rounded-lg text-xs font-semibold transition-all ${showSummary ? 'bg-indigo-100 text-indigo-700' : 'bg-gray-100 hover:bg-indigo-50 text-gray-700'}`}
+                                        className={`flex items-center gap-1 px-3 py-1.5 rounded-lg transition-colors text-xs font-semibold
+                                            ${showSummary ? 'bg-indigo-100 text-indigo-700' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'}
+                                        `}
                                     >
-                                        {showSummary ? 'Hide' : 'Quick Summary'}
+                                        Summary
                                     </button>
-                                </>
-                            )}
-                            {/* Phase 3 Dismiss */}
-                            {activeStage === 3 && (
-                                <>
-                                    <div className="h-8 w-[1px] bg-gray-300 mx-2" />
+                                    <div className="h-4 w-[1px] bg-gray-300 mx-2" />
                                     <button
-                                        onClick={() => setHasOnboarded(true)}
-                                        className="p-2 rounded-full hover:bg-green-100 text-green-700 transition-colors"
+                                        onClick={() => (window as any).skipPhase()}
+                                        className="flex items-center gap-1 px-3 py-1.5 rounded-lg bg-gray-100 hover:bg-gray-200 text-gray-600 text-xs font-semibold transition-colors"
                                     >
-                                        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
+                                        Skip
+                                        <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polygon points="5 4 15 12 5 20 5 4" /><line x1="19" y1="5" x2="19" y2="19" /></svg>
                                     </button>
                                 </>
                             )}
@@ -320,84 +477,88 @@ export function SystemFlowVisualizer({ summary }: SystemFlowVisualizerProps) {
 
                     </motion.div>
                 )}
-            </AnimatePresence>
+            </AnimatePresence >
 
             {/* MINIMIZED STATUS BAR (Click to Open) */}
             <AnimatePresence>
-                {!isOpen && (
-                    <motion.div
-                        initial={{ y: 50 }}
-                        animate={{ y: 0 }}
-                        exit={{ y: 50 }}
-                        onClick={() => setIsOpen(true)}
-                        className="fixed bottom-0 left-0 right-0 z-[50] h-9 bg-gray-900 border-t border-gray-800 flex items-center justify-between px-4 cursor-pointer hover:bg-gray-950 transition-colors"
-                    >
-                        {/* Left: Status Indicator */}
-                        <div className="flex items-center gap-3">
-                            <h3 className="text-[10px] font-bold text-gray-400 uppercase tracking-widest flex items-center gap-2">
-                                <span className={`w-1.5 h-1.5 rounded-full ${!hasOnboarded ? 'bg-blue-500 animate-pulse' : 'bg-green-500'} `} />
-                                System Flow
-                            </h3>
-                            <div className="bg-gray-700 w-[1px] h-3" />
-                            <span className="text-[10px] text-gray-500 font-mono">
-                                {!hasOnboarded ? `INIT_PHASE_${activeStage}` : 'LIVE_ORCHESTRATION'}
-                            </span>
-                        </div>
-
-                        {/* Center: Latest Event Ticker */}
-                        {latestEvent && (
-                            <div className="flex items-center gap-2 max-w-[500px] overflow-hidden">
-                                <span className="text-[10px] font-mono text-green-500">[{latestEvent.agent.replace('agent-', 'AG_')}]</span>
-                                <span className="text-[10px] text-gray-300 truncate">{latestEvent.event}</span>
+                {
+                    !isOpen && (
+                        <motion.div
+                            initial={{ y: 50 }}
+                            animate={{ y: 0 }}
+                            exit={{ y: 50 }}
+                            onClick={() => setIsOpen(true)}
+                            className="fixed bottom-0 left-0 right-0 z-[50] h-9 bg-gray-900 border-t border-gray-800 flex items-center justify-between px-4 cursor-pointer hover:bg-gray-950 transition-colors"
+                        >
+                            {/* Left: Status Indicator */}
+                            <div className="flex items-center gap-3">
+                                <h3 className="text-[10px] font-bold text-gray-400 uppercase tracking-widest flex items-center gap-2">
+                                    <span className={`w-1.5 h-1.5 rounded-full ${!hasOnboarded ? 'bg-blue-500 animate-pulse' : 'bg-green-500'} `} />
+                                    System Flow
+                                </h3>
+                                <div className="bg-gray-700 w-[1px] h-3" />
+                                <span className="text-[10px] text-gray-500 font-mono">
+                                    {!hasOnboarded ? `INIT_PHASE_${activeStage}` : 'LIVE_ORCHESTRATION'}
+                                </span>
                             </div>
-                        )}
 
-                        {/* Right: Expand Hint & Summary Toggle */}
-                        <div className="flex items-center gap-4">
-                            <button
-                                onClick={(e) => {
-                                    e.stopPropagation();
-                                    setShowSummary(!showSummary);
-                                }}
-                                className={`flex items-center gap-2 text-xs font-medium transition-colors ${showSummary ? 'text-indigo-400' : 'text-gray-400 hover:text-indigo-300'}`}
-                                title="Toggle AI Summary"
-                            >
-                                <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20" /><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z" /></svg>
-                                <span>Quick Summary</span>
-                            </button>
-                            <div className="h-4 w-[1px] bg-gray-700" />
-                            <div className="text-gray-500">
-                                <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="m18 15-6-6-6 6" /></svg>
+                            {/* Center: Latest Event Ticker */}
+                            {latestEvent && (
+                                <div className="flex items-center gap-2 max-w-[500px] overflow-hidden">
+                                    <span className="text-[10px] font-mono text-green-500">[{latestEvent.agent.replace('agent-', 'AG_')}]</span>
+                                    <span className="text-[10px] text-gray-300 truncate">{latestEvent.event}</span>
+                                </div>
+                            )}
+
+                            {/* Right: Expand Hint & Summary Toggle */}
+                            <div className="flex items-center gap-4">
+                                <button
+                                    onClick={(e) => {
+                                        e.stopPropagation();
+                                        setShowSummary(!showSummary);
+                                    }}
+                                    className={`flex items-center gap-2 text-xs font-medium transition-colors ${showSummary ? 'text-indigo-400' : 'text-gray-400 hover:text-indigo-300'}`}
+                                    title="Toggle AI Summary"
+                                >
+                                    <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20" /><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z" /></svg>
+                                    <span>Quick Summary</span>
+                                </button>
+                                <div className="h-4 w-[1px] bg-gray-700" />
+                                <div className="text-gray-500">
+                                    <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="m18 15-6-6-6 6" /></svg>
+                                </div>
                             </div>
-                        </div>
-                    </motion.div>
-                )}
-            </AnimatePresence>
+                        </motion.div>
+                    )
+                }
+            </AnimatePresence >
 
             {/* ✅ PERSISTENT SUMMARY OVERLAY */}
             <AnimatePresence>
-                {showSummary && (
-                    <motion.div
-                        initial={{ opacity: 0, scale: 0.95, y: 10 }}
-                        animate={{ opacity: 1, scale: 1, y: 0 }}
-                        exit={{ opacity: 0, scale: 0.95, y: 10 }}
-                        className="fixed bottom-20 left-1/2 -translate-x-1/2 z-[55] w-full max-w-xl bg-white/95 backdrop-blur-xl border border-gray-200 shadow-2xl rounded-xl p-6 pointer-events-auto overflow-hidden text-left"
-                    >
-                        <div className="flex items-center justify-between mb-4">
-                            <div className="flex items-center gap-2 text-xs font-bold text-indigo-600 uppercase tracking-widest">
-                                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" /></svg>
-                                AI Quick Summary
+                {
+                    showSummary && (
+                        <motion.div
+                            initial={{ opacity: 0, scale: 0.95, y: 10 }}
+                            animate={{ opacity: 1, scale: 1, y: 0 }}
+                            exit={{ opacity: 0, scale: 0.95, y: 10 }}
+                            className="fixed bottom-20 left-1/2 -translate-x-1/2 z-[55] w-full max-w-xl bg-white/95 backdrop-blur-xl border border-gray-200 shadow-2xl rounded-xl p-6 pointer-events-auto overflow-hidden text-left"
+                        >
+                            <div className="flex items-center justify-between mb-4">
+                                <div className="flex items-center gap-2 text-xs font-bold text-indigo-600 uppercase tracking-widest">
+                                    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" /></svg>
+                                    AI Quick Summary
+                                </div>
+                                <button onClick={() => setShowSummary(false)} className="text-gray-400 hover:text-gray-600">
+                                    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
+                                </button>
                             </div>
-                            <button onClick={() => setShowSummary(false)} className="text-gray-400 hover:text-gray-600">
-                                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
-                            </button>
-                        </div>
-                        <div className="text-sm text-gray-700 leading-relaxed max-h-[60vh] overflow-y-auto pr-2 custom-scrollbar">
-                            {displaySummaryContent}
-                        </div>
-                    </motion.div>
-                )}
-            </AnimatePresence>
+                            <div className="text-sm text-gray-700 leading-relaxed max-h-[60vh] overflow-y-auto pr-2 custom-scrollbar">
+                                {displaySummaryContent}
+                            </div>
+                        </motion.div>
+                    )
+                }
+            </AnimatePresence >
 
             <AnimatePresence>
                 {isOpen && (
@@ -463,24 +624,7 @@ export function SystemFlowVisualizer({ summary }: SystemFlowVisualizerProps) {
                                             )}
                                         </AnimatePresence>
 
-                                        {/* Progress Timer Overlay for Phase 1 */}
-                                        {activeStage === 1 && !hasOnboarded && (
-                                            <div className="absolute top-3 left-3 pointer-events-none">
-                                                <svg className="w-10 h-10 -rotate-90">
-                                                    <circle className="text-gray-100" strokeWidth="2" stroke="currentColor" fill="transparent" r="18" cx="20" cy="20" />
-                                                    <motion.circle
-                                                        className="text-blue-500"
-                                                        strokeWidth="2"
-                                                        stroke="currentColor"
-                                                        fill="transparent"
-                                                        r="18" cx="20" cy="20"
-                                                        initial={{ pathLength: 0 }}
-                                                        animate={{ pathLength: 1 }}
-                                                        transition={{ duration: 120, ease: "linear" }}
-                                                    />
-                                                </svg>
-                                            </div>
-                                        )}
+                                        {/* Progress Timer Overlay for Phase 1 - REMOVED (Using Main floating timer) */}
                                         <AgentNode
                                             icon={Icons.reflection}
                                             label="Reflection Analysis"
@@ -497,7 +641,7 @@ export function SystemFlowVisualizer({ summary }: SystemFlowVisualizerProps) {
                                             animate={{ opacity: 1 }}
                                             className="text-[10px] text-blue-500 font-medium pl-1 animate-pulse"
                                         >
-                                            ~2m remaining...
+                                            {formatTime(timeLeft)} remaining...
                                         </motion.span>
                                     )}
                                 </div>
@@ -523,24 +667,7 @@ export function SystemFlowVisualizer({ summary }: SystemFlowVisualizerProps) {
                                             )}
                                         </AnimatePresence>
 
-                                        {/* Progress Timer Overlay for Phase 2 */}
-                                        {activeStage === 2 && !hasOnboarded && (
-                                            <div className="absolute top-3 left-3 pointer-events-none">
-                                                <svg className="w-10 h-10 -rotate-90">
-                                                    <circle className="text-gray-100" strokeWidth="2" stroke="currentColor" fill="transparent" r="18" cx="20" cy="20" />
-                                                    <motion.circle
-                                                        className="text-blue-500"
-                                                        strokeWidth="2"
-                                                        stroke="currentColor"
-                                                        fill="transparent"
-                                                        r="18" cx="20" cy="20"
-                                                        initial={{ pathLength: 0 }}
-                                                        animate={{ pathLength: 1 }}
-                                                        transition={{ duration: 4, ease: "linear" }}
-                                                    />
-                                                </svg>
-                                            </div>
-                                        )}
+                                        {/* Progress Timer Overlay for Phase 2 - REMOVED (Using Main floating timer) */}
                                         <AgentNode
                                             icon={Icons.role}
                                             label="Role Assignment"
@@ -557,7 +684,7 @@ export function SystemFlowVisualizer({ summary }: SystemFlowVisualizerProps) {
                                             animate={{ opacity: 1 }}
                                             className="text-[10px] text-blue-500 font-medium pl-1 animate-pulse"
                                         >
-                                            ~4s remaining...
+                                            {formatTime(timeLeft)} remaining...
                                         </motion.span>
                                     )}
                                 </div>
@@ -604,6 +731,40 @@ export function SystemFlowVisualizer({ summary }: SystemFlowVisualizerProps) {
                     </motion.div>
                 )}
             </AnimatePresence >
+
+            {/* QUICK SUMMARY SIDE PANEL */}
+            <AnimatePresence>
+                {showSummary && (
+                    <motion.div
+                        initial={{ x: "100%", opacity: 0 }}
+                        animate={{ x: 0, opacity: 1 }}
+                        exit={{ x: "100%", opacity: 0 }}
+                        className="fixed top-24 right-6 w-80 bg-white/95 backdrop-blur-xl shadow-2xl rounded-2xl border border-white/20 z-[60] overflow-hidden flex flex-col max-h-[70vh]"
+                    >
+                        <div className="p-4 border-b border-gray-100 flex items-center justify-between bg-gradient-to-r from-indigo-50 to-white">
+                            <h3 className="font-bold text-gray-800 text-sm flex items-center gap-2">
+                                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="16" y1="13" x2="8" y2="13"></line><line x1="16" y1="17" x2="8" y2="17"></line><polyline points="10 9 9 9 8 9"></polyline></svg>
+                                Executive Summary
+                            </h3>
+                            <button
+                                onClick={() => setShowSummary(false)}
+                                className="text-gray-400 hover:text-gray-600 transition-colors p-1 hover:bg-gray-100 rounded-full"
+                            >
+                                <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
+                            </button>
+                        </div>
+                        <div className="p-5 overflow-y-auto text-sm text-gray-600 leading-relaxed custom-scrollbar">
+                            {displaySummaryContent}
+                            {!summary && (
+                                <div className="flex flex-col items-center justify-center py-10 text-center opacity-60">
+                                    <div className="animate-spin rounded-full h-6 w-6 border-2 border-indigo-500 border-t-transparent mb-3"></div>
+                                    <p className="text-xs font-medium text-indigo-800">Analyzing document structure...</p>
+                                </div>
+                            )}
+                        </div>
+                    </motion.div>
+                )}
+            </AnimatePresence>
         </>
     )
 }

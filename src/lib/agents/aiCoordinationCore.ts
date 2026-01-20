@@ -48,6 +48,13 @@ class AICoordinationCoreService {
   private isInitialized = false
   private eventLog: Array<{ event: string; timestamp: number; agent: string }> = []
 
+  /**
+   * DEMO ONLY: Inject fake peer for simulation
+   */
+  injectFakePeer(userId: string, userName: string, sectionId: string, status: 'proficient' | 'struggling') {
+    agent2_collaborationOrchestrator.injectFakePeer(userId, userName, sectionId, status)
+  }
+
   // ============================================================================
   // INITIALIZATION
   // ============================================================================

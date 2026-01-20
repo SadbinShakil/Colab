@@ -167,6 +167,15 @@ app.prepare().then(() => {
       }
     })
 
+    // ✅ ADD: Handle Session Phase Start Sync
+    socket.on('session-start', (data) => {
+      console.log(`🚀 [Server] Session Start Triggered by ${socket.id} at ${data.timestamp}`)
+      // Broadcast to everyone in the room (including sender, for confirmation/sync)
+      if (data.documentId) {
+        io.to(data.documentId).emit('session-start', data)
+      }
+    })
+
     socket.on('disconnect', () => {
       console.log(`👋 User disconnected: ${socket.id}`)
 

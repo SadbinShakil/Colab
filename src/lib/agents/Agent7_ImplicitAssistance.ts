@@ -213,10 +213,22 @@ class Agent7_ImplicitAssistance {
     sectionId?: string
     actionButton?: { label: string; action: string }
     secondaryButton?: { label: string; action: string }
-    targetUserId?: string  // ✅ ADD: Optional target user
-    targetUserIds?: string[]  // ✅ ADD: Optional multiple users
-    invitationData?: any  // ✅ ADD: Optional invitation/peer data
+    targetUserId?: string
+    targetUserIds?: string[]
+    invitationData?: any
   }) {
+    // 🛡️ DE-BOUNCE: Check if a similar notification already exists and is active
+    const duplicate = this.notifications.find(n =>
+      !n.dismissed &&
+      n.type === config.type &&
+      (Date.now() - n.timestamp < 30000) // Prevent same type within 30s
+    )
+
+    if (duplicate) {
+      console.log(`🚫 [Agent 7] Suppressing duplicate notification: ${config.title}`)
+      return
+    }
+
     const notification: SmartNotification = {
       id: `custom-${Date.now()}`,
       type: config.type,
@@ -228,9 +240,9 @@ class Agent7_ImplicitAssistance {
       secondaryButton: config.secondaryButton,
       timestamp: Date.now(),
       sectionId: config.sectionId,
-      targetUserId: config.targetUserId,  // ✅ ADD
-      targetUserIds: config.targetUserIds,  // ✅ ADD
-      invitationData: config.invitationData  // ✅ ADD: Store invitation data
+      targetUserId: config.targetUserId,
+      targetUserIds: config.targetUserIds,
+      invitationData: config.invitationData
     }
 
     this.addNotification(notification)
