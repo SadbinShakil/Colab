@@ -114,6 +114,12 @@ export function SystemFlowVisualizer({
         return getAgentData(id)?.status === 'active'
     }
 
+    // Inform Coordination Core when system is "Fully Online"
+    useEffect(() => {
+        const isOnline = hasOnboarded || activeStage >= 3
+        aiCoordinationCore.setSystemFullyOnline(isOnline)
+    }, [activeStage, hasOnboarded])
+
     const toggle = () => setIsOpen(!isOpen)
 
     // Trigger Guided Flow on Mount
@@ -359,53 +365,52 @@ export function SystemFlowVisualizer({
                         initial={{ opacity: 0, y: 20, scale: 0.95 }}
                         animate={{ opacity: 1, y: 0, scale: 1 }}
                         exit={{ opacity: 0, y: 20, scale: 0.95 }}
-                        className="fixed bottom-14 left-1/2 -translate-x-1/2 z-[45] flex flex-col items-center gap-2 pointer-events-none"
+                        className="fixed bottom-12 left-1/2 -translate-x-1/2 z-[45] flex flex-col items-center gap-2 pointer-events-none"
                     >
-                        {/* Main Glass Card */}
-                        <div className={`bg-white/80 backdrop-blur-md border shadow-2xl rounded-2xl p-4 flex items-center gap-6 pointer-events-auto ring-1 ring-black/5 max-w-2xl transition-colors duration-500
+                        {/* Compact Guided Card (Balanced Size) */}
+                        <div className={`bg-white/90 backdrop-blur-md border shadow-2xl rounded-2xl p-3 flex items-center gap-4 pointer-events-auto ring-1 ring-black/5 max-w-lg transition-colors duration-500
                             ${activeStage === 3 ? 'border-green-200 bg-green-50/80' : activeStage === 4 ? 'border-indigo-200 bg-indigo-50/80' : 'border-white/50'}
                         `}>
 
-                            {/* DYNAMIC ICON & TIMER */}
-                            <div className="relative w-12 h-12 flex-shrink-0 flex items-center justify-center">
-                                {/* PHASE 1, 2, & 3: TIMER RINGS */}
+                            {/* SMALL TIMER/ICON */}
+                            <div className="relative w-10 h-10 flex-shrink-0 flex items-center justify-center">
                                 {activeStage <= 3 && (
                                     <>
                                         <svg className="w-full h-full -rotate-90">
-                                            <circle className="text-gray-200" strokeWidth="3" stroke="currentColor" fill="transparent" r="22" cx="24" cy="24" />
+                                            <circle className="text-gray-200" strokeWidth="2.5" stroke="currentColor" fill="transparent" r="18" cx="20" cy="20" />
                                             <motion.circle
                                                 className={activeStage === 1 ? "text-indigo-600" : activeStage === 2 ? "text-purple-600" : "text-green-600"}
-                                                strokeWidth="3"
+                                                strokeWidth="2.5"
                                                 stroke="currentColor"
                                                 fill="transparent"
-                                                r="22" cx="24" cy="24"
+                                                r="18" cx="20" cy="20"
                                                 initial={{ pathLength: 1 }}
                                                 animate={{ pathLength: timeLeft / totalDuration }}
                                                 transition={{ duration: 1, ease: "linear" }}
                                             />
                                         </svg>
-                                        <div className="absolute inset-0 flex items-center justify-center text-[10px] font-bold text-gray-600">
+                                        <div className="absolute inset-0 flex items-center justify-center text-[9px] font-bold text-gray-700">
                                             {formatTime(timeLeft)}
                                         </div>
                                     </>
                                 )}
                                 {activeStage === 4 && (
                                     <div className="w-full h-full rounded-full bg-indigo-100 flex items-center justify-center text-indigo-600 animate-pulse">
-                                        <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10" /><path d="M12 6v6l4 2" /></svg>
+                                        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10" /><path d="M12 6v6l4 2" /></svg>
                                     </div>
                                 )}
                             </div>
 
-                            {/* DYNAMIC CONTENT */}
+                            {/* CONTENT Area */}
                             <div className="flex flex-col">
-                                <h3 className="text-sm font-bold text-gray-800 flex items-center gap-2">
-                                    <span className={`w-2 h-2 rounded-full animate-pulse 
+                                <h3 className="text-xs font-bold text-gray-800 flex items-center gap-1.5">
+                                    <span className={`w-1.5 h-1.5 rounded-full animate-pulse
                                         ${activeStage === 0 ? 'bg-gray-400' : activeStage === 1 ? 'bg-indigo-500' : activeStage === 2 ? 'bg-purple-500' : 'bg-green-500'}
                                     `} />
                                     {activeStage === 0 && "Waiting for Team"}
                                     {activeStage === 1 && "Reflection Analysis"}
                                     {activeStage === 2 && "Assigning Role"}
-                                    {activeStage === 3 && "System Online"}
+                                    {activeStage === 3 && "Agents Active"}
                                     {activeStage === 4 && "Extended Session"}
                                 </h3>
 
@@ -415,34 +420,30 @@ export function SystemFlowVisualizer({
                                         initial={{ opacity: 0, y: 5 }}
                                         animate={{ opacity: 1, y: 0 }}
                                         exit={{ opacity: 0, y: -5 }}
-                                        className="text-xs text-gray-600 max-w-[320px] leading-relaxed"
+                                        className="text-[10px] text-gray-600 max-w-[260px] leading-relaxed line-clamp-2"
                                     >
                                         {activeStage === 0 && (
-                                            <div className="flex flex-col gap-2">
-                                                <span>Session ready. Waiting for all users to join...</span>
+                                            <div className="flex items-center gap-2 mt-1">
+                                                <span>Session ready.</span>
                                                 <button
                                                     onClick={() => (window as any).startSession()}
-                                                    className="bg-indigo-600 hover:bg-indigo-700 text-white px-3 py-1.5 rounded-lg shadow-sm font-semibold transition-colors w-fit"
+                                                    className="bg-indigo-600 hover:bg-indigo-700 text-white px-2 py-0.5 rounded-md shadow-sm font-semibold transition-colors text-[9px]"
                                                 >
-                                                    Start Reflection Phase
+                                                    Start Session
                                                 </button>
                                             </div>
                                         )}
-                                        {activeStage === 1 && "We are in Reflection Analysis phase. In this phase, we are going to skim the paper, see Intro, Abstract, and important points to have the initial idea. We can also see the short summary."}
-                                        {activeStage === 2 && (
-                                            <span>
-                                                Based on your reflection, we are assigning you specific sections. You can also self-select your focus.
-                                            </span>
-                                        )}
-                                        {activeStage === 3 && "Deep reading agents are active. At the end, everyone's understanding will be merged to build a shared understanding."}
+                                        {activeStage === 1 && "Skim the paper, see Intro/Abstract to get the initial idea."}
+                                        {activeStage === 2 && "Assigning sections based on your interest..."}
+                                        {activeStage === 3 && "Deep reading agents are assisting your research."}
                                         {activeStage === 4 && (
-                                            <div className="flex flex-col gap-2">
-                                                <span>Session timer ended, but agents remain active. You can continue researching.</span>
+                                            <div className="flex items-center gap-2 mt-1">
+                                                <span>Timer ended.</span>
                                                 <button
                                                     onClick={() => setShowReport(true)}
-                                                    className="bg-indigo-600 hover:bg-indigo-700 text-white px-3 py-1.5 rounded-lg shadow-sm font-semibold transition-colors w-fit text-xs"
+                                                    className="bg-indigo-600 hover:bg-indigo-700 text-white px-2 py-0.5 rounded-md shadow-sm font-semibold transition-colors text-[9px]"
                                                 >
-                                                    Open Analysis Report
+                                                    View Report
                                                 </button>
                                             </div>
                                         )}
@@ -450,31 +451,27 @@ export function SystemFlowVisualizer({
                                 </AnimatePresence>
                             </div>
 
-                            {/* Skip Button (Available in all active phases) */}
+                            {/* Skip / Summary Controls */}
                             {activeStage >= 1 && activeStage <= 3 && (
-                                <>
+                                <div className="flex items-center gap-1.5 border-l pl-3 ml-1 border-gray-200">
                                     <button
                                         onClick={() => setShowSummary(!showSummary)}
-                                        className={`flex items-center gap-1 px-3 py-1.5 rounded-lg transition-colors text-xs font-semibold
-                                            ${showSummary ? 'bg-indigo-100 text-indigo-700' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'}
+                                        className={`px-2 py-1 rounded-md text-[9px] font-bold transition-all
+                                            ${showSummary ? 'bg-indigo-100 text-indigo-700' : 'text-gray-500 hover:bg-gray-100'}
                                         `}
                                     >
                                         Summary
                                     </button>
-                                    <div className="h-4 w-[1px] bg-gray-300 mx-2" />
                                     <button
                                         onClick={() => (window as any).skipPhase()}
-                                        className="flex items-center gap-1 px-3 py-1.5 rounded-lg bg-gray-100 hover:bg-gray-200 text-gray-600 text-xs font-semibold transition-colors"
+                                        className="p-1 hover:bg-gray-100 rounded-md text-gray-400 transition-colors"
+                                        title="Skip Stage"
                                     >
-                                        Skip
                                         <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polygon points="5 4 15 12 5 20 5 4" /><line x1="19" y1="5" x2="19" y2="19" /></svg>
                                     </button>
-                                </>
+                                </div>
                             )}
                         </div>
-
-
-
                     </motion.div>
                 )}
             </AnimatePresence >

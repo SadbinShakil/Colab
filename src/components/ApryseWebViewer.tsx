@@ -1,6 +1,7 @@
 'use client'
 
 import { useEffect, useRef, useState, useCallback } from 'react'
+import { motion, AnimatePresence } from 'framer-motion'
 // import { useRealtimeHighlights } from '@/app/hooks/useRealtimeHighlights'
 import { eyeTracker } from '@/lib/eyeTracking'
 import EyeTrackingCalibration from './EyeTrackingCalibration'
@@ -8,6 +9,7 @@ import { PDFHeadingExtractor, type PDFSection, type PDFHeading } from '@/lib/pdf
 import SmartHelpPanel from '@/components/SmartHelpPanel'
 import { SmartHeadingExtractor } from '@/lib/smartHeadingExtractor'
 import SectionAssignmentPanel from './SectionAssignmentPanel'
+import ReflectionIntake from './ReflectionIntake'
 
 
 // [ADV] Charts
@@ -83,9 +85,10 @@ import {
   GraduationCap,
   Trash2,
   CheckCircle,  // ✅ ADD THIS
-  AlertCircle,  // ✅ ADD THIS
+  AlertCircle,
   BookOpen,
-  Book
+  Book,
+  BellOff
 } from 'lucide-react'
 import MathExplainer from './MathExplainer'
 import GeneralExplainer from './GeneralExplainer'
@@ -271,6 +274,16 @@ export default function ApryseWebViewer({
   // ✅ NEW: Implicit Image Help State
   const [imageHelpPrompt, setImageHelpPrompt] = useState<{ x: number, y: number, visible: boolean } | null>(null)
   const imageHoverTimer = useRef<NodeJS.Timeout | null>(null)
+  const dummyHelpTimerRef = useRef<NodeJS.Timeout | null>(null)
+  const [helpSnoozedUntil, setHelpSnoozedUntil] = useState<number | null>(null)
+  const [snoozeMinutes, setSnoozeMinutes] = useState(10) // Default 10 minutes
+
+  // No longer loading snooze from localStorage to ensure fresh start per session
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      localStorage.removeItem('litSense_helpSnoozedUntil');
+    }
+  }, []);
 
 
   const [dismissedNotifications, setDismissedNotifications] = useState<Set<string>>(new Set())
@@ -334,6 +347,13 @@ export default function ApryseWebViewer({
   // Track confusion highlights per user per section to only trigger notifications when there are 3+
   const [userConfusionHighlights, setUserConfusionHighlights] = useState<Map<string, Map<string, number>>>(new Map());
 
+  // ✅ NEW: Phase 1 Reflection State
+  const [showReflectionIntake, setShowReflectionIntake] = useState(false)
+  const [reflectionSubmitted, setReflectionSubmitted] = useState(false)
+  const [reflectionData, setReflectionData] = useState<{ type: 'text' | 'audio' | 'file', content: string } | null>(null)
+  const [collaboratorReflections, setCollaboratorReflections] = useState<Map<string, { type: string, content: string, userName: string }>>(new Map())
+  const reflectionTimerRef = useRef<NodeJS.Timeout | null>(null)
+
   const {
     isConnected,
     connectedUsers,
@@ -341,9 +361,10 @@ export default function ApryseWebViewer({
     broadcastPeerInvitation,
     broadcastPeerAcceptance,
     broadcastPeerMessage,
+    broadcastReflection, // ✅ Added this
     incomingHighlights,
     clearIncomingHighlights,
-    broadcastSessionStart, // ✅ Added to original hook call
+    broadcastSessionStart,
   } = useRealtimeHighlights({
     documentId,
     userName,
@@ -351,6 +372,23 @@ export default function ApryseWebViewer({
     webViewerInstance,
     enabled: true
   })
+
+  // ✅ ADD: Listen for remote reflections
+  useEffect(() => {
+    const handleRemoteReflection = (e: CustomEvent) => {
+      console.log('🧠 Received remote reflection in UI', e.detail)
+      const { userId: remoteUserId, userName: remoteUserName, type, content } = e.detail
+      setCollaboratorReflections(prev => {
+        const next = new Map(prev)
+        next.set(remoteUserId, { type, content, userName: remoteUserName })
+        return next
+      })
+      toast.info(`${remoteUserName} shared their reflection`, { icon: '🧠' })
+    }
+
+    window.addEventListener('remote-reflection-updated', handleRemoteReflection as EventListener)
+    return () => window.removeEventListener('remote-reflection-updated', handleRemoteReflection as EventListener)
+  }, [])
 
   // ✅ ADD: Listen for "Start Session" request (moved here)
   useEffect(() => {
@@ -2269,7 +2307,7 @@ export default function ApryseWebViewer({
 
   //     collaborators.forEach(collab => {
   //       // Safety check: only register if userId exists
-  //       if (collab.userId && collab.name) {
+  //       if (collab.userId) {
   //         agent2_collaborationOrchestrator.registerPeer(collab.userId, collab.name)
 
   //         // Mock: Set understanding scores (in real system, this would come from actual data)
@@ -3628,39 +3666,35 @@ ${documentContent}
         // Call the function to apply styles
         addCommentPanelStyles();
 
-        // ✅ NEW: Implicit Image Help Listener (Demo Logic for "LitSense")
-        // Detects hover over Figure 3 (simulated location on Page 3)
-        const handleMouseMove = (e: MouseEvent) => {
-          const displayMode = documentViewer.getDisplayModeManager().getDisplayMode();
-          const page = displayMode.windowToPage(documentViewer.getViewerCoordinates(e));
+        // ✅ Dummy Image Help Prompt - only trigger once system is fully online
+        const triggerDummyHelp = () => {
+          if (dummyHelpTimerRef.current) clearTimeout(dummyHelpTimerRef.current)
 
-          if (page && page.pageNumber === 3) {
-            // Simulated Bounding Box for "Figure 3: System Architecture"
-            // Adjust coordinates based on typical 1080p layout approximation
-            // Page 3, Y range ~25% to ~45% down the page
-            if (page.y > 200 && page.y < 450) {
-              if (!imageHelpPrompt && !imageHoverTimer.current) {
-                imageHoverTimer.current = setTimeout(() => {
-                  setImageHelpPrompt({
-                    x: e.clientX + 20,
-                    y: e.clientY + 20,
-                    visible: true
-                  })
-                }, 800) // 800ms hover dwell
-              }
-            } else {
-              // Clear if moved out
-              if (imageHoverTimer.current) {
-                clearTimeout(imageHoverTimer.current)
-                imageHoverTimer.current = null
-              }
+          dummyHelpTimerRef.current = setTimeout(() => {
+            if (!aiCoordinationCore.isOnline()) {
+              console.log('⏳ [ApryseWebViewer] Delaying dummy help until system is online')
+              // Check again in 30s
+              triggerDummyHelp()
+              return
             }
-          }
+
+            // Check if help is snoozed (Check both local and core state)
+            const now = Date.now();
+            if (aiCoordinationCore.isMuted() || (helpSnoozedUntil && now < helpSnoozedUntil)) {
+              console.log('Help notifications are snoozed');
+              return;
+            }
+
+            console.log('💡 [ApryseWebViewer] Triggering implicit image help')
+            setImageHelpPrompt({
+              x: window.innerWidth / 2 - 150, // Center horizontally
+              y: window.innerHeight / 2 - 100, // Center vertically
+              visible: true
+            });
+          }, 60000); // 1 minute delay after system is online
         }
 
-        // Attach to the iframe content window if accessible, or the element
-        // Apryse exposes an event on documentViewer
-        documentViewer.addEventListener('mouseMove', handleMouseMove)
+        triggerDummyHelp();
 
 
         // Set user information for annotations
@@ -3990,6 +4024,15 @@ ${documentContent}
           documentViewer.setFitMode(documentViewer.FitMode.FitWidth);
           setIsLoading(false);
           setTotalPages(documentViewer.getPageCount());
+
+          // ✅ Phase 1: Delayed Contextual Reflection
+          if (reflectionTimerRef.current) clearTimeout(reflectionTimerRef.current)
+          reflectionTimerRef.current = setTimeout(() => {
+            if (!reflectionSubmitted) {
+              console.log('🧠 [LitSense] Triggering Contextual Reflection Phase')
+              setShowReflectionIntake(true)
+            }
+          }, 10000) // 10 seconds after load
 
           // ✅ ADD: Extract PDF sections/headings
           setTimeout(async () => {
@@ -4473,6 +4516,13 @@ ${documentContent}
         setIsLoading(false);
       });
     })
+
+    // Cleanup function
+    return () => {
+      if (dummyHelpTimerRef.current) {
+        clearTimeout(dummyHelpTimerRef.current);
+      }
+    };
   }, [documentUrl, userName, userId]);
 
 
@@ -5252,6 +5302,28 @@ ${documentContent}
       <div className="w-72 bg-gradient-to-b from-slate-50 to-white border-r border-slate-200/60 flex flex-col h-full shadow-sm">
         {/* Document Info - Improved */}
         <div className="p-4 border-b border-slate-200/60 bg-white/80 backdrop-blur-sm">
+          {/* ✅ UPDATED: Your Reflection Card (Interactive) */}
+          {reflectionSubmitted && reflectionData && (
+            <button
+              onClick={() => {
+                console.log('🧠 Opening my reflection...')
+                setShowReflectionIntake(true)
+              }}
+              className="w-full mb-4 bg-indigo-50/50 border-2 border-indigo-100 rounded-2xl p-3 text-left transition-all hover:bg-white hover:border-indigo-400 hover:shadow-md group relative text-inherit font-inherit"
+            >
+              <div className="flex items-center justify-between mb-1.5">
+                <div className="flex items-center gap-2">
+                  <Brain className="w-3 h-3 text-indigo-600" />
+                  <span className="text-[10px] font-black text-indigo-600 uppercase tracking-widest">My Baseline</span>
+                </div>
+                <div className="text-[9px] font-bold text-indigo-400 opacity-0 group-hover:opacity-100 transition-opacity">Edit Profile →</div>
+              </div>
+              <p className="text-[11px] text-slate-600 line-clamp-2 font-medium italic leading-relaxed">
+                "{reflectionData.content}"
+              </p>
+            </button>
+          )}
+
           <div className="flex items-center gap-2 mb-2">
             <div className="w-6 h-6 bg-gradient-to-br from-blue-500 to-indigo-600 rounded-lg flex items-center justify-center shadow-sm flex-shrink-0">
               <FileText className="w-3 h-3 text-white" />
@@ -5379,7 +5451,41 @@ ${documentContent}
 
 
           {/* Quick Actions - Glass Style */}
-          <div className="flex gap-2">
+          <div className="flex gap-2 flex-wrap">
+
+
+            {/* ✅ GLOBAL SNOOZE NOTIFICATIONS BUTTON */}
+            <Button
+              variant="outline"
+              size="sm"
+              className={`h-8 text-xs px-2 transition-all duration-300 backdrop-blur-md rounded-xl flex items-center gap-1.5 shadow-sm
+                ${helpSnoozedUntil && Date.now() < helpSnoozedUntil
+                  ? 'bg-amber-100 text-amber-700 border-amber-300 ring-2 ring-amber-200'
+                  : 'bg-slate-50 border-slate-200 text-slate-600 hover:bg-slate-100 hover:border-slate-300'}
+              `}
+              onClick={() => {
+                if (helpSnoozedUntil && Date.now() < helpSnoozedUntil) {
+                  setHelpSnoozedUntil(null);
+                  aiCoordinationCore.unmuteNotifications();
+                  localStorage.removeItem('litSense_helpSnoozedUntil');
+                  toast.success("Notifications resumed", { icon: "🔔" });
+                } else {
+                  // Default snooze to 10 minutes for better utility
+                  const snoozeUntil = Date.now() + 10 * 60 * 1000;
+                  setHelpSnoozedUntil(snoozeUntil);
+                  aiCoordinationCore.muteNotifications(10);
+                  localStorage.setItem('litSense_helpSnoozedUntil', snoozeUntil.toString());
+                  toast.success("All notifications paused for 10 mins", { icon: "🔕" });
+                }
+              }}
+              title={helpSnoozedUntil && Date.now() < helpSnoozedUntil ? "Click to resume notifications" : "Temporarily pause help notifications"}
+            >
+              <BellOff className={`w-3.5 h-3.5 ${helpSnoozedUntil && Date.now() < helpSnoozedUntil ? 'animate-pulse text-amber-700' : 'text-slate-500'}`} />
+              <span className="font-bold">
+                {helpSnoozedUntil && Date.now() < helpSnoozedUntil ? 'Paused' : 'Snooze'}
+              </span>
+            </Button>
+
             <div className="relative flex-1">
               <Button
                 variant="outline"
@@ -5684,6 +5790,59 @@ ${documentContent}
             </div>
           )}
         </div>
+
+        {/* ✅ UPDATED: Collaborator Reflections Section (Interactive & Inclusive) */}
+        <div className="px-4 py-3 border-b border-indigo-100 bg-indigo-50/20">
+          <div className="flex items-center justify-between mb-3">
+            <h4 className="font-semibold text-[10px] text-indigo-700 uppercase tracking-widest flex items-center gap-2">
+              <Brain className="w-3 h-3" /> Collective Reflections
+            </h4>
+            <Badge variant="outline" className="text-[8px] bg-white border-indigo-100 text-indigo-400">
+              {Array.from(collaboratorReflections.keys()).length}/{collaborators.length} Syllabled
+            </Badge>
+          </div>
+          <div className="space-y-3">
+            {collaborators.filter(c => !c.isCurrentUser).map((collab) => {
+              const reflection = collaboratorReflections.get(collab.id)
+
+              return reflection ? (
+                <button
+                  key={collab.id}
+                  className="w-full bg-white/80 border border-indigo-100 rounded-xl p-2.5 shadow-sm hover:shadow-md transition-all text-left flex flex-col group active:scale-[0.98]"
+                  onClick={() => {
+                    toast.info(`${reflection.userName}'s Reflection`, {
+                      description: `"${reflection.content}"`,
+                      duration: 8000,
+                      icon: <Brain className="w-4 h-4 text-indigo-600" />
+                    })
+                  }}
+                >
+                  <div className="flex items-center gap-2 mb-1.5 w-full">
+                    <div className="w-5 h-5 rounded-lg bg-indigo-600 text-white text-[10px] flex items-center justify-center font-bold">
+                      {reflection.userName.charAt(0)}
+                    </div>
+                    <span className="text-[11px] font-bold text-slate-800">{reflection.userName}</span>
+                    <Badge variant="outline" className="text-[8px] px-1 h-3 rounded-full ml-auto uppercase border-indigo-200 text-indigo-600">{reflection.type}</Badge>
+                  </div>
+                  <p className="text-[10px] text-slate-500 italic line-clamp-2 leading-relaxed">
+                    "{reflection.content}"
+                  </p>
+                </button>
+              ) : (
+                <div key={collab.id} className="bg-slate-50/50 border border-slate-100 border-dashed rounded-xl p-3 flex items-center gap-3 opacity-60">
+                  <div className="w-5 h-5 rounded-lg bg-slate-200 text-slate-400 text-[10px] flex items-center justify-center font-bold">
+                    {collab.name.charAt(0)}
+                  </div>
+                  <div className="flex-1">
+                    <p className="text-[11px] font-bold text-slate-400">{collab.name}</p>
+                    <p className="text-[9px] text-slate-300 italic uppercase tracking-tighter">Initializing reflection...</p>
+                  </div>
+                </div>
+              )
+            })}
+          </div>
+        </div>
+
         {/* Enhanced Stats Cards */}
         <div className="px-4 py-3">
           <div className="grid grid-cols-2 gap-3">
@@ -6384,16 +6543,16 @@ ${documentContent}
             className="fixed z-[100] bg-white p-4 rounded-xl shadow-2xl border border-indigo-100 animate-in fade-in zoom-in-95 duration-200"
             style={{ left: imageHelpPrompt.x, top: imageHelpPrompt.y }}
           >
-            <div className="flex items-start gap-3 w-64">
+            <div className="flex items-start gap-3 w-80">
               <div className="w-8 h-8 rounded-full bg-indigo-100 flex items-center justify-center text-indigo-600 shrink-0">
                 <Brain className="w-5 h-5" />
               </div>
-              <div>
+              <div className="flex-1">
                 <h4 className="font-bold text-sm text-gray-800">Analyze Diagram?</h4>
                 <p className="text-xs text-gray-500 mt-1 leading-relaxed">
-                  I can break down "Figure 3" and explain the architecture flow.
+                  I can break down "Fig 1" and explain the architecture flow.
                 </p>
-                <div className="flex gap-2 mt-3">
+                <div className="flex gap-2 mt-4">
                   <button
                     onClick={() => {
                       setImageHelpPrompt(null)
@@ -6401,21 +6560,21 @@ ${documentContent}
                       // Open Image Explainer (simulated)
                       setShowStoryboard(true)
                     }}
-                    className="px-3 py-1.5 bg-indigo-600 text-white text-xs font-bold rounded-lg hover:bg-indigo-700 transition"
+                    className="flex-1 px-3 py-2 bg-indigo-600 text-white text-xs font-bold rounded-lg hover:bg-indigo-700 transition shadow-sm"
                   >
                     Yes, Explain
                   </button>
                   <button
                     onClick={() => setImageHelpPrompt(null)}
-                    className="px-3 py-1.5 bg-gray-100 text-gray-600 text-xs font-bold rounded-lg hover:bg-gray-200 transition"
+                    className="flex-1 px-3 py-2 bg-slate-100 text-slate-600 text-xs font-bold rounded-lg hover:bg-slate-200 transition"
                   >
-                    No Thanks
+                    Not Now
                   </button>
                 </div>
               </div>
               <button
                 onClick={() => setImageHelpPrompt(null)}
-                className="text-gray-400 hover:text-gray-600"
+                className="text-slate-400 hover:text-slate-600 p-1"
               >
                 <X className="w-4 h-4" />
               </button>
@@ -7057,12 +7216,43 @@ ${documentContent}
           insights={wikiInsights}
           activities={wikiActivities}
         />
+
+        {/* ✅ NEW: Phase 1 Reflection Intake */}
+        <ReflectionIntake
+          isOpen={showReflectionIntake}
+          onClose={() => setShowReflectionIntake(false)}
+          reflectionSubmitted={reflectionSubmitted}
+          currentReflection={reflectionData}
+          onReset={() => {
+            setReflectionSubmitted(false)
+            setReflectionData(null)
+            aiCoordinationCore.routeUserAction('reflection-reset', null)
+          }}
+          onSubmit={(reflection) => {
+            console.log('📝 Reflection submitted:', reflection)
+            setReflectionData(reflection)
+            setReflectionSubmitted(true)
+            broadcastReflection(reflection) // ✅ Sync with others
+            aiCoordinationCore.routeUserAction('reflection-submitted', reflection)
+          }}
+        />
+
+        {/* ✅ FLOATING REFLECTION TRIGGER */}
+        <div className="fixed bottom-32 right-8 z-[200]">
+          <button
+            onClick={() => setShowReflectionIntake(true)}
+            className={`w-14 h-14 rounded-full shadow-2xl flex items-center justify-center transition-all hover:scale-110 active:scale-95 group border-4 border-white
+               ${reflectionSubmitted ? 'bg-indigo-100 text-indigo-600' : 'bg-indigo-600 text-white animate-pulse shadow-indigo-200'}
+             `}
+            title="Open Reflection Creator"
+          >
+            <Brain className="w-7 h-7" />
+            <div className="absolute right-full mr-4 bg-slate-900 text-white px-3 py-1.5 rounded-lg text-xs font-bold opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap pointer-events-none">
+              {reflectionSubmitted ? 'View Reflection' : 'Phase 1: Reflection'}
+            </div>
+          </button>
+        </div>
       </div>
-
     </div>
-
   )
-
-
-
 }

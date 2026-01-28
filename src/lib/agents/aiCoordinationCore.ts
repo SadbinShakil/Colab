@@ -33,6 +33,9 @@ export interface SystemState {
   recentBreakthrough: boolean
   pendingNotifications: number
   sessionActive: boolean
+  systemFullyOnline: boolean
+  isMuted: boolean
+  muteRemainingMinutes: number
 }
 
 export interface AgentActivity {
@@ -46,6 +49,8 @@ export interface AgentActivity {
 class AICoordinationCoreService {
   private coreId = 'ai-coordination-core'
   private isInitialized = false
+  private isSystemFullyOnline = false
+  private muteUntilNotification: number | null = null
   private eventLog: Array<{ event: string; timestamp: number; agent: string }> = []
 
   /**
@@ -97,7 +102,20 @@ class AICoordinationCoreService {
     agent9_relatedWorkAnalysis.deactivate()
 
     this.isInitialized = false
+    this.isSystemFullyOnline = false
     console.log('✅ [AI Coordination Core] System shut down')
+  }
+
+  /**
+   * Sets whether the system is fully online (past reflection/role assignment)
+   */
+  setSystemFullyOnline(online: boolean) {
+    console.log(`🧠 [AI Core] System fully online set to: ${online}`)
+    this.isSystemFullyOnline = online
+  }
+
+  isOnline(): boolean {
+    return this.isSystemFullyOnline
   }
 
   // ============================================================================
@@ -146,6 +164,13 @@ class AICoordinationCoreService {
           this.activateAgent('agent8', 'verify-content', data)
         }
         break
+
+      case 'reflection-submitted':
+        console.log('🧠 [AI Core] Reflection submitted, transitioning to online state')
+        // Transition system to active phase
+        this.setSystemFullyOnline(true)
+        this.logEvent('reflection-merged', 'core')
+        break
     }
   }
 
@@ -163,6 +188,17 @@ class AICoordinationCoreService {
         const dataWithUserId = { ...data, userId: strugglingUserId }
 
         console.log(`🔍 [AI Core] Struggle detected for user ${strugglingUserId} in section ${data.sectionId}`)
+
+        if (!this.isSystemFullyOnline) {
+          console.log('⏳ [AI Core] System not fully online yet, suppressing implicit notifications')
+          break
+        }
+
+        // ✅ Check if notifications are muted
+        if (this.isMuted()) {
+          console.log(`🔕 [AI Core] Muted! Suppressing notification for ${strugglingUserId} (${this.getMuteRemainingMinutes()}m left)`)
+          break
+        }
 
         // Step 1: Notify the struggling user with basic help message
         agent7_implicitAssistance.generateNotification({
@@ -297,16 +333,20 @@ class AICoordinationCoreService {
 
       case 'breakthrough-detected':
         // Agent 1 detected breakthrough → Agent 7 offers peer help
-        agent7_implicitAssistance.onBreakthroughDetected(data)
+        if (this.isSystemFullyOnline) {
+          agent7_implicitAssistance.onBreakthroughDetected(data)
+        }
         break
 
       case 'confusion-loop-detected':
         // Agent 1 detected loop → Agent 7 intervenes
-        agent7_implicitAssistance.generateSlowZoneNotification(
-          data.sectionId,
-          data.sectionName,
-          data.timeSpent
-        )
+        if (this.isSystemFullyOnline) {
+          agent7_implicitAssistance.generateSlowZoneNotification(
+            data.sectionId,
+            data.sectionName,
+            data.timeSpent
+          )
+        }
         break
     }
   }
@@ -390,7 +430,10 @@ class AICoordinationCoreService {
       strugglingNow: struggling,
       recentBreakthrough: breakthroughs.length > 0,
       pendingNotifications: notifications.length,
-      sessionActive: session !== null
+      sessionActive: session !== null,
+      systemFullyOnline: this.isSystemFullyOnline,
+      isMuted: this.isMuted(),
+      muteRemainingMinutes: this.getMuteRemainingMinutes()
     }
   }
 
@@ -419,6 +462,31 @@ class AICoordinationCoreService {
     }
 
     return agents
+  }
+
+  muteNotifications(minutes: number) {
+    this.muteUntilNotification = Date.now() + (minutes * 60 * 1000)
+    console.log(`🔕 [AI Core] Notifications snoozed for ${minutes} minutes`)
+  }
+
+  unmuteNotifications() {
+    this.muteUntilNotification = null
+    console.log('🔔 [AI Core] Notifications resumed')
+  }
+
+  isMuted() {
+    if (!this.muteUntilNotification) return false
+    if (Date.now() > this.muteUntilNotification) {
+      this.muteUntilNotification = null
+      return false
+    }
+    return true
+  }
+
+  getMuteRemainingMinutes() {
+    if (!this.muteUntilNotification) return 0
+    const remaining = this.muteUntilNotification - Date.now()
+    return Math.max(0, Math.ceil(remaining / (60 * 1000)))
   }
 
   getAgentActivities(): AgentActivity[] {

@@ -89,6 +89,12 @@ export function useRealtimeHighlights({
       window.dispatchEvent(new CustomEvent('peer-chat-message', { detail: data }))
     })
 
+    // ✅ ADD: Listen for reflections from other users
+    socket.on('reflection-updated', (data) => {
+      console.log('🧠 Received remote reflection update:', data)
+      window.dispatchEvent(new CustomEvent('remote-reflection-updated', { detail: data }))
+    })
+
     // ✅ ADD: Listen for Start Signal
     socket.on('session-start', (data) => {
       console.log('🚀 Received remote session start:', data)
@@ -102,6 +108,19 @@ export function useRealtimeHighlights({
       setConnectedUsers([])
     }
   }, [documentId, userName, userId, enabled, webViewerInstance])
+
+  const broadcastReflection = (data: { type: string, content: string }) => {
+    if (socketRef.current?.connected) {
+      console.log('📡 Broadcasting reflection:', data)
+      socketRef.current.emit('reflection-updated', {
+        ...data,
+        userId,
+        userName,
+        documentId,
+        timestamp: Date.now()
+      })
+    }
+  }
 
   const broadcastHighlight = (data: any) => {
     if (socketRef.current?.connected) {
@@ -180,7 +199,8 @@ export function useRealtimeHighlights({
     broadcastPeerInvitation,
     broadcastPeerAcceptance,
     broadcastPeerMessage,
-    broadcastSessionStart, // Export this
+    broadcastSessionStart,
+    broadcastReflection, // ✅ Added this
     incomingHighlights,
     clearIncomingHighlights,
     broadcastHighlightDeletion: () => { },
