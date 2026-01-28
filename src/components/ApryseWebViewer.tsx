@@ -6266,6 +6266,13 @@ ${documentContent}
                 currentUserId={userId}
                 documentId={documentId}
                 socket={socketInstance}
+                reflections={(() => {
+                  const allReflections = new Map(collaboratorReflections)
+                  if (reflectionData) {
+                    allReflections.set(userId, { ...reflectionData, userName })
+                  }
+                  return allReflections
+                })()}
                 onAssignmentChange={(assignments) => {
                   console.log('📚 Section assignments updated:', assignments)
                   setSectionAssignments(assignments)

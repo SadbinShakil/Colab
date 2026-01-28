@@ -10,6 +10,7 @@ import { agent6_contentComprehension } from './Agent6_ContentComprehension'
 import { agent7_implicitAssistance } from './Agent7_ImplicitAssistance'
 import { agent8_factChecking } from './Agent8_FactChecking'
 import { agent9_relatedWorkAnalysis } from './Agent9_RelatedWorkAnalysis'
+import { agent10_roleAllocation } from './Agent10_RoleAllocation'
 import { interactionCollector } from '../interactionCollector'
 import { interactionAnalyzer } from '../interactionAnalyzer'
 
@@ -100,6 +101,7 @@ class AICoordinationCoreService {
     agent7_implicitAssistance.deactivate()
     agent8_factChecking.deactivate()
     agent9_relatedWorkAnalysis.deactivate()
+    agent10_roleAllocation.deactivate()
 
     this.isInitialized = false
     this.isSystemFullyOnline = false
@@ -170,8 +172,20 @@ class AICoordinationCoreService {
         // Transition system to active phase
         this.setSystemFullyOnline(true)
         this.logEvent('reflection-merged', 'core')
+
+        // Trigger Agent 10: Role Allocation
+        this.activateAgent('agent10', 'allocate-roles', data)
         break
     }
+  }
+
+  /**
+   * Triggers the smart role allocation process
+   */
+  requestSmartAllocation(sections: any[], reflections: any, userId: string, userName: string) {
+    const assignments = agent10_roleAllocation.allocateRoles(sections, reflections, userId, userName)
+    this.logEvent('roles-allocated', 'agent10')
+    return assignments
   }
 
   /**

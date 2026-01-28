@@ -18,9 +18,11 @@ import {
   CheckCircle,
   AlertCircle,
   Sparkles,
-  Award
+  Award,
+  Bot
 } from 'lucide-react'
 import type { PDFSection } from '@/lib/pdfHeadingExtractor'
+import { aiCoordinationCore } from '@/lib/agents/aiCoordinationCore'
 
 interface SectionAssignmentPanelProps {
   sections: PDFSection[]
@@ -37,6 +39,7 @@ interface SectionAssignmentPanelProps {
   glowingSections?: Set<string>
   ghostHighlights?: any[]
   onShowJourneyReplay?: (sectionId: string, sectionName: string) => void
+  reflections?: Map<string, { type: string, content: string, userName: string }>
 }
 
 
@@ -72,7 +75,8 @@ export default function SectionAssignmentPanel({
   socket,
   glowingSections = new Set(),
   ghostHighlights = [],
-  onShowJourneyReplay
+  onShowJourneyReplay,
+  reflections = new Map()
 }: SectionAssignmentPanelProps) {
   const [assignments, setAssignments] = useState<SectionAssignment[]>([])
   const [expandedSections, setExpandedSections] = useState<Set<string>>(new Set())
@@ -81,6 +85,63 @@ export default function SectionAssignmentPanel({
   const dropdownRef = useRef<HTMLDivElement>(null)
   const [showSummaryModal, setShowSummaryModal] = useState<string | null>(null)
   const [summaryText, setSummaryText] = useState('')
+
+  const handleAIAllocation = async () => {
+    if (!reflections || reflections.size === 0) {
+      toast.error('No reflections available for AI analysis yet.')
+      return
+    }
+
+    const currentUserName = collaborators.find(c => c.id === currentUserId)?.name || 'User'
+
+    toast.promise(
+      async () => {
+        // Run Agent 10 through Coordination Core
+        const roles = aiCoordinationCore.requestSmartAllocation(sections, reflections, currentUserId, currentUserName)
+
+        // Map RoleAssignments to SectionAssignments
+        const newAssignments: SectionAssignment[] = roles.map(r => ({
+          sectionId: r.sectionId,
+          userId: r.userId,
+          userName: r.userName,
+          status: 'assigned',
+          progress: 0,
+          assignedAt: new Date().toISOString()
+        }))
+
+        setAssignments(newAssignments)
+        onAssignmentChange(newAssignments)
+
+        // Save and Broadcast
+        try {
+          await fetch('/api/socket', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              action: 'section-assigned',
+              documentId,
+              assignments: newAssignments
+            })
+          })
+
+          if (socket?.connected) {
+            socket.emit('assignment-changed', {
+              documentId,
+              assignments: newAssignments,
+              userName: 'Agent 10: Role Allocation'
+            })
+          }
+        } catch (err) {
+          console.error(err)
+        }
+      },
+      {
+        loading: 'Agent 10 is analyzing cognitive profiles...',
+        success: 'Roles allocated based on expertise gaps!',
+        error: 'Allocation failed.'
+      }
+    )
+  }
 
   // ✅ Clear assignments when document changes
   useEffect(() => {
@@ -654,7 +715,17 @@ export default function SectionAssignmentPanel({
             className="text-xs"
           >
             <Sparkles className="w-3 h-3 mr-1" />
-            Auto-Assign Fairly
+            Fair Distribute
+          </Button>
+
+          <Button
+            onClick={handleAIAllocation}
+            variant="secondary"
+            size="sm"
+            className="text-xs bg-indigo-600 hover:bg-indigo-700 text-white border-none shadow-sm"
+          >
+            <Bot className="w-3 h-3 mr-1" />
+            Smart AI Allocation
           </Button>
         </div>
       </div>
@@ -853,10 +924,14 @@ export default function SectionAssignmentPanel({
                           <div className="mt-2 space-y-2">
                             <div className="flex items-center gap-2">
                               <Badge
-                                style={{ backgroundColor: getUserColor(assignment.userId), color: 'white', fontSize: '11px' }}
-                                className="flex items-center gap-1 shadow-sm"
+                                style={{
+                                  backgroundColor: assignment.userId === 'lit-sense-ai' ? '#4f46e5' : getUserColor(assignment.userId),
+                                  color: 'white',
+                                  fontSize: '11px'
+                                }}
+                                className={`flex items-center gap-1 shadow-sm ${assignment.userId === 'lit-sense-ai' ? 'animate-pulse' : ''}`}
                               >
-                                <span>👤</span>
+                                {assignment.userId === 'lit-sense-ai' ? <Bot className="w-3 h-3" /> : <span>👤</span>}
                                 {assignment.userName}
                               </Badge>
 
