@@ -167,6 +167,19 @@ app.prepare().then(() => {
       }
     })
 
+    // ✅ ADD: Handle Reflection Updates
+    socket.on('reflection-updated', (data) => {
+      console.log(`🧠 [Server] Reflection update from ${data.userName}:`, {
+        userId: data.userId,
+        type: data.type,
+        contentLength: data.content?.length || 0
+      })
+
+      // Broadcast to all OTHER users in the same document
+      socket.to(data.documentId).emit('reflection-updated', data)
+      console.log(`✅ [Server] Reflection broadcasted to room: ${data.documentId}`)
+    })
+
     // ✅ ADD: Handle Session Phase Start Sync
     socket.on('session-start', (data) => {
       console.log(`🚀 [Server] Session Start Triggered by ${socket.id} at ${data.timestamp}`)

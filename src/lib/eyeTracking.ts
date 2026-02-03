@@ -157,7 +157,14 @@ class EyeTrackingService {
   }
 
 
-  private extractTextAtGazePoint(x: number, y: number, isFixation = false) {
+  // ✅ ADD: External text extractor support
+  private textExtractor: ((x: number, y: number) => Promise<string | null>) | null = null
+
+  setTextExtractor(extractor: (x: number, y: number) => Promise<string | null>) {
+    this.textExtractor = extractor
+  }
+
+  private async extractTextAtGazePoint(x: number, y: number, isFixation = false) {
     try {
       const now = Date.now()
 
@@ -166,23 +173,47 @@ class EyeTrackingService {
         return
       }
 
-      // Get element at gaze point
-      const element = document.elementFromPoint(x, y)
+      let text = '';
 
-      if (element) {
-        // Try to get meaningful text
-        let text = element.textContent?.trim() || ''
+      // 1. Try External Extractor (PDF Viewer Integration)
+      if (this.textExtractor) {
+        try {
+          const extracted = await this.textExtractor(x, y)
+          if (extracted) {
+            text = extracted
+          }
+        } catch (err) {
+          console.warn('External text extraction failed', err)
+        }
+      }
 
-        // If too long, try to get just the paragraph or sentence
-        if (text.length > 200) {
-          // Try to find the nearest text node
-          const range = document.caretRangeFromPoint(x, y)
-          if (range) {
-            const textNode = range.startContainer
-            text = textNode.textContent?.trim() || text
+      // 2. Fallback to DOM (if external failed or returns empty)
+      if (!text) {
+        const element = document.elementFromPoint(x, y)
+        if (element) {
+          // 🚫 IGNORE UI NOISE: Toasts, Popups, Overlays
+          const isNoise = element.closest && (
+            element.closest('[role="status"]') ||
+            element.closest('[role="alert"]') ||
+            element.closest('.toast') ||
+            element.closest('.sonner-toast')
+          )
+
+          if (!isNoise) {
+            text = element.textContent?.trim() || ''
+
+            if (text.length > 200) {
+              const range = document.caretRangeFromPoint(x, y)
+              if (range) {
+                const textNode = range.startContainer
+                text = textNode.textContent?.trim() || text
+              }
+            }
           }
         }
+      }
 
+      if (text) {
         // Handle Fixation Event
         if (isFixation && this.onFixationCallback && text.length > 3) {
           console.log('👁️ Fixation Triggered on:', text.substring(0, 50))
@@ -192,21 +223,15 @@ class EyeTrackingService {
         }
 
         // Only log if text is meaningful and different from last
-        if (text && text.length > 10 && text !== this.lastLoggedText) {
-          console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━')
-          console.log('👁️ GAZE POINT:')
-          console.log('📍 Position:', { x: Math.round(x), y: Math.round(y) })
-          console.log('📄 Page:', this.currentPage)
-          console.log('📝 Text:', text.substring(0, 150) + (text.length > 150 ? '...' : ''))
-          console.log('🕐 Time:', new Date().toLocaleTimeString())
-          console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━')
+        if (text.length > 5 && text !== this.lastLoggedText) {
+          console.log(`👁️ Looking at: ${text}`)
 
           this.lastLoggedText = text
           this.lastLogTime = now
         }
       }
     } catch (error) {
-      // Silently fail
+      console.error('Error in extractTextAtGazePoint', error)
     }
   }
 

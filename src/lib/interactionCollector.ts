@@ -92,6 +92,7 @@ export interface SectionInteraction {
   struggleScore: number  // 0-100, higher = more struggle
   understandingScore: number  // 0-100, higher = better understanding
   engagementScore: number  // 0-100, higher = more engaged
+  lastFixationText?: string // ✅ New field
 }
 
 // ============================================================================
@@ -293,17 +294,20 @@ class InteractionCollectorService {
   }
 
   // ✅ ADDED: Track detailed fixation events for Agent 1
-  trackFixation(sectionId: string) {
+  trackFixation(sectionId: string, text?: string) {
     if (!this.currentSession) return
 
     // Update active section context
     this.currentSectionId = sectionId
 
     // Update section stats
-    this.updateSectionInteraction(sectionId, 'fixation')
+    const section = this.updateSectionInteraction(sectionId, 'fixation')
+    if (section && text) {
+      section.lastFixationText = text
+    }
 
     // Also log to console for debugging
-    console.log(`👁️ [InteractionCollector] Fixation tracked on section: ${sectionId}`)
+    // console.log(`👁️ [InteractionCollector] Fixation tracked on section: ${sectionId}`)
   }
 
   trackPageVisit(page: number, sectionId?: string) {
@@ -349,8 +353,8 @@ class InteractionCollectorService {
     sectionId: string,
     type: 'visit' | 'highlight' | 'annotation' | 'stuck' | 'fixation',
     reason?: string
-  ) {
-    if (!this.currentSession) return
+  ): SectionInteraction | undefined {
+    if (!this.currentSession) return undefined
 
     let section = this.currentSession.sectionInteractions.get(sectionId)
 
@@ -400,6 +404,8 @@ class InteractionCollectorService {
 
     // Recalculate scores
     this.calculateSectionScores(section)
+
+    return section
   }
 
   private calculateSectionScores(section: SectionInteraction) {

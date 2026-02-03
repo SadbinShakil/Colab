@@ -10,6 +10,7 @@ import SmartHelpPanel from '@/components/SmartHelpPanel'
 import { SmartHeadingExtractor } from '@/lib/smartHeadingExtractor'
 import SectionAssignmentPanel from './SectionAssignmentPanel'
 import ReflectionIntake from './ReflectionIntake'
+import TeamReflections from './TeamReflections'
 
 
 // [ADV] Charts
@@ -102,6 +103,7 @@ import AIResearchPrerequisites from './AIResearchPrerequisites'
 import TextSelectionPopup from './TextSelectionPopup'
 import JourneyReplayPanel from './JourneyReplayPanel'
 import CollectiveWikiPanel, { WikiEntry, InsightEntry, Activity as WikiActivity } from './CollectiveWikiPanel'
+import { createPaperSummaryGenerator, type PaperSummary } from '@/lib/paperSummaryGenerator'
 import { analyzeChatMessage } from '@/lib/chatAnalyzer'
 import { isMathematicalContent } from '../utils/contentDetector'
 
@@ -539,6 +541,7 @@ export default function ApryseWebViewer({
   const [documentYear, setDocumentYear] = useState('')
   const [documentTags, setDocumentTags] = useState<string[]>([])
   const [metadataLoaded, setMetadataLoaded] = useState(false)
+  const [realPaperSummary, setRealPaperSummary] = useState<PaperSummary | null>(null)
 
   // ========== [ADV] Advanced Summary types & state ==========
   type Persona = 'novice' | 'practitioner' | 'reviewer';
@@ -601,36 +604,241 @@ export default function ApryseWebViewer({
     pdfSectionsRef.current = pdfSections
   }, [pdfSections])
 
+  // ✅ NEW: Generate Real Paper Summary
+  useEffect(() => {
+    if (webViewerInstance && webViewerInstance.Core) {
+      // console.log('📄 Initializing PaperSummaryGenerator...')
+      const { documentViewer } = webViewerInstance.Core
+
+      const onDocumentLoaded = async () => {
+        try {
+          const generator = createPaperSummaryGenerator(documentViewer)
+          const summaryData = await generator.generateSummary()
+          setRealPaperSummary(summaryData)
+        } catch (e) {
+          console.error("❌ Error generating paper summary:", e)
+        }
+      }
+
+      documentViewer.addEventListener('documentLoaded', onDocumentLoaded)
+
+      // Also try immediately if already loaded
+      if (documentViewer.getDocument()) {
+        onDocumentLoaded()
+      }
+
+      return () => {
+        documentViewer.removeEventListener('documentLoaded', onDocumentLoaded)
+      }
+    }
+  }, [webViewerInstance])
+
+  // ✅ NEW: Enhanced Text Extraction for Eye Tracking
+  useEffect(() => {
+    if (!webViewerInstance || !webViewerInstance.Core) return
+
+    eyeTracker.setTextExtractor(async (x, y) => {
+      // DEBUG: Log inputs to verify they are valid numbers
+      // console.log(`TextExtractor called with x=${x}, y=${y}`)
+      if (typeof x !== 'number' || typeof y !== 'number' || isNaN(x) || isNaN(y)) {
+        return null
+      }
+
+      try {
+        const { documentViewer } = webViewerInstance.Core
+        const displayMode = documentViewer.getDisplayModeManager().getDisplayMode()
+
+        let pagePt;
+        try {
+          pagePt = displayMode.windowToPage({ x, y })
+        } catch (err) {
+          // console.warn('windowToPage failed:', err)
+          return null
+        }
+
+        if (!pagePt ||
+          typeof pagePt.pageIndex !== 'number' ||
+          isNaN(pagePt.pageIndex) ||
+          pagePt.pageIndex < 0) {
+          return null
+        }
+
+        const pageNumber = Math.floor(pagePt.pageIndex + 1) // Convert to 1-based
+        const doc = documentViewer.getDocument()
+        if (!doc) return null
+
+        // Strict check before calling Apryse API
+        if (typeof pageNumber !== 'number' || pageNumber < 1) {
+          return null
+        }
+
+        const textData = await doc.loadPageText(pageNumber)
+        const items = textData.items || []
+
+        // Find the text item at the specific coordinates
+        // We use a small tolerance/radius for better hit testing
+        const hitItem = items.find((item: any) => {
+          // item structure: { x, y, width, height, str, ... }
+          // Coordinates are usually PDF page coordinates
+          // Note: We're doing a simple bounding box check.
+          // PDF coordinates have (0,0) at bottom-left usually, but loadPageText 
+          // typically returns coordinates normalized to current display rotation/view?
+          // Actually, Apryse items usually use PDF User Space (Bottom-Left origin).
+          // But displayMode.windowToPage returns Page Space coordinates (User Space).
+          // However, we need to be careful about Y-axis direction if it differs.
+          // Usually loadPageText items match the Page Space.
+
+          // DEBUG: Log occasional stats
+          if (items.length > 0 && Math.random() < 0.05) {
+            console.log(`Stats: Page ${pageNumber}, Items: ${items.length}, Point: (${Math.round(pagePt.x)}, ${Math.round(pagePt.y)})`)
+            console.log('Sample Item:', items[0])
+          }
+
+          const tolerance = 8; // Increased tolerance
+
+          return (
+            pagePt.x >= (item.x - tolerance) &&
+            pagePt.x <= (item.x + item.width + tolerance) &&
+            pagePt.y >= (item.y - tolerance) &&
+            pagePt.y <= (item.y + item.height + tolerance)
+          )
+        })
+
+        if (hitItem) {
+          // If we hit a word/segment, try to get the surrounding line/context
+          // We can find all items with similar Y (same line) to give better context
+          // grouping by similar Y (within half height) and similar font size
+          const lineItems = items.filter((item: any) =>
+            Math.abs(item.y - hitItem.y) < (item.height * 0.5) &&
+            Math.abs(item.height - hitItem.height) < 2
+          )
+
+          // Sort by X to reconstruct the line
+          lineItems.sort((a: any, b: any) => a.x - b.x)
+
+          // Reconstruct string
+          const lineText = lineItems.map((i: any) => i.str).join(' ').replace(/\s+/g, ' ').trim() // items might contain spaces or be chars
+          // often items are words, but sometimes chars. 
+          // If they appear 'glued', we might need logic to add spaces based on x-distance.
+          // For now, let's just return the hit item's text or joined simple.
+          // Safe bet: just return the hit item if line reconstruction is risky
+          // But user wants "exact text block".
+          // Let's return the hit item text first, maybe expand if short.
+
+          if (lineText.length > hitItem.str.length + 5) {
+            return lineText
+          }
+          return hitItem.str
+        }
+
+        return null
+      } catch (e) {
+        console.error('Text extraction error:', e)
+        return null
+      }
+    })
+  }, [webViewerInstance])
+
+  // ✅ Helper: Precise Section Detection
+  const getSectionAtPosition = useCallback((page: number, y: number): { id: string, name: string } => {
+    const sections = pdfSectionsRef.current
+    if (!sections || sections.length === 0) {
+      return { id: `page-${page}`, name: `Page ${page}` }
+    }
+
+    // 1. Filter sections that are relevant (start on or before this page)
+    const relevantSections = sections.filter(s => s.startPage <= page)
+
+    let bestSection = null
+
+    // Iterate through sections to find the one we are "reading"
+    for (const section of relevantSections) {
+      if (section.startPage < page) {
+        bestSection = section
+        continue
+      }
+
+      if (section.startPage === page) {
+        // Determine if Gaze is AFTER this section header
+        const headerY = section.heading.boundingBox.y1
+
+        // Auto-detect direction on page if possible
+        const pageSections = sections.filter(s => s.startPage === page)
+        let isWebStyle = true // Default Down
+        if (pageSections.length >= 2) {
+          if (pageSections[0].heading.boundingBox.y1 > pageSections[pageSections.length - 1].heading.boundingBox.y1) {
+            isWebStyle = false // Up
+          }
+        }
+
+        const isAfterHeader = isWebStyle
+          ? (y >= headerY)
+          : (y <= headerY)
+
+        if (isAfterHeader) {
+          bestSection = section
+        }
+      }
+    }
+
+    if (bestSection) return { id: bestSection.heading.id, name: bestSection.heading.text }
+
+    // Fallback: previous page's section
+    if (relevantSections.length > 0) {
+      const last = relevantSections[relevantSections.length - 1]
+      if (last.startPage < page) return { id: last.heading.id, name: last.heading.text }
+    }
+
+    return { id: `page-${page}`, name: `Page ${page}` }
+  }, [])
+
+  // ✅ Helper: legacy page-based section detection (restored)
+  const getSectionForPage = useCallback((pageNumber: number): { id: string, name: string } => {
+    if (!pdfSectionsRef.current || pdfSectionsRef.current.length === 0) {
+      return { id: `section-page-${pageNumber}`, name: `Page ${pageNumber}` }
+    }
+    const section = pdfSectionsRef.current.find(s => pageNumber >= s.startPage && pageNumber <= s.endPage)
+    if (section) return { id: section.heading.id, name: section.heading.text }
+    return { id: `section-page-${pageNumber}`, name: `Page ${pageNumber}` }
+  }, [])
+
   // Initialize Listener Once
   useEffect(() => {
     console.log('👁️ [ApryseWebViewer] Setting up Eye Tracking Listener')
 
     eyeTracker.setFixationListener((text, x, y, page) => {
-      console.log(`👁️ Fixation Received on Page ${page}: "${text.substring(0, 20)}..."`)
+      console.log(`👁️ Fixation: ${text}`)
 
-      // 1. Map to Section
-      const section = pdfSectionsRef.current.find(s => page >= s.startPage && page <= s.endPage) || pdfSectionsRef.current[0]
-      const sectionId = section?.heading.id || `page-${page}`
+      // 1. Map to Section (Precise)
+      let sectionInfo = { id: `page-${page}`, name: `Page ${page}` }
+
+      if (webViewerInstance && webViewerInstance.Core) {
+        try {
+          const { documentViewer } = webViewerInstance.Core
+          const displayMode = documentViewer.getDisplayModeManager().getDisplayMode()
+          const pagePt = displayMode.windowToPage({ x, y })
+          if (pagePt) {
+            sectionInfo = getSectionAtPosition(page, pagePt.y)
+          }
+        } catch (e) {
+          console.warn('Error mapping fixation to section position', e)
+        }
+      }
+
+      const sectionId = sectionInfo.id
+      const sectionName = sectionInfo.name
 
       // 2. Feed Data to Collector (Driving Agent 1)
-      interactionCollector.trackFixation(sectionId)
+      interactionCollector.trackFixation(sectionId, text)
 
       // 3. Route to AI Core (Driving Agent 7)
       aiCoordinationCore.routeUserAction('fixation-detected', {
         sectionId,
-        sectionName: section?.heading.text || 'Unknown Section',
+        sectionName,
         text,
         page,
-        timestamp: Date.now()
       })
-
-      // 4. Immediate Visual Feedback (Since we don't have popups yet)
-      // toast("Fixation Detected", {
-      //   description: `Agent 1 analyzing attention on "${section?.heading.text || 'Section'}"`,
-      //   duration: 2000
-      // })
     })
-
     // ✅ ADD: Bridge for Agent 1 events -> AI Core
     // Agent 1 emits window events, but Core needs a direct routing call to trigger Agent 7
     const onStruggleDetected = (e: Event) => {
@@ -639,7 +847,6 @@ export default function ApryseWebViewer({
 
       // ✅ DEDUPLICATION: Check if we already handled this section
       if (data.sectionId && notifiedSectionsRef.current.has(data.sectionId)) {
-        // console.log(`🔕 [Bridge] Ignoring Agent 1 signal for ${data.sectionId} - already notified`)
         return
       }
 
@@ -650,8 +857,6 @@ export default function ApryseWebViewer({
 
       // DEBUG: Verify Agent 1 is firing
       console.log('🌉 [ApryseWebViewer] Bridging struggle event to Core:', data)
-
-      // toast.info("Spy: Agent 1 saw you!", { duration: 1000 }) (Debug disabled)
 
       aiCoordinationCore.routeAgentEvent('agent-1', 'struggle-detected', data)
     }
@@ -1223,11 +1428,13 @@ export default function ApryseWebViewer({
               if (shouldTrigger) {
                 console.log(`⚠️ [STRUGGLE DETECTED] User ${userName} is struggling with section ${pageNumber}`)
 
-                // ✅ RECORD STRUGGLE START for collaborative insights
-                const sectionId = `section-page-${pageNumber}`
+                // ✅ Get actual section info instead of generic page number
+                const sectionInfo = getSectionForPage(pageNumber)
+                console.log(`📍 [LOCATION] Mapped page ${pageNumber} → Section: "${sectionInfo.name}"`)
 
+                // ✅ RECORD STRUGGLE START for collaborative insights
                 // Only record if not already tracking this section
-                if (!activeStruggles.has(sectionId)) {
+                if (!activeStruggles.has(sectionInfo.id)) {
                   try {
                     const response = await fetch('/api/collaborative-insights', {
                       method: 'POST',
@@ -1237,8 +1444,8 @@ export default function ApryseWebViewer({
                         documentId,
                         userId,
                         userName,
-                        sectionId,
-                        sectionName: `Section Page ${pageNumber}`,
+                        sectionId: sectionInfo.id,
+                        sectionName: sectionInfo.name,
                         behavioralPatterns: sectionInteraction.behavioralPatterns || [],
                         confusionHighlights: confusionCount
                       })
@@ -1248,7 +1455,7 @@ export default function ApryseWebViewer({
                       const data = await response.json()
                       if (data.success && data.struggle) {
                         // Store struggle ID for later resolution
-                        setActiveStruggles(prev => new Map(prev).set(sectionId, data.struggle.id))
+                        setActiveStruggles(prev => new Map(prev).set(sectionInfo.id, data.struggle.id))
                         console.log('📊 [Collaborative Insights] Struggle tracking started:', data.struggle.id)
                       }
                     }
@@ -1260,7 +1467,7 @@ export default function ApryseWebViewer({
                 // Update peer status in Agent 2 ONLY when actually struggling
                 agent2_collaborationOrchestrator.updatePeerStatus(
                   userId,
-                  `section-page-${pageNumber}`,
+                  sectionInfo.id,
                   30
                 )
 
@@ -1275,8 +1482,8 @@ export default function ApryseWebViewer({
                 aiCoordinationCore.routeAgentEvent('agent1', 'struggle-detected', {
                   userId: userId,
                   userName: userName,
-                  sectionId: `section-page-${pageNumber}`,
-                  sectionName: `Section Page ${pageNumber}`,
+                  sectionId: sectionInfo.id,
+                  sectionName: sectionInfo.name,
                   severity: severity,
                   indicators: {
                     confusionHighlights: confusionCount,
@@ -1341,19 +1548,22 @@ export default function ApryseWebViewer({
               }
 
               // Update peer status in Agent 2 to mark as proficient
-              // This makes them available to help others struggling with the same section
+              // This makes them              // Update peer status in Agent 2 to mark as proficient
               agent2_collaborationOrchestrator.updatePeerStatus(
                 userId,
                 `section-page-${pageNumber}`,
                 Math.max(understandingScore, 75) // Ensure at least 75 to be marked as proficient
               )
 
+              // ✅ Get actual section info for peer matching
+              const sectionInfo = getSectionForPage(pageNumber)
+
               // ✅ FIX: Check for struggling users in this section and notify them
               // Find all peers who are struggling with this section
-              const strugglingPeers = agent2_collaborationOrchestrator.getStrugglingPeers(`section-page-${pageNumber}`)
+              const strugglingPeers = agent2_collaborationOrchestrator.getStrugglingPeers(sectionInfo.id)
 
               if (strugglingPeers.length > 0) {
-                console.log(`🤝 [PEER MATCHING] Found ${strugglingPeers.length} struggling user(s) - triggering match notifications`)
+                console.log(`🤝 [PEER MATCHING] Found ${strugglingPeers.length} struggling user(s) in "${sectionInfo.name}" - triggering match notifications`)
 
                 // Trigger notifications for each struggling user
                 // This will cause the coordination core to check for helpers and notify both users
@@ -1362,8 +1572,8 @@ export default function ApryseWebViewer({
                   aiCoordinationCore.routeAgentEvent('agent1', 'struggle-detected', {
                     userId: strugglingPeer.userId,
                     userName: strugglingPeer.userName,
-                    sectionId: `section-page-${pageNumber}`,
-                    sectionName: `Section Page ${pageNumber}`,
+                    sectionId: sectionInfo.id,
+                    sectionName: sectionInfo.name,
                     severity: 'medium',
                     indicators: {
                       confusionHighlights: 0,
@@ -2011,6 +2221,68 @@ export default function ApryseWebViewer({
     const initEyeTracking = async () => {
       const success = await eyeTracker.initialize()
       if (success) {
+        // ✅ Set up text extractor for PDF content
+        eyeTracker.setTextExtractor(async (x: number, y: number) => {
+          if (!webViewerRef.current?.Core) return null
+
+          try {
+            const { documentViewer } = webViewerRef.current.Core
+            const displayMode = documentViewer.getDisplayModeManager().getDisplayMode()
+            const page = displayMode.getSelectedPages({ x, y }, { x, y })[0]
+
+            if (!page) return null
+
+            const pageNumber = page.pageNumber
+            const doc = documentViewer.getDocument()
+
+            // Get text from the page
+            const textData = await doc.loadPageText(pageNumber)
+
+            // Find the text near the gaze point
+            // This is a simplified approach - you might want to use quads for more accuracy
+            if (textData) {
+              // Get a sample of text around the gaze point
+              // In a real implementation, you'd calculate which text quad is closest to (x,y)
+              const words = textData.split(/\s+/)
+              const sampleSize = 10
+              const startIdx = Math.max(0, Math.floor(words.length / 2) - sampleSize)
+              const sample = words.slice(startIdx, startIdx + sampleSize * 2).join(' ')
+              return sample
+            }
+          } catch (err) {
+            console.warn('PDF text extraction failed:', err)
+          }
+          return null
+        })
+
+        // ✅ Set up fixation listener to track when user stares at text
+        eyeTracker.setFixationListener((text: string, x: number, y: number, page: number) => {
+          if (!webViewerRef.current?.Core) return
+
+          // Find which section this fixation is in
+          const section = pdfSectionsRef.current.find(s =>
+            s.startPage <= page && s.endPage >= page
+          )
+
+          const sectionId = section ? section.heading.id : `page-${page}`
+          const sectionName = section ? section.heading.text : `Page ${page}`
+
+          console.log(`👁️ [Fixation] User staring at "${text.substring(0, 50)}..." in ${sectionName}`)
+
+          // Track this fixation
+          interactionCollector.trackFixation(sectionId, text)
+
+          // Route to AI Core for analysis
+          aiCoordinationCore.routeUserAction('fixation-detected', {
+            sectionId,
+            sectionName,
+            text,
+            page,
+            x,
+            y
+          })
+        })
+
         // Style the webcam video preview
         setTimeout(() => {
           const videoElement = document.getElementById('webgazerVideoFeed')
@@ -2049,74 +2321,105 @@ export default function ApryseWebViewer({
 
 
 
-    // ✅ FALLBACK: Mouse Tracking as Pseudo-Eye-Tracking
-    // If user has no eye tracker, we assume they are reading where their mouse is (or the center of screen)
-    const handleMouseMove = (e: MouseEvent) => {
-      // Rate limit to every 500ms to avoid spamming
-      if (Date.now() % 500 > 50) return
+    // ✅ IMPROVED: Mouse/Hover Tracking as Fallback to Eye Tracking
+    // Tracks where user is hovering and detects struggle based on dwell time + text extraction
+    const handleMouseMove = async (e: MouseEvent) => {
+      // Rate limit to avoid performance issues
+      if (Date.now() % 200 > 50) return
 
       const viewerRect = viewer.current?.getBoundingClientRect()
-      if (!viewerRect) return
+      if (!viewerRect || !webViewerRef.current?.Core) return
 
-      // Calculate relative position (0-1)
-      const relY = (e.clientY - viewerRect.top) / viewerRect.height
+      try {
+        const { documentViewer } = webViewerRef.current.Core
 
-      if (webViewerRef.current?.Core) {
-        const docViewer = webViewerRef.current.Core.documentViewer
-        const currentPage = docViewer.getCurrentPage()
+        // Get the page and position under the mouse
+        const displayMode = documentViewer.getDisplayModeManager().getDisplayMode()
+        const mouseX = e.clientX
+        const mouseY = e.clientY
 
-        // Find section on this page
-        // Just default to the first section on this page for now to ensure we get ANY signal
-        const section = pdfSectionsRef.current.find(s => s.startPage === currentPage)
+        const pages = displayMode.getSelectedPages({ x: mouseX, y: mouseY }, { x: mouseX, y: mouseY })
+        if (!pages || pages.length === 0) return
+
+        const currentPage = pages[0].pageNumber
+
+        // Find which section this page belongs to
+        const section = pdfSectionsRef.current.find(s =>
+          s.startPage <= currentPage && s.endPage >= currentPage
+        )
+
         const currentSectionId = section ? section.heading.id : `page-${currentPage}`
+        const currentSectionName = section ? section.heading.text : `Page ${currentPage}`
 
-        // Track fixations for the complex agents
-        interactionCollector.trackFixation(currentSectionId)
+        // ✅ Extract actual text at mouse position (for better context)
+        let hoveredText = ''
+        try {
+          const doc = documentViewer.getDocument()
+          const pageText = await doc.loadPageText(currentPage)
 
-        // ✅ LOCAL DWELL DETECTION (The "Mega Force" Check)
-        // If we stay on the same section for 3 seconds, manually trigger the help
+          if (pageText) {
+            // Get a meaningful sample (first 100 chars or so)
+            hoveredText = pageText.substring(0, 100).trim()
+          }
+        } catch (err) {
+          // Fallback to DOM text if PDF extraction fails
+          const element = document.elementFromPoint(mouseX, mouseY)
+          if (element) {
+            hoveredText = element.textContent?.substring(0, 100).trim() || ''
+          }
+        }
+
+        // Track this as a fixation (passive tracking)
+        interactionCollector.trackFixation(currentSectionId, hoveredText)
+
+        // ✅ DWELL DETECTION: If user stays on same section for threshold time
         if (lastHoveredSectionRef.current !== currentSectionId) {
-          // We moved to a new section! Reset timer.
+          // Moved to a new section! Reset timer.
           if (dwellTimerRef.current) clearTimeout(dwellTimerRef.current)
           lastHoveredSectionRef.current = currentSectionId
 
           dwellTimerRef.current = setTimeout(() => {
-            // 3 Seconds have passed on this section!
+            // User has been on this section for the threshold time!
 
-            // 🚫 PREVENT SHOWER: Check if we already notified for this section
+            // 🚫 PREVENT DUPLICATE NOTIFICATIONS
             if (notifiedSectionsRef.current.has(currentSectionId)) {
-              console.log(`🔕 [Local Dwell] Ignoring ${currentSectionId} - already notified`)
+              console.log(`🔕 [Hover Dwell] Ignoring ${currentSectionId} - already notified`)
               return
             }
 
-            console.log(`⏱️ [Local Dwell] 3s Timer Hit for ${currentSectionId}`)
+            console.log(`⏱️ [Hover Dwell] Threshold reached for "${currentSectionName}"`)
+            console.log(`📝 [Hover Dwell] Text context: "${hoveredText.substring(0, 50)}..."`)
 
-            // Mark as notified so we don't shower the user
+            // Mark as notified
             notifiedSectionsRef.current.add(currentSectionId)
 
-            // Trigger the flow manually to ensure it happens
+            // Trigger struggle detection with the actual text
             aiCoordinationCore.routeAgentEvent('agent-1', 'struggle-detected', {
               sectionId: currentSectionId,
-              severity: 'high',
-              confidence: 1.0,
-              timestamp: Date.now()
+              sectionName: currentSectionName,
+              text: hoveredText, // ✅ Pass the actual text
+              severity: 'medium',
+              confidence: 0.8,
+              timestamp: Date.now(),
+              userId: userId,
+              userName: userName,
+              documentId: documentId
             })
 
-            // Also fire the visible debug spy
-            // toast.info("Spy: Local Dwell Timer Hit!", { duration: 1000 })
-
-          }, 60000) // 1 Minute Threshold
+          }, 30000) // 30 seconds threshold (reduced from 60s for faster testing)
         }
+      } catch (err) {
+        console.warn('[Hover Tracking] Error:', err)
       }
     }
 
     // ✅ FORCE GLOBAL LISTENER: Catch mouse even over iframes/canvas
-    // console.log("[Setup] Adding global mouse listener")
     window.addEventListener('mousemove', handleMouseMove)
 
     return () => {
       eyeTracker.end()
       window.removeEventListener('mousemove', handleMouseMove)
+      if (dwellTimerRef.current) clearTimeout(dwellTimerRef.current)
     }
   }, [])
 
@@ -5524,6 +5827,13 @@ ${documentContent}
                       </div>
                     </button>
                   </div>
+
+                  {/* ✅ TEAM REFLECTIONS PANEL */}
+                  <TeamReflections
+                    currentUserId={userId}
+                    currentUserName={userName}
+                    documentId={documentId}
+                  />
                 </div>
               )}
             </div>
@@ -7239,7 +7549,20 @@ ${documentContent}
             console.log('📝 Reflection submitted:', reflection)
             setReflectionData(reflection)
             setReflectionSubmitted(true)
-            broadcastReflection(reflection) // ✅ Sync with others
+
+            // ✅ Broadcast to socket for real-time sync
+            broadcastReflection(reflection)
+
+            // ✅ Dispatch custom event for TeamReflections component
+            window.dispatchEvent(new CustomEvent('reflection-submit', {
+              detail: {
+                userId,
+                userName,
+                reflection
+              }
+            }))
+
+            // ✅ Route to AI system
             aiCoordinationCore.routeUserAction('reflection-submitted', reflection)
           }}
         />

@@ -4,7 +4,7 @@ import React, { useEffect, useState } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { aiCoordinationCore, AgentActivity } from '@/lib/agents/aiCoordinationCore'
 import { toast } from 'sonner'
-import SessionReport from './SessionReport'
+import RealSessionReport from './RealSessionReport'
 
 // Icons for the nodes
 const Icons = {
@@ -66,18 +66,51 @@ export function SystemFlowVisualizer({
 
     // Helper to format summary content
     const formatSummary = (data: any) => {
-        // DEMO MOCK: If no summary yet, show this placeholder so the feature is usable immediately
-        if (!data) return "This paper presents a novel framework for human-AI collaboration in academic reading. It introduces 'LitSense', a system that uses gaze tracking and intent recognition to provide proactive, implicit assistance. Key findings suggest that implicit help significantly reduces cognitive load compared to traditional explicit tools."
+        // ✅ FIXED: Show loading message instead of fake LitSense text
+        if (!data) return null
 
         if (typeof data === 'string') return data
 
-        // It's an object, let's pretty print it
+        // ✅ Generic Object Formatter (Restores original look-and-feel)
         return Object.entries(data).map(([key, value]) => {
             if (key === 'Note') return null // Skip internal notes
+
+            // Skip internal metadata keys that clutter the view
+            if (key === 'totalPages' || key === 'estimatedReadingTime' || key === 'documentType') {
+                return null
+            }
+
+            let displayValue: React.ReactNode = String(value)
+
+            // Handle arrays nicely (e.g. sections list)
+            if (Array.isArray(value)) {
+                if (value.length === 0) return null
+
+                displayValue = (
+                    <div className="flex flex-wrap gap-1 mt-1">
+                        {value.map((v, i) => {
+                            // Handle section objects specific to our new extractor
+                            const vStr = (typeof v === 'object' && v.name) ? `${v.name} (p.${v.page})` :
+                                (typeof v === 'object' ? JSON.stringify(v) : v)
+                            return (
+                                <span key={i} className="bg-gray-100 text-gray-700 px-2 py-1 rounded text-xs border border-gray-200">
+                                    {vStr}
+                                </span>
+                            )
+                        })}
+                    </div>
+                )
+            } else if (typeof value === 'object' && value !== null) {
+                displayValue = JSON.stringify(value)
+            }
+
+            // Capitalize first letter of key for better display
+            const displayKey = key.charAt(0).toUpperCase() + key.slice(1).replace(/([A-Z])/g, ' $1').trim()
+
             return (
                 <div key={key} className="mb-3">
-                    <span className="font-bold text-indigo-700 uppercase text-xs tracking-wider block mb-1">{key.replace(/([A-Z])/g, ' $1').trim()}</span>
-                    <span className="text-gray-700">{String(value)}</span>
+                    <span className="font-bold text-indigo-700 uppercase text-xs tracking-wider block mb-1">{displayKey}</span>
+                    <div className="text-gray-700 text-sm leading-relaxed">{displayValue}</div>
                 </div>
             )
         })
@@ -282,10 +315,12 @@ export function SystemFlowVisualizer({
         const startTimeRef = { current: Date.now() }
         const eventsTriggered = { current: { struggle: false, help: false, collab: false } }
 
-        // Inject Fake Peer for Demo (if method exists)
-        if (aiCoordinationCore['injectFakePeer']) {
-            aiCoordinationCore.injectFakePeer('user-emma', 'Emma', 'simulated-section', 'proficient')
-        }
+
+        // ❌ DISABLED: Fake peer injection for demo
+        // if (aiCoordinationCore['injectFakePeer']) {
+        //     aiCoordinationCore.injectFakePeer('user-emma', 'Emma', 'simulated-section', 'proficient')
+        // }
+
 
         const interval = setInterval(() => {
             const elapsed = Date.now() - startTimeRef.current
@@ -349,13 +384,12 @@ export function SystemFlowVisualizer({
     return (
         <>
             {/* Session Report Modal */}
-            <SessionReport
+            <RealSessionReport
                 isOpen={showReport}
                 onClose={() => setShowReport(false)}
-                summary={summary}
-                entries={entries}
-                insights={insights}
-                activities={activities}
+                reflection={null} // Will be passed from parent
+                assignments={[]} // Will be passed from parent
+                collaborationData={{}} // Will be passed from parent
             />
 
             {/* ✅ ADVANCED REFLECTION & GUIDANCE DASHBOARD */}

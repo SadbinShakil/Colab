@@ -218,13 +218,16 @@ class AICoordinationCoreService {
         agent7_implicitAssistance.generateNotification({
           type: 'struggle-awareness',
           title: 'Confusion Detected',
-          message: `This section seems tricky. How can I help?`,
+          message: data.text
+            ? `It looks like you're spending time on: "${data.text.substring(0, 60)}...". How can I help?`
+            : `This section seems tricky. How can I help?`,
           priority: data.severity === 'high' ? 'high' : 'medium',
           sectionId: data.sectionId,
           targetUserId: strugglingUserId,
+          text: data.text, // ✅ PASS SPECIFIC TEXT
           actionButton: {
             label: 'Show Options',
-            action: 'open-ai-help' // Keep action ID same effectively to open panel, but label changes perception
+            action: 'open-ai-help'
           },
           secondaryButton: {
             label: 'Visualize',
@@ -273,6 +276,7 @@ class AICoordinationCoreService {
                 priority: 'medium',
                 sectionId: data.sectionId,
                 targetUserId: strugglingUserId,
+                sectionName: data.sectionName, // ✅ Pass section Name
                 actionButton: {
                   label: 'Join Group',
                   action: 'join-group'
@@ -288,6 +292,7 @@ class AICoordinationCoreService {
                   priority: 'medium',
                   sectionId: data.sectionId,
                   targetUserId: match.helper.userId,
+                  sectionName: data.sectionName, // ✅ Pass section Name
                   actionButton: {
                     label: 'Join Group',
                     action: 'join-group'
@@ -308,6 +313,7 @@ class AICoordinationCoreService {
                 priority: 'high',
                 sectionId: data.sectionId,
                 targetUserId: strugglingUserId,
+                sectionName: data.sectionName, // ✅ Pass section Name
                 actionButton: {
                   label: 'Connect',
                   action: 'connect-peer'
@@ -321,6 +327,7 @@ class AICoordinationCoreService {
                 message: `${strugglingUserName} is having trouble with ${data.sectionName}. Want to help?`,
                 priority: 'medium',
                 sectionId: data.sectionId,
+                sectionName: data.sectionName, // ✅ Pass section Name
                 targetUserId: match.helper.userId,
                 actionButton: {
                   label: 'Offer Help',

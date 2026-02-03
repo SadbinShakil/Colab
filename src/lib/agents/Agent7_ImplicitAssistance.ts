@@ -40,6 +40,8 @@ export interface SmartNotification {
   targetUserId?: string
   targetUserIds?: string[]
   invitationData?: any
+  sectionName?: string // ✅ ADD: Specific section name
+  text?: string // ✅ Unique text context for the struggle
 }
 
 export interface ImplicitSuggestion {
@@ -178,17 +180,19 @@ class Agent7_ImplicitAssistance {
       priority: 'medium',
       title: '🎉 Great progress!',
       message: `You went from ${signal.scoreBefore} to ${signal.scoreAfter} understanding in ${Math.round(signal.timeToBreakthrough / 60000)} minutes!`,
-      actionable: 'Emma is still struggling with this section. Want to help?',
-      actionButton: {
-        label: 'Help Emma',
-        action: 'connect-peer'
-      },
+      // ❌ REMOVED: Hardcoded "Emma" reference - should use real peer data from Agent 2
+      // actionable: 'Emma is still struggling with this section. Want to help?',
+      // actionButton: {
+      //   label: 'Help Emma',
+      //   action: 'connect-peer'
+      // },
       timestamp: Date.now(),
       sectionId: signal.sectionId
     }
 
     this.addNotification(notification)
   }
+
 
   generateSlowZoneNotification(sectionId: string, sectionName: string, timeSpent: number) {
     const notification: SmartNotification = {
@@ -216,6 +220,8 @@ class Agent7_ImplicitAssistance {
     targetUserId?: string
     targetUserIds?: string[]
     invitationData?: any
+    sectionName?: string // ✅ ADD parameter
+    text?: string // ✅ ADD specific text context
   }) {
     // 🛡️ DE-BOUNCE: Check if a similar notification already exists and is active
     const duplicate = this.notifications.find(n =>
@@ -242,7 +248,9 @@ class Agent7_ImplicitAssistance {
       sectionId: config.sectionId,
       targetUserId: config.targetUserId,
       targetUserIds: config.targetUserIds,
-      invitationData: config.invitationData
+      invitationData: config.invitationData,
+      sectionName: config.sectionName, // ✅ ADD assignment
+      text: config.text // ✅ Pass specific text
     }
 
     this.addNotification(notification)

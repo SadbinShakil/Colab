@@ -22,6 +22,7 @@ export interface StruggleSignal {
   severity: 'low' | 'medium' | 'high'
   sectionId: string
   sectionName: string
+  text?: string // ✅ Specific text context
   indicators: {
     confusionHighlights: number
     stuckMarkers: number
@@ -155,6 +156,7 @@ class Agent1_UnderstandingDetection {
           severity,
           sectionId,
           sectionName: section.sectionName,
+          text: section.lastFixationText, // ✅ Pass specific text
           indicators: {
             confusionHighlights: section.confusionHighlights,
             stuckMarkers: section.stuckMarkerCount,
@@ -174,8 +176,8 @@ class Agent1_UnderstandingDetection {
     const patterns: BehavioralPattern[] = []
 
     // 1. Semantic Dwell Detection (Assuming ~200 words per section avg, 250wpm read speed)
-    // If user spends > 3s (TESTING MODE - SUPER FAST) on a standard section without understood highlights
-    if (section.totalTimeSpent > 3000 && section.understoodHighlights === 0) {
+    // ✅ IMPROVED: Reduced threshold from 3s to 2s for faster detection
+    if (section.totalTimeSpent > 2000 && section.understoodHighlights === 0) {
       patterns.push('semantic-dwell')
     }
 
@@ -210,15 +212,15 @@ class Agent1_UnderstandingDetection {
     let score = section.struggleScore
 
     // Amplify score based on behavioral patterns
-    // Amplify score based on behavioral patterns
     if (patterns.includes('re-read-loop')) score += 30
-    if (patterns.includes('semantic-dwell')) score += 45 // Increased to ensure it triggers 'low' severity (limit 40)
+    if (patterns.includes('semantic-dwell')) score += 35 // Significant indicator of struggle
     if (patterns.includes('gaze-panic')) score += 40
     if (patterns.includes('erratic-scan')) score += 15
 
-    if (score < 40) return null
-    if (score < 60) return 'low'
-    if (score < 80) return 'medium'
+    // ✅ IMPROVED: More sensitive thresholds to catch struggle earlier
+    if (score < 30) return null      // Only ignore very low scores
+    if (score < 50) return 'low'     // Lowered from 60
+    if (score < 70) return 'medium'  // Lowered from 80
     return 'high'
   }
 
