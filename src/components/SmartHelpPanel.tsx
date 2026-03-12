@@ -150,6 +150,7 @@ export default function SmartHelpPanel({
           message: textToSend,
           context: context,
           sectionName: sectionName,
+          documentContent: sectionText, // ✅ Pass full section text separately
           conversationHistory: aiMessages,
           userId: userId,
           userName: userName
@@ -230,18 +231,21 @@ export default function SmartHelpPanel({
       {/* Panel */}
       <div className="fixed top-0 right-0 h-full w-[450px] bg-white shadow-2xl z-50 flex flex-col animate-slide-in">
         {/* Header */}
-        <div className="bg-gradient-to-r from-blue-600 to-blue-700 text-white p-4 flex items-center justify-between">
-          <div>
-            <h2 className="text-lg font-bold flex items-center gap-2">
-              🆘 Smart Help Panel
-            </h2>
-            <p className="text-sm text-blue-100">{sectionName}</p>
+        <div className="bg-white border-b border-gray-200 px-4 py-3 flex items-center justify-between">
+          <div className="flex items-center gap-2.5">
+            <div className="w-7 h-7 bg-blue-600 rounded-lg flex items-center justify-center">
+              <Bot className="w-4 h-4 text-white" />
+            </div>
+            <div>
+              <h2 className="text-sm font-semibold text-gray-900">Smart Help</h2>
+              <p className="text-[11px] text-gray-400 leading-none mt-0.5 truncate max-w-[240px]">{sectionName}</p>
+            </div>
           </div>
           <button
             onClick={onClose}
-            className="text-white hover:bg-blue-800 p-2 rounded-lg transition"
+            className="p-1.5 rounded-lg hover:bg-gray-100 text-gray-400 transition-colors"
           >
-            <X className="w-5 h-5" />
+            <X className="w-4 h-4" />
           </button>
         </div>
 
@@ -441,6 +445,7 @@ export default function SmartHelpPanel({
                             message: msg,
                             context: context,
                             sectionName: sectionName,
+                            documentContent: sectionText, // ✅ Pass full section text
                             conversationHistory: aiMessages,
                             userId: userId,
                             userName: userName
@@ -509,6 +514,7 @@ export default function SmartHelpPanel({
                             message: msg,
                             context: context,
                             sectionName: sectionName,
+                            documentContent: sectionText, // ✅ Pass full section text
                             conversationHistory: aiMessages,
                             userId: userId,
                             userName: userName
@@ -543,6 +549,7 @@ export default function SmartHelpPanel({
                               message: msg,
                               context: context,
                               sectionName: sectionName,
+                              documentContent: sectionText, // ✅ Pass full section text
                               conversationHistory: aiMessages,
                               userId: userId,
                               userName: userName
