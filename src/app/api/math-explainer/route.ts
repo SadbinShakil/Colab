@@ -106,13 +106,13 @@ Please provide a comprehensive, step-by-step explanation that helps researchers 
     }
 
     const completion = await openai.chat.completions.create({
-      model: 'gpt-4',
+      model: 'gpt-4o',
       messages: [
         { role: 'system', content: systemPrompt },
         { role: 'user', content: userPrompt }
       ],
-      temperature: 0.3, // Lower temperature for more consistent, focused explanations
-      max_tokens: 2000,
+      temperature: 0.3,
+      max_tokens: 3000,
       top_p: 0.9,
       frequency_penalty: 0.1,
       presence_penalty: 0.1

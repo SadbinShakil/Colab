@@ -4,14 +4,6 @@ import { join } from 'path'
 import { readFile, readdir } from 'fs/promises'
 import pdfParse from 'pdf-parse'
 
-// Debug: Log the API key status
-console.log('🔑 Environment Check:', {
-  hasKey: !!process.env.OPENAI_API_KEY,
-  keyLength: process.env.OPENAI_API_KEY?.length,
-  keyStartsWith: process.env.OPENAI_API_KEY?.substring(0, 20),
-  isDemoKey: process.env.OPENAI_API_KEY === 'sk-your-openai-api-key-here'
-})
-
 const openai = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY,
 })
@@ -227,14 +219,6 @@ export async function POST(request: NextRequest) {
       console.log('⚠️ Could not get stored metadata, using provided metadata:', extractError)
     }
 
-    // Check if we have a valid API key
-    console.log('🔑 API Key Check:', {
-      hasKey: !!process.env.OPENAI_API_KEY,
-      keyLength: process.env.OPENAI_API_KEY?.length,
-      keyStartsWith: process.env.OPENAI_API_KEY?.substring(0, 10),
-      isDemoKey: process.env.OPENAI_API_KEY === 'sk-your-openai-api-key-here'
-    })
-    
     if (!process.env.OPENAI_API_KEY || process.env.OPENAI_API_KEY === 'sk-your-openai-api-key-here') {
       console.log('⚠️ Using demo mode - no valid API key found')
       // Return intelligent mock response based on metadata analysis with extracted text
@@ -279,7 +263,7 @@ REAL PAPER DETAILS:
 - Keywords/Tags: ${metadata.tags?.join(', ') || 'None extracted'}
 
 ${documentText ? `EXTRACTED PAPER CONTENT:
-${documentText.substring(0, 4000)}` : ''}
+${documentText.substring(0, 10000)}` : ''}
 
 CRITICAL: Use your actual knowledge of this paper if you recognize it. If you know these authors, venue, or research area, provide SPECIFIC and ACCURATE recommendations based on:
 
@@ -331,12 +315,12 @@ Provide your response as a detailed JSON object with the following structure:
 IMPORTANT: Use your actual knowledge of real papers, authors, and venues. Provide specific, accurate recommendations based on the paper's metadata. If you recognize the work, venue, or authors, use that knowledge to provide tailored advice.`
 
   const completion = await openai.chat.completions.create({
-    model: 'gpt-4',
+    model: 'gpt-4o',
     messages: [
       { role: 'system', content: 'You are an expert academic research advisor specializing in prerequisite analysis and learning path recommendations.' },
       { role: 'user', content: prompt }
     ],
-    max_tokens: 2000,
+    max_tokens: 4000,
     temperature: 0.3,
   })
 

@@ -11,14 +11,6 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Missing question' }, { status: 400 })
     }
 
-    // Check if we have a valid API key
-    console.log('🔑 AI Help API Key Check:', {
-      hasKey: !!process.env.OPENAI_API_KEY,
-      keyLength: process.env.OPENAI_API_KEY?.length,
-      keyStartsWith: process.env.OPENAI_API_KEY?.substring(0, 20),
-      isDemoKey: process.env.OPENAI_API_KEY === 'sk-your-openai-api-key-here'
-    })
-
     // Debug document content
     console.log('📄 Document Content Debug:', {
       hasDocumentContent: !!documentContent,
@@ -160,7 +152,7 @@ Authors: ${documentAuthors || 'N/A'}
 URL: ${documentUrl || 'N/A'}
 
 📚 **Full Document Content** (${documentContentForAI.length} characters):
-${documentContentForAI.slice(0, 8000)}
+${documentContentForAI.slice(0, 16000)}
 
 👤 **User Question:** ${question}
 
@@ -181,12 +173,12 @@ Please provide a helpful response based on the available information. If you nee
 Please provide a friendly, helpful response. This appears to be a general question or casual conversation. Be engaging and supportive in your response.`
     }
     const completion = await openai.chat.completions.create({
-      model: 'gpt-4',
+      model: 'gpt-4o',
       messages: [
         { role: 'system', content: systemPrompt },
         { role: 'user', content: userPrompt }
       ],
-      max_tokens: 1500,
+      max_tokens: 2000,
       temperature: 0.7,
     })
     const answer = completion.choices[0]?.message?.content || 'No answer generated.'

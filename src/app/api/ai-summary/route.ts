@@ -309,8 +309,8 @@ Year: ${documentYear || 'Not specified'}
 Journal/Conference: ${documentJournal || 'Not specified'}
 Abstract: ${documentAbstract || 'Not specified'}
 
-CONTENT (first 8000 chars):
-${documentContent.slice(0, 8000)}
+CONTENT (first 20000 chars):
+${documentContent.slice(0, 20000)}
 
 QUICK ANALYSIS:
 - Is this a research paper? (Check for methodology, experiments, academic structure)
@@ -323,13 +323,13 @@ Respond efficiently with clear JSON structure.`
 
     try {
       completion = await openai.chat.completions.create({
-        model: 'gpt-3.5-turbo', // Faster model for quicker response
+        model: 'gpt-4o',
         messages: [
           { role: 'system', content: systemPrompt },
           { role: 'user', content: userPrompt }
         ],
-        max_tokens: 1200, // Reduced for faster response
-        temperature: 0.3, // Lower temperature for more consistent output
+        max_tokens: 4000,
+        temperature: 0.3,
       })
       text = completion.choices[0]?.message?.content || ''
     } catch (err) {

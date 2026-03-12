@@ -7,23 +7,14 @@ const openai = new OpenAI({ apiKey })
 
 export async function POST(request: NextRequest) {
   try {
-    const { message, context, sectionName, conversationHistory, userId, userName } = await request.json()
-    
+    const { message, context, sectionName, conversationHistory, userId, userName, documentContent } = await request.json()
+
     if (!message) {
       return NextResponse.json({ error: 'Missing message' }, { status: 400 })
     }
 
-    // Debug logging
-    console.log('🎓 [AI Tutor] Request received:', {
-      hasApiKey: !!process.env.OPENAI_API_KEY,
-      isDemoKey: process.env.OPENAI_API_KEY === 'sk-your-openai-api-key-here',
-      message: message.substring(0, 100),
-      sectionName,
-      contextLength: context?.length || 0,
-      historyLength: conversationHistory?.length || 0,
-      userId,
-      userName
-    })
+    console.log(`🎓 [AI Tutor] Request from ${userName || 'user'}: "${message.substring(0, 80)}"`)
+
 
     // Mock response for demo/testing
     if (!process.env.OPENAI_API_KEY || process.env.OPENAI_API_KEY === 'sk-your-openai-api-key-here') {
@@ -55,8 +46,8 @@ No worries! Try these:
 
 *Note: This is a demo response. Add your OpenAI API key to .env for personalized tutoring.*`
 
-      return NextResponse.json({ 
-        success: true, 
+      return NextResponse.json({
+        success: true,
         response: mockResponse
       })
     }
@@ -67,6 +58,9 @@ No worries! Try these:
 **Current Context:**
 - **Section:** ${sectionName}
 - **Student:** ${userName || 'Student'} (ID: ${userId || 'unknown'})
+
+**Section Content:**
+${documentContent ? documentContent.substring(0, 10000) : 'Content not available'}
 
 **Student's Confused Highlights:**
 ${context || 'No specific highlights provided'}
@@ -116,13 +110,13 @@ ${context || 'No specific highlights provided'}
 
     // Build conversation messages
     const messages: Array<{ role: 'system' | 'user' | 'assistant', content: string }> = []
-    
+
     // Add system prompt
     messages.push({
       role: 'system',
       content: systemPrompt
     })
-    
+
     // Add conversation history if exists
     if (conversationHistory && conversationHistory.length > 0) {
       conversationHistory.forEach((msg: any) => {
@@ -132,38 +126,25 @@ ${context || 'No specific highlights provided'}
         })
       })
     }
-    
+
     // Add current message
     messages.push({
       role: 'user',
       content: message
     })
 
-    console.log('🔄 [AI Tutor] Calling OpenAI API...', {
-      model: 'gpt-4',
-      messagesCount: messages.length,
-      maxTokens: 1000
-    })
-
-    // Call OpenAI API
     const completion = await openai.chat.completions.create({
-      model: 'gpt-4',
+      model: 'gpt-4o',
       messages: messages,
-      max_tokens: 1000,
-      temperature: 0.7, // Balanced between creative and focused
+      max_tokens: 1500,
+      temperature: 0.7,
     })
 
     const tutorResponse = completion.choices[0]?.message?.content || 'Sorry, I could not generate a response.'
+    console.log(`✅ [AI Tutor] Response generated (${tutorResponse.length} chars)`)
 
-    console.log('✅ [AI Tutor] Response generated:', {
-      responseLength: tutorResponse.length,
-      tokensUsed: completion.usage?.total_tokens || 0,
-      promptTokens: completion.usage?.prompt_tokens || 0,
-      completionTokens: completion.usage?.completion_tokens || 0
-    })
-
-    return NextResponse.json({ 
-      success: true, 
+    return NextResponse.json({
+      success: true,
       response: tutorResponse
     })
 
@@ -173,8 +154,8 @@ ${context || 'No specific highlights provided'}
       type: error instanceof Error ? error.constructor.name : 'Unknown',
       stack: error instanceof Error ? error.stack : undefined
     })
-    
-    return NextResponse.json({ 
+
+    return NextResponse.json({
       error: `Failed to get AI tutor response: ${error instanceof Error ? error.message : String(error)}`,
       details: error instanceof Error ? error.toString() : String(error),
       type: error instanceof Error ? error.constructor.name : 'Unknown'

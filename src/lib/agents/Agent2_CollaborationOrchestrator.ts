@@ -241,11 +241,14 @@ class Agent2_CollaborationOrchestrator {
   private getMatchReason(helpee: PeerProfile, helper: PeerProfile): string {
     const gap = helper.understandingScore - helpee.understandingScore
 
-    // ✅ NEVER expose understanding scores to users - keep private!
-    if (gap > 30) {
-      return `${helper.userName} has strong understanding of this section`
+    // A Google workspace/doc type reasoning approach
+    // We infer understanding contextually based on their scoring gap without exposing the raw score
+    if (gap > 40) {
+      return `${helper.userName} recently reviewed this section smoothly and may have valuable insights.`
+    } else if (gap > 20) {
+      return `${helper.userName} navigated this section with high engagement and minimal struggle.`
     } else {
-      return `${helper.userName} recently mastered this section and can relate to your challenges`
+      return `${helper.userName} recently worked through this exact section and can relate to your analysis.`
     }
   }
 
@@ -371,9 +374,8 @@ class Agent2_CollaborationOrchestrator {
     const activeNow = this.activeCollaborations.size
 
     const successfulCollabs = this.matchHistory.filter(m => {
-      // Check if this match led to successful collaboration
-      // (simplified - would need more tracking in real system)
-      return true
+      const session = this.activeCollaborations.get(m.matchId)
+      return session?.outcome === 'success' || session?.outcome === 'partial'
     }).length
 
     return {
