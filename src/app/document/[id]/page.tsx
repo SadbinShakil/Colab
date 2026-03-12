@@ -14,6 +14,20 @@ import {
   LogOut, Wifi, WifiOff, Bot, Loader2, Sparkles,
   FileText, X, Copy, Star
 } from "lucide-react"
+
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu"
+
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from "@/components/ui/tooltip"
 import ApryseWebViewer from '@/components/ApryseWebViewer'
 import { useCollaboration } from '@/hooks/useCollaboration'
 import AISummaryPanel from '@/components/AISummaryPanel'
@@ -92,6 +106,7 @@ export default function DocumentViewer({ params }: { params: Promise<{ id: strin
 
   const [document, setDocument] = useState<Document | null>(null)
   const [isLoading, setIsLoading] = useState(true)
+  const [isPdfLoaded, setIsPdfLoaded] = useState(false) // ✅ Track PDF viewer loading state
   const [documentId, setDocumentId] = useState<string>('')
   const [currentUser, setCurrentUser] = useState<{ name: string; id: string } | null>(null)
 
@@ -292,10 +307,6 @@ export default function DocumentViewer({ params }: { params: Promise<{ id: strin
         if (response.ok) {
           const result = await response.json()
           const document = result.document
-          // Add "Check: " prefix to the title if it's not already there
-          if (document.title && !document.title.startsWith('Check: ')) {
-            document.title = `Check: ${document.title}`
-          }
           setDocument(document)
           // Try to parse summary as JSON
           if (result.document.summary) {
@@ -1010,547 +1021,396 @@ Would you like to ask about a specific section or concept?`
   }
 
   return (
-    <div className="h-screen bg-background flex flex-col">
-      {/* Header */}
-      {/* <header className="border-b border-gray-200 bg-background/95 backdrop-blur">
-        <div className="flex items-center justify-between px-6 py-3">
-          <div className="flex items-center space-x-4">
-            <Button variant="ghost" size="sm" asChild>
-              <a href="/dashboard">
-                <ChevronLeft className="h-4 w-4 mr-1" />
-                Back
-              </a>
-            </Button>
-            <div>
-              <h1 className="font-semibold text-lg">{document.title}</h1>
-              <p className="text-sm text-muted-foreground">{document.authors}</p>
+    <div className="h-screen bg-slate-50 flex flex-col overflow-hidden font-sans text-slate-900">
+
+      {/* 1. Header: Minimalist & Functional */}
+      <header className="h-14 border-b border-gray-200 bg-white flex items-center justify-between px-4 z-20 shrink-0 shadow-sm">
+
+        {/* Left: Navigation & Context */}
+        <div className="flex items-center gap-4 min-w-0 flex-1">
+          <Button variant="ghost" size="icon" onClick={() => router.push('/dashboard')} className="rounded-full text-gray-500 hover:bg-gray-100 h-9 w-9">
+            <ChevronLeft className="w-5 h-5" />
+          </Button>
+
+          <div className="flex items-center gap-3 min-w-0 pr-4 border-r border-gray-200 mr-2">
+            <div className="w-8 h-8 bg-blue-600 rounded-lg flex items-center justify-center text-white shadow-sm shrink-0">
+              <FileText className="w-4 h-4" />
             </div>
-          </div> */}
-
-      {/* Header */}
-      {/* Header */}
-      <header className="border-b border-gray-200 bg-white">
-        <div className="flex items-center justify-between px-4 py-2">
-          <div className="flex items-center space-x-3 flex-1 min-w-0 max-w-3xl">
-            <Button variant="ghost" size="sm" asChild className="flex-shrink-0">
-              <a href="/dashboard" className="flex items-center text-sm">
-                <ChevronLeft className="h-4 w-4" />
-                <span>Back</span>
-              </a>
-            </Button>
-
-            <div className="flex items-center space-x-2 min-w-0 pl-3 border-l border-gray-200">
-              <BookOpen className="h-3.5 w-3.5 text-blue-600 flex-shrink-0" />
-              <div className="min-w-0">
-                <div className="font-medium text-xs text-gray-700 truncate" title={document.title.replace(/^Check:\s*/i, '')}>
-                  {document.title.replace(/^Check:\s*/i, '')}
-                </div>
-                {document.authors && document.authors !== 'Unknown' && (
-                  <div className="text-[10px] text-gray-500 truncate leading-tight">
-                    {document.authors}
-                  </div>
+            <div className="flex flex-col min-w-0 justify-center">
+              <div className="text-sm font-semibold text-slate-800 truncate tracking-tight leading-none mb-1" title={document.title}>{document.title}</div>
+              <div className="flex items-center text-[10px] text-gray-500 space-x-2 leading-none">
+                <span className="truncate max-w-[150px]">{document.authors || 'Unknown Author'}</span>
+                <span className="text-gray-300">•</span>
+                <span>{document.year || '2024'}</span>
+                {collaboration.isConnected && (
+                  <>
+                    <span className="text-gray-300">•</span>
+                    <span className="flex items-center text-green-600 font-medium bg-green-50 px-1.5 py-0.5 rounded-full">
+                      <div className="w-1.5 h-1.5 bg-green-500 rounded-full mr-1 animate-pulse"></div> Connected
+                    </span>
+                  </>
                 )}
               </div>
             </div>
           </div>
 
-          <div className="flex items-center space-x-2">
-            {/* Collaboration Status */}
-            <div className="flex items-center space-x-2">
-              <div className="flex items-center space-x-1">
-                {collaboration.isConnected ? (
-                  <Wifi className="h-4 w-4 text-green-500" />
-                ) : (
-                  <WifiOff className="h-4 w-4 text-gray-400" />
-                )}
-                <span className="text-xs text-gray-600">
-                  {collaboration.isConnected ? 'Connected' : 'Connecting...'}
-                </span>
-              </div>
-              {/* Active Users */}
-              {collaboration.activeUsers.length > 0 && (
-                <div className="flex items-center space-x-1">
-                  <div className="flex -space-x-1">
-                    {collaboration.activeUsers.slice(0, 3).map((user, index) => (
-                      <div key={user.userId || index} className="relative">
-                        <div className="w-6 h-6 rounded-full bg-gradient-to-br from-blue-500 to-purple-500 flex items-center justify-center text-white text-xs">
-                          {(user.userName || 'A').charAt(0).toUpperCase()}
-                        </div>
-                        <div className="absolute -bottom-0.5 -right-0.5 w-2 h-2 rounded-full border border-white bg-green-500" />
+          {/* Active Reader Avatars (Moved to Left for Context) */}
+          {collaboration.activeUsers.length > 0 && (
+            <div className="flex -space-x-2 hidden md:flex items-center">
+              {collaboration.activeUsers.slice(0, 4).map((user, i) => (
+                <TooltipProvider key={i}>
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <div className="w-7 h-7 rounded-full border-2 border-white bg-gradient-to-br from-blue-500 to-indigo-600 text-white flex items-center justify-center text-[10px] font-bold shadow-sm cursor-default">
+                        {user.userName?.[0]?.toUpperCase() || 'U'}
                       </div>
-                    ))}
-                  </div>
-                  <span className="text-xs text-gray-600">
-                    {collaboration.activeUsers.length} active
-                  </span>
+                    </TooltipTrigger>
+                    <TooltipContent>{user.userName}</TooltipContent>
+                  </Tooltip>
+                </TooltipProvider>
+              ))}
+              {collaboration.activeUsers.length > 4 && (
+                <div className="w-7 h-7 rounded-full border-2 border-white bg-gray-100 text-gray-500 flex items-center justify-center text-[10px] font-medium shadow-sm">
+                  +{collaboration.activeUsers.length - 4}
                 </div>
               )}
             </div>
-            {/* AI Summary Button in header, top right */}
-            <Button
-              variant="default"
-              size="sm"
-              className="bg-gradient-to-r from-blue-600 to-purple-600 text-white font-semibold flex items-center space-x-2 shadow-md hover:scale-105 transition-transform"
-              onClick={async () => {
-                if (!summary) {
-                  // Generate initial summary if none exists
-                  await generateInitialSummary()
-                }
-                setShowSummary(true)
-              }}
-              title="Show AI Summary"
-            >
-              <Sparkles className="h-4 w-4" />
-              <span className="hidden md:inline">AI Summary</span>
-            </Button>
+          )}
+        </div>
 
+        {/* Center: Interaction Tools */}
+        {isPdfLoaded && (
+          <div className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 hidden lg:flex items-center gap-2 animate-in fade-in zoom-in-95 duration-300">
+            <div className="flex items-center gap-0.5 bg-slate-100/50 p-1 rounded-lg border border-slate-200/50">
+              <TooltipProvider>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => setSelectedTool('select')}
+                      className={`h-7 w-7 p-0 rounded-md transition-all ${selectedTool === 'select' ? 'bg-white text-blue-700 shadow-sm ring-1 ring-black/5' : 'hover:bg-gray-200/50 text-gray-400'}`}
+                    >
+                      <Users className="w-4 h-4" />
+                    </Button>
+                  </TooltipTrigger>
+                  <TooltipContent>Select (V)</TooltipContent>
+                </Tooltip>
 
-            {/* AI Research Assistant Trigger Button */}
-            <Button
-              variant="outline"
-              size="sm"
-              className="bg-gradient-to-r from-purple-600 to-indigo-600 text-white font-semibold flex items-center justify-center shadow-md hover:scale-105 transition-transform border-purple-600 w-8 h-8 p-0"
-              onClick={triggerContextualHelp}
-              title="Activate AI Research Assistant - Advanced contextual help system"
-            >
-              <Brain className="h-4 w-4" />
-            </Button>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => setSelectedTool('highlight')}
+                      className={`h-7 w-7 p-0 rounded-md transition-all ${selectedTool === 'highlight' ? 'bg-yellow-50 text-yellow-700 shadow-sm ring-1 ring-yellow-200' : 'hover:bg-gray-200/50 text-gray-400'}`}
+                    >
+                      <Highlighter className="w-4 h-4" />
+                    </Button>
+                  </TooltipTrigger>
+                  <TooltipContent>Highlight (H)</TooltipContent>
+                </Tooltip>
 
-            <Button
-              variant="outline"
-              size="sm"
-              className="bg-gradient-to-r from-green-600 to-emerald-600 text-white font-semibold flex items-center justify-center shadow-md hover:scale-105 transition-transform border-green-600 w-8 h-8 p-0"
-              onClick={extractTextFromWebViewer}
-              title="Extract and display text from PDF for debugging"
-            >
-              <FileText className="h-4 w-4" />
-            </Button>
-
-            <Button
-              variant="outline"
-              size="sm"
-              className="bg-gradient-to-r from-orange-600 to-red-600 text-white font-semibold flex items-center justify-center shadow-md hover:scale-105 transition-transform border-orange-600 w-8 h-8 p-0"
-              onClick={() => setShowAddInsight(true)}
-              title="Add your reading insight to help other researchers"
-            >
-              <Star className="h-4 w-4" />
-            </Button>
-
-
-            <Button
-              variant="outline"
-              size="sm"
-              className="bg-gradient-to-r from-blue-400 to-indigo-500 text-white font-semibold flex items-center justify-center shadow-md hover:scale-105 transition-transform border-blue-400 w-8 h-8 p-0"
-              onClick={() => setShowSituationSettings(true)}
-              title="Smart Notification Situations - Configure when to get AI help"
-            >
-              <Settings className="h-4 w-4" />
-            </Button>
-
-            {/* User Menu */}
-            <div className="relative group">
-              <Button variant="outline" size="sm" className="flex items-center">
-                <User className="h-4 w-4 mr-1" />
-                {currentUser?.name || 'User'}
-              </Button>
-              {/* Dropdown Menu */}
-              <div className="absolute right-0 mt-2 w-48 bg-white rounded-md shadow-lg border border-gray-200 opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all duration-200 z-50">
-                <div className="py-1">
-                  <button
-                    onClick={handleLogout}
-                    className="w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-100 flex items-center"
-                  >
-                    <LogOut className="w-4 h-4 mr-2" />
-                    Logout
-                  </button>
-                </div>
-              </div>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => setSelectedTool('comment')}
+                      className={`h-7 w-7 p-0 rounded-md transition-all ${selectedTool === 'comment' ? 'bg-purple-50 text-purple-700 shadow-sm ring-1 ring-purple-200' : 'hover:bg-gray-200/50 text-gray-400'}`}
+                    >
+                      <MessageSquare className="w-4 h-4" />
+                    </Button>
+                  </TooltipTrigger>
+                  <TooltipContent>Comment (C)</TooltipContent>
+                </Tooltip>
+              </TooltipProvider>
             </div>
+
+            <div className="w-px h-5 bg-gray-200"></div>
+
+            <TooltipProvider>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => setShowLiveActivity(true)}
+                    className="h-8 px-2.5 gap-1.5 rounded-full text-slate-500 hover:bg-orange-50 hover:text-orange-700 text-xs font-medium border border-transparent hover:border-orange-100 transition-all"
+                  >
+                    <Users className="w-3.5 h-3.5" />
+                    <span>Live</span>
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent>View Team Activity</TooltipContent>
+              </Tooltip>
+            </TooltipProvider>
+          </div>
+        )}
+
+        {/* Right: Actions & Profile */}
+        <div className="flex items-center gap-2">
+
+          <Button
+            variant="outline"
+            className="hidden md:flex items-center gap-2 rounded-full border-gray-200 text-gray-700 bg-white hover:bg-gray-50 hover:text-blue-600 shadow-sm transition-all h-9 px-4"
+            onClick={async () => {
+              if (!summary) await generateInitialSummary()
+              setShowSummary(true)
+            }}
+          >
+            <Sparkles className="w-4 h-4 text-purple-600" />
+            <span className="font-medium text-xs">AI Summary</span>
+          </Button>
+
+          <TooltipProvider>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button variant={showChat ? "secondary" : "ghost"} size="icon" className="text-gray-500 hover:bg-gray-100 rounded-full h-9 w-9" onClick={() => setShowChat(!showChat)}>
+                  <MessageSquare className="w-5 h-5" />
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent>Open Chat & AI</TooltipContent>
+            </Tooltip>
+          </TooltipProvider>
+
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button variant="ghost" size="icon" className="text-gray-500 hover:bg-gray-100 rounded-full h-9 w-9 outline-none">
+                <MoreVertical className="w-5 h-5" />
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end" className="w-60 bg-white z-50 p-1 shadow-xl border border-gray-100 rounded-xl">
+              <DropdownMenuItem onClick={triggerContextualHelp} className="flex items-center gap-3 p-2.5 rounded-lg cursor-pointer hover:bg-purple-50 focus:bg-purple-50">
+                <div className="w-8 h-8 rounded-lg bg-purple-100 flex items-center justify-center text-purple-600">
+                  <Brain className="h-4 w-4" />
+                </div>
+                <div>
+                  <div className="text-sm font-medium text-gray-900">AI Assistant</div>
+                  <div className="text-xs text-gray-500">Enable advanced help</div>
+                </div>
+              </DropdownMenuItem>
+              <DropdownMenuItem onClick={() => setShowSituationSettings(true)} className="flex items-center gap-3 p-2.5 rounded-lg cursor-pointer hover:bg-gray-50 focus:bg-gray-50">
+                <div className="w-8 h-8 rounded-lg bg-gray-100 flex items-center justify-center text-gray-600">
+                  <Settings className="h-4 w-4" />
+                </div>
+                <div>
+                  <div className="text-sm font-medium text-gray-900">Settings</div>
+                  <div className="text-xs text-gray-500">Notifications & preferences</div>
+                </div>
+              </DropdownMenuItem>
+              <DropdownMenuItem onClick={extractTextFromWebViewer} className="flex items-center gap-3 p-2.5 rounded-lg cursor-pointer hover:bg-gray-50 focus:bg-gray-50">
+                <div className="w-8 h-8 rounded-lg bg-gray-100 flex items-center justify-center text-gray-600">
+                  <FileText className="h-4 w-4" />
+                </div>
+                <div>
+                  <div className="text-sm font-medium text-gray-900">Debug Text</div>
+                  <div className="text-xs text-gray-500">View extracted content</div>
+                </div>
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
+
+          <div className="w-px h-6 bg-gray-200 mx-2"></div>
+
+          <div className="w-8 h-8 bg-indigo-600 rounded-full flex items-center justify-center text-white text-sm font-medium cursor-pointer hover:ring-2 hover:ring-indigo-100 transition-all select-none shadow-sm" title={currentUser?.name}>
+            {currentUser?.name?.[0] || 'U'}
           </div>
         </div>
       </header>
 
-      <div className="flex flex-1 overflow-hidden">
-        {/* Toolbar */}
-        <div className="w-16 border-r border-gray-200 bg-muted/30 flex flex-col items-center py-4 space-y-2">
-          <Button
-            variant={selectedTool === 'select' ? 'default' : 'ghost'}
-            size="sm"
-            onClick={() => setSelectedTool('select')}
-            className="w-10 h-10 p-0"
-          >
-            <Search className="h-4 w-4" />
-          </Button>
-          <Button
-            variant={selectedTool === 'highlight' ? 'default' : 'ghost'}
-            size="sm"
-            onClick={() => setSelectedTool('highlight')}
-            className="w-10 h-10 p-0"
-          >
-            <Highlighter className="h-4 w-4" />
-          </Button>
-          <Button
-            variant={selectedTool === 'comment' ? 'default' : 'ghost'}
-            size="sm"
-            onClick={() => setSelectedTool('comment')}
-            className="w-10 h-10 p-0"
-          >
-            <MessageSquare className="h-4 w-4" />
-          </Button>
-          <Button
-            variant={selectedTool === 'stuck' ? 'default' : 'ghost'}
-            size="sm"
-            onClick={() => setSelectedTool('stuck')}
-            className="w-10 h-10 p-0"
-          >
-            <Bookmark className="h-4 w-4" />
-          </Button>
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={() => setShowLiveActivity(true)}
-            className="w-10 h-10 p-0 text-orange-600 hover:text-orange-700 hover:bg-orange-50"
-            title="Live Activity Feed"
-          >
-            <Users className="h-4 w-4" />
-          </Button>
+
+
+      {/* 2. Main Workspace */}
+      <div className="flex-1 flex overflow-hidden relative">
+
+        {/* PDF Viewer Canvas */}
+        <div className="flex-1 bg-slate-50 relative flex flex-col">
+          <ApryseWebViewer
+            documentUrl={document.url}
+            documentId={documentId}
+            userName={currentUser?.name || 'Anonymous'}
+            userId={currentUser?.id || 'guest'}
+            onHighlightAdd={collaboration.addHighlight}
+            extractedText={extractedText}
+            summary={summary}
+            onDocumentLoaded={() => setIsPdfLoaded(true)} // ✅ Pass prop
+          />
         </div>
 
-        {/* PDF Viewer */}
-        <div className="flex-1 flex flex-col">
-          {/* PDF Content */}
-          <div className="flex-1 flex flex-col">
-            <ApryseWebViewer
-              documentUrl={document.url}
-              documentId={documentId}
-              userName={currentUser?.name || 'Anonymous'}
-              userId={currentUser?.id || 'guest'}
-              onHighlightAdd={collaboration.addHighlight}
-              // onAnnotationAdd={collaboration.addAnnotation} // DISABLED - using Firestore instead
-              extractedText={extractedText}
-              summary={summary}
-            />
-          </div>
-        </div>
-
-        {/* Chat Sidebar */}
+        {/* Right Sidebar: Collaboration Panel */}
         {showChat && (
-          <div className="w-80 border-l border-gray-200 bg-background flex flex-col h-full">
-            {/* Chat Header */}
-            <div className="border-b border-gray-200 p-4">
-              <div className="flex items-center justify-between mb-3">
-                <div className="flex items-center space-x-2">
-                  <h3 className="font-semibold">Discussion & AI Help</h3>
-                  {collaboration.isConnected && (
-                    <div className="flex items-center space-x-1">
-                      <div className="w-2 h-2 bg-green-500 rounded-full animate-pulse"></div>
-                      <span className="text-xs text-green-600">Live</span>
-                    </div>
-                  )}
-                </div>
-                <Button variant="ghost" size="sm" onClick={() => setShowChat(false)}>
-                  <EyeOff className="h-4 w-4" />
-                </Button>
+          <div className="w-[400px] bg-white border-l border-gray-200 flex flex-col shadow-[-4px_0_24px_rgba(0,0,0,0.02)] z-20">
+            {/* Tab Switcher */}
+            <div className="px-4 py-3 border-b border-gray-100 flex items-center justify-between shrink-0 bg-white">
+              <div className="flex bg-slate-100 p-1 rounded-xl w-full mr-2">
+                <button
+                  onClick={() => setActiveTab('chat')}
+                  className={`flex-1 text-center py-1.5 text-xs font-semibold rounded-lg transition-all ${activeTab === 'chat' ? 'bg-white text-slate-800 shadow-sm ring-1 ring-black/5' : 'text-gray-500 hover:text-gray-700'}`}
+                >
+                  Chat
+                </button>
+                <button
+                  onClick={() => setActiveTab('ai')}
+                  className={`flex-1 text-center py-1.5 text-xs font-semibold rounded-lg transition-all flex items-center justify-center gap-1.5 ${activeTab === 'ai' ? 'bg-white text-blue-600 shadow-sm ring-1 ring-black/5' : 'text-gray-500 hover:text-gray-700'}`}
+                >
+                  <Sparkles className="w-3 h-3" /> AI Help
+                </button>
+                <button
+                  onClick={() => setActiveTab('metadata')}
+                  className={`flex-1 text-center py-1.5 text-xs font-semibold rounded-lg transition-all ${activeTab === 'metadata' ? 'bg-white text-slate-800 shadow-sm ring-1 ring-black/5' : 'text-gray-500 hover:text-gray-700'}`}
+                >
+                  Info
+                </button>
               </div>
-
-              {/* Tab Navigation */}
-              <div className="bg-gray-100 rounded-lg p-1 overflow-x-auto">
-                <div className="flex space-x-1 min-w-max">
-                  <Button
-                    variant={activeTab === 'chat' ? 'default' : 'ghost'}
-                    size="sm"
-                    className="h-8 whitespace-nowrap"
-                    onClick={() => setActiveTab('chat')}
-                  >
-                    <MessageCircle className="h-3 w-3 mr-1" />
-                    Chat
-                  </Button>
-                  <Button
-                    variant={activeTab === 'ai' ? 'default' : 'ghost'}
-                    size="sm"
-                    className="h-8 whitespace-nowrap"
-                    onClick={() => setActiveTab('ai')}
-                  >
-                    <Sparkles className="h-3 w-3 mr-1" />
-                    AI Help
-                  </Button>
-                  <Button
-                    variant={activeTab === 'metadata' ? 'default' : 'ghost'}
-                    size="sm"
-                    className="h-8 whitespace-nowrap"
-                    onClick={() => setActiveTab('metadata')}
-                  >
-                    <Brain className="h-3 w-3 mr-1" />
-                    Metadata
-                  </Button>
-                  <Button
-                    variant={activeTab === 'annotations' ? 'default' : 'ghost'}
-                    size="sm"
-                    className="h-8 whitespace-nowrap"
-                    onClick={() => setActiveTab('annotations')}
-                  >
-                    <MessageSquare className="h-3 w-3 mr-1" />
-                    Annotations
-                  </Button>
-                </div>
-              </div>
+              <Button variant="ghost" size="icon" className="h-8 w-8 rounded-full text-gray-400 hover:text-gray-600 hover:bg-gray-100" onClick={() => setShowChat(false)}>
+                <X className="w-4 h-4" />
+              </Button>
             </div>
 
-            {/* Content Area */}
-            {activeTab === 'chat' ? (
-              /* Chat Tab */
-              <>
-                {/* Chat Messages */}
-                <div className="flex-1 overflow-y-auto p-4 space-y-4 pr-20 min-h-0 max-h-full">
-                  {collaboration.chatMessages.map((msg: any) => (
-                    <div key={msg.id} className="space-y-2">
-                      <div className="flex items-start space-x-2">
-                        <div className="w-8 h-8 rounded-full bg-gradient-to-br from-blue-500 to-teal-500 flex items-center justify-center text-sm text-white">
-                          👤
-                        </div>
-                        <div className="flex-1 min-w-0">
-                          <div className="flex items-center space-x-2 mb-1">
-                            <span className="font-medium text-sm">
-                              {msg.userName}
-                              {msg.userId === currentUser?.id && ' (You)'}
-                            </span>
-                            <span className="text-xs text-muted-foreground">
-                              {new Date(msg.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-                            </span>
-                          </div>
-                          <div className="bg-muted/50 rounded-lg p-3 text-sm">
-                            {msg.content}
-                          </div>
-                          <div className="flex items-center space-x-2 mt-2">
-                            <Button variant="ghost" size="sm" className="h-6 px-2 text-xs">
-                              <ThumbsUp className="h-3 w-3 mr-1" />
-                              Like
-                            </Button>
-                            <Button variant="ghost" size="sm" className="h-6 px-2 text-xs">
-                              <Reply className="h-3 w-3 mr-1" />
-                              Reply
-                            </Button>
-                          </div>
-                        </div>
-                      </div>
-                    </div>
-                  ))}
-                </div>
+            {/* Tab Content */}
+            <div className="flex-1 overflow-y-auto bg-slate-50/50 relative">
 
-                {/* Chat Input */}
-                <div className="border-t border-gray-200 p-4 pr-20">
-                  <div className="flex space-x-2">
-                    <Input
-                      placeholder="Type a message..."
-                      value={chatMessage}
-                      onChange={(e) => setChatMessage(e.target.value)}
-                      onKeyPress={handleKeyPress}
-                      className="flex-1"
-                    />
-                    <Button size="sm" onClick={handleSendMessage} disabled={!chatMessage.trim()}>
-                      <Send className="h-4 w-4" />
-                    </Button>
-                  </div>
-                  <div className="flex items-center justify-between mt-2">
-                    <div className="flex space-x-1">
-                      <Button variant="ghost" size="sm" className="h-6 w-6 p-0">
-                        <Paperclip className="h-3 w-3" />
-                      </Button>
-                      <Button variant="ghost" size="sm" className="h-6 w-6 p-0">
-                        <Smile className="h-3 w-3" />
-                      </Button>
-                    </div>
-                    <span className="text-xs text-muted-foreground">Press Enter to send</span>
-                  </div>
-                </div>
-              </>
-            ) : activeTab === 'ai' ? (
-              /* AI Help Tab - Simplified */
-              <div className="flex flex-col h-full min-h-0">
-                {/* AI Messages - Simplified with scrollable header */}
-                <div className="flex-1 overflow-y-auto pr-20 min-h-0" style={{ height: '400px' }}>
-                  {/* AI Help Info - Now scrollable */}
-                  <div className="border-b border-gray-200 p-3 bg-gradient-to-r from-blue-50 to-purple-50">
-                    <div className="flex items-center space-x-2 mb-1">
-                      <Bot className="h-4 w-4 text-blue-600" />
-                      <h3 className="font-medium text-blue-800 text-sm">Advanced AI Research Assistant</h3>
-                    </div>
-                    <p className="text-xs text-blue-700">
-                      I'm your intelligent research companion! I can analyze this paper in detail, answer general questions, help with research, or just chat. What would you like to know?
-                    </p>
-                  </div>
-
-                  {/* Messages Container */}
-                  <div className="p-3 space-y-2">
-                    {aiMessages.length === 0 ? (
-                      <div className="text-center py-4">
-                        <div className="text-gray-400 mb-1">💡</div>
-                        <p className="text-xs text-gray-500">Start a conversation with AI</p>
-                        <div className="mt-2 space-y-1">
-                          <p className="text-xs text-blue-600 font-medium">Try asking:</p>
-                          <div className="text-xs text-blue-600 space-y-0.5">
-                            <div>• "What is the main research question?"</div>
-                            <div>• "Explain the methodology section"</div>
-                            <div>• "What are the key findings?"</div>
-                          </div>
+              {activeTab === 'chat' && (
+                <div className="flex flex-col h-full absolute inset-0">
+                  <div className="flex-1 p-4 space-y-6 overflow-y-auto">
+                    {collaboration.chatMessages.length === 0 ? (
+                      <div className="flex flex-col items-center justify-center h-full text-center p-8 opacity-60">
+                        <div className="w-16 h-16 bg-blue-50 rounded-full flex items-center justify-center mb-4">
+                          <MessageCircle className="w-8 h-8 text-blue-200" />
                         </div>
+                        <h3 className="text-gray-900 font-medium mb-1">No messages yet</h3>
+                        <p className="text-sm text-gray-500">Be the first to start the conversation!</p>
                       </div>
                     ) : (
-                      aiMessages.map((msg) => (
-                        <div key={msg.id} className="space-y-1">
-                          {/* Question */}
-                          <div className="flex items-start space-x-2">
-                            <div className="w-6 h-6 rounded-full bg-blue-500 flex items-center justify-center text-xs text-white">
-                              👤
-                            </div>
-                            <div className="flex-1">
-                              <div className="bg-blue-50 border border-blue-200 rounded-lg p-2 text-sm">
-                                {msg.question}
-                              </div>
-                            </div>
+                      collaboration.chatMessages.map((msg: any) => (
+                        <div key={msg.id} className={`flex flex-col space-y-1 ${msg.userId === currentUser?.id ? 'items-end' : 'items-start'}`}>
+                          <div className="flex items-center gap-2 px-1">
+                            <span className="text-[10px] font-bold text-gray-400">{msg.userName}</span>
+                            <span className="text-[10px] text-gray-300">{new Date(msg.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
                           </div>
-
-                          {/* Answer */}
-                          <div className="flex items-start space-x-2">
-                            <div className="w-6 h-6 rounded-full bg-purple-500 flex items-center justify-center text-xs text-white">
-                              🤖
-                            </div>
-                            <div className="flex-1">
-                              <div className="bg-purple-50 border border-purple-200 rounded-lg p-2 text-sm">
-                                {msg.isLoading ? (
-                                  <div className="flex items-center space-x-2">
-                                    <Loader2 className="h-3 w-3 animate-spin text-purple-600" />
-                                    <span className="text-purple-700 text-xs">Thinking...</span>
-                                  </div>
-                                ) : (
-                                  <div className="text-sm">{msg.answer}</div>
-                                )}
-                              </div>
-                            </div>
+                          <div className={`px-4 py-2.5 rounded-2xl max-w-[85%] text-sm shadow-sm ${msg.userId === currentUser?.id
+                            ? 'bg-blue-600 text-white rounded-tr-sm'
+                            : 'bg-white border border-gray-200 text-gray-800 rounded-tl-sm'
+                            }`}>
+                            {msg.content}
                           </div>
                         </div>
                       ))
                     )}
                     <div ref={aiMessagesEndRef} />
                   </div>
-                </div>
 
-                {/* AI Input - Simplified */}
-                <div className="border-t border-gray-200 p-2 pr-20 bg-white">
-                  <div className="flex space-x-2">
-                    <Input
-                      placeholder="Ask AI about this document..."
-                      value={aiQuestion}
-                      onChange={(e) => setAiQuestion(e.target.value)}
-                      onKeyPress={handleKeyPress}
-                      className="flex-1"
-                      disabled={isAILoading}
-                    />
-                    <Button
-                      size="sm"
-                      onClick={handleAIQuestion}
-                      disabled={!aiQuestion.trim() || isAILoading}
-                      className="bg-blue-600 hover:bg-blue-700"
-                    >
-                      {isAILoading ? (
-                        <Loader2 className="h-4 w-4 animate-spin" />
-                      ) : (
-                        <Sparkles className="h-4 w-4" />
-                      )}
-                    </Button>
+                  <div className="p-4 bg-white border-t border-gray-200 shrink-0">
+                    <div className="relative flex items-center gap-2">
+                      <Button variant="ghost" size="icon" className="text-gray-400 hover:text-gray-600">
+                        <Paperclip className="w-4 h-4" />
+                      </Button>
+                      <Input
+                        placeholder="Type a message..."
+                        className="grow rounded-full border-gray-200 bg-gray-50 focus-visible:ring-blue-500 focus-visible:bg-white transition-all pl-4"
+                        value={chatMessage}
+                        onChange={(e) => setChatMessage(e.target.value)}
+                        onKeyPress={handleKeyPress}
+                      />
+                      <Button
+                        size="icon"
+                        className="h-9 w-9 rounded-full bg-blue-600 hover:bg-blue-700 shadow-md shrink-0"
+                        onClick={handleSendMessage}
+                      >
+                        <Send className="w-4 h-4 text-white" />
+                      </Button>
+                    </div>
                   </div>
                 </div>
-              </div>
-            ) : activeTab === 'annotations' ? (
-              /* Annotations Tab */
-              <div className="flex-1 overflow-y-auto p-4">
-                <div className="mb-4">
-                  <h3 className="text-lg font-semibold text-gray-800 mb-2 flex items-center gap-2">
-                    <MessageSquare className="w-5 h-5 text-purple-500" />
-                    Research Annotations ({demoComments.length})
-                  </h3>
-                  <p className="text-sm text-gray-600">
-                    View and manage all annotations and comments on this document
-                  </p>
-                </div>
+              )}
 
-                <div className="space-y-4">
-                  {demoComments.map((comment) => (
-                    <div key={comment.id} className="bg-white rounded-lg p-4 border border-gray-200 hover:border-purple-300 transition-colors shadow-sm">
-                      <div className="flex items-start justify-between mb-3">
-                        <div className="flex items-center gap-3">
-                          <div className="w-10 h-10 rounded-full bg-gradient-to-br from-purple-500 to-blue-500 flex items-center justify-center text-white font-medium">
-                            {comment.author.split(' ').map(n => n[0]).join('')}
-                          </div>
-                          <div>
-                            <span className="font-medium text-gray-800">{comment.author}</span>
-                            <div className="text-sm text-gray-500">Page {comment.page}</div>
-                          </div>
+              {activeTab === 'ai' && (
+                <div className="flex flex-col h-full absolute inset-0">
+                  <div className="flex-1 p-4 space-y-6 overflow-y-auto">
+
+                    {/* AI Welcome Card */}
+                    <div className="bg-gradient-to-br from-indigo-50 to-blue-50 border border-blue-100 rounded-xl p-4 mb-6">
+                      <div className="flex items-center gap-3 mb-2">
+                        <div className="w-8 h-8 rounded-lg bg-blue-100 flex items-center justify-center text-blue-600">
+                          <Sparkles className="w-4 h-4" />
                         </div>
-                        <div className="text-right">
-                          <span className="text-sm text-gray-500">
-                            {new Date(comment.timestamp).toLocaleDateString()}
-                          </span>
-                          <div className="text-xs text-gray-400">
-                            {new Date(comment.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-                          </div>
-                        </div>
+                        <h3 className="font-semibold text-blue-900 text-sm">Research Assistant</h3>
                       </div>
-                      <div className="bg-gray-50 rounded-lg p-3 border-l-4 border-purple-400">
-                        <p className="text-gray-700 leading-relaxed">{comment.text}</p>
-                      </div>
-                      <div className="flex items-center justify-between mt-3 pt-3 border-t border-gray-100">
-                        <div className="flex items-center gap-2">
-                          <span className="text-xs bg-purple-100 text-purple-700 px-2 py-1 rounded-full">
-                            {comment.type}
-                          </span>
-                          <span className="text-xs text-gray-500">
-                            Position: ({comment.x}, {comment.y})
-                          </span>
-                        </div>
-                        <div className="flex items-center gap-2">
-                          <Button variant="ghost" size="sm" className="h-7 px-2 text-xs">
-                            <ThumbsUp className="w-3 h-3 mr-1" />
-                            Like
-                          </Button>
-                          <Button variant="ghost" size="sm" className="h-7 px-2 text-xs">
-                            <Reply className="w-3 h-3 mr-1" />
-                            Reply
-                          </Button>
-                        </div>
-                      </div>
+                      <p className="text-xs text-blue-800/80 leading-relaxed">
+                        I can extract key findings, methodologies, and limitations from this paper. Try asking specific questions!
+                      </p>
                     </div>
-                  ))}
+
+                    {aiMessages.map((msg) => (
+                      <div key={msg.id} className="space-y-3 animate-in fade-in slide-in-from-bottom-2 duration-300">
+                        {/* User Question */}
+                        <div className="flex justify-end">
+                          <div className="bg-slate-100 text-slate-700 font-medium rounded-2xl rounded-tr-sm px-4 py-2.5 text-sm max-w-[85%] shadow-sm">
+                            {msg.question}
+                          </div>
+                        </div>
+                        {/* AI Response */}
+                        <div className="flex justify-start">
+                          <div className="flex gap-3 max-w-[95%]">
+                            <div className="w-8 h-8 rounded-full bg-gradient-to-br from-purple-500 to-indigo-600 flex items-center justify-center shrink-0 shadow-sm mt-1">
+                              <Sparkles className="w-4 h-4 text-white" />
+                            </div>
+                            <div className="space-y-2 flex-1">
+                              <div className="bg-white border border-gray-100 shadow-sm rounded-2xl rounded-tl-sm px-5 py-4 text-sm text-gray-700 leading-relaxed">
+                                {msg.isLoading ? (
+                                  <div className="flex items-center gap-2 text-gray-500">
+                                    <Loader2 className="w-4 h-4 animate-spin text-purple-600" />
+                                    <span className="text-xs font-medium">Analyzing document context...</span>
+                                  </div>
+                                ) : (
+                                  <div className="whitespace-pre-wrap">{msg.answer}</div>
+                                )}
+                              </div>
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                    <div ref={aiMessagesEndRef} />
+                  </div>
+                  <div className="p-4 bg-white border-t border-gray-200 shrink-0">
+                    <div className="relative flex items-center gap-2">
+                      <Input
+                        placeholder="Ask AI about this document..."
+                        className="grow rounded-full border-purple-100 bg-purple-50/50 focus-visible:ring-purple-500 focus-visible:bg-white transition-all pl-4 text-purple-900 placeholder:text-purple-300"
+                        value={aiQuestion}
+                        onChange={(e) => setAiQuestion(e.target.value)}
+                        onKeyPress={handleKeyPress}
+                        disabled={isAILoading}
+                      />
+                      <Button
+                        size="icon"
+                        className="h-9 w-9 rounded-full bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-700 hover:to-indigo-700 shadow-md shrink-0"
+                        onClick={handleAIQuestion}
+                      >
+                        {isAILoading ? <Loader2 className="w-4 h-4 animate-spin text-white" /> : <Sparkles className="w-4 h-4 text-white" />}
+                      </Button>
+                    </div>
+                  </div>
                 </div>
-              </div>
-            ) : (
-              /* Metadata Tab */
-              <div className="flex-1 overflow-y-auto p-4 pr-20">
-                <EnhancedMetadataDisplay
-                  documentId={documentId}
-                  filename={document?.filename || ''}
-                />
-              </div>
-            )}
+              )}
+
+              {activeTab === 'metadata' && (
+                <div className="p-4">
+                  <EnhancedMetadataDisplay
+                    documentId={documentId}
+                    filename={document?.filename || ''}
+                  />
+                </div>
+              )}
+            </div>
           </div>
         )}
 
-        {/* Toggle Chat Button */}
-        {!showChat && (
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() => setShowChat(true)}
-            className="fixed right-4 top-1/2 transform -translate-y-1/2 z-10"
-          >
-            <MessageCircle className="h-4 w-4" />
-          </Button>
-        )}
-
-
       </div>
-      {/* Floating AI Summary Button (moved up, no End button) */}
-      {/* AI Summary Panel */}
+
+      {/* Dynamic Overlays */}
       <AISummaryPanel
         summary={summary || {}}
         loading={summaryLoading || (!summary && !isLoading)}
@@ -1561,58 +1421,45 @@ Would you like to ask about a specific section or concept?`
         onGoToPage={(page) => setCurrentPage(page)}
       />
 
-      {/* Contextual Help Popup */}
       <ContextualHelpPopup />
 
-      {/* Situation Settings Modal */}
       <SituationSettings
         isOpen={showSituationSettings}
         onClose={() => setShowSituationSettings(false)}
       />
 
-      {/* Extracted Text Modal */}
+      {/* Debug: Extracted Text Modal */}
       {showExtractedText && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-lg shadow-xl max-w-4xl w-full max-h-[80vh] flex flex-col">
-            <div className="flex items-center justify-between p-4 border-b">
-              <h2 className="text-lg font-semibold text-gray-900">
-                📄 Extracted Text from PDF
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-xl shadow-2xl max-w-4xl w-full max-h-[80vh] flex flex-col overflow-hidden animate-in zoom-in-95 duration-200">
+            <div className="flex items-center justify-between p-4 border-b border-gray-100 bg-gray-50/50">
+              <h2 className="text-sm font-semibold text-gray-900 flex items-center gap-2">
+                <FileText className="w-4 h-4 text-blue-500" /> Extracted Text Context
               </h2>
               <Button
                 variant="ghost"
                 size="sm"
                 onClick={() => setShowExtractedText(false)}
-                className="text-gray-500 hover:text-gray-700"
+                className="h-8 w-8 p-0 rounded-full hover:bg-gray-200"
               >
-                <X className="h-5 w-5" />
+                <X className="h-4 w-4" />
               </Button>
             </div>
-            <div className="flex-1 overflow-auto p-4">
-              <div className="bg-gray-50 rounded-lg p-4 font-mono text-sm whitespace-pre-wrap max-h-[60vh] overflow-auto">
-                {extractedText || 'No text extracted'}
-              </div>
+            <div className="flex-1 overflow-auto p-6 bg-white">
+              <pre className="font-mono text-xs leading-relaxed text-gray-600 whitespace-pre-wrap">
+                {extractedText || 'No text extracted successfully.'}
+              </pre>
             </div>
-            <div className="p-4 border-t bg-gray-50 rounded-b-lg">
-              <div className="flex items-center justify-between text-sm text-gray-600">
-                <span>Total characters: {extractedText.length}</span>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => {
-                    navigator.clipboard.writeText(extractedText)
-                    toast.success('Text copied to clipboard!')
-                  }}
-                >
-                  <Copy className="h-4 w-4 mr-2" />
-                  Copy Text
-                </Button>
-              </div>
+            <div className="p-3 border-t bg-gray-50 flex justify-end">
+              <Button variant="outline" size="sm" onClick={() => { navigator.clipboard.writeText(extractedText); toast.success('Copied!') }}>
+                <Copy className="w-3.5 h-3.5 mr-2" /> Copy to Clipboard
+              </Button>
             </div>
           </div>
         </div>
       )}
 
-      {/* Collaborative Insights Modal */}
+      {/* Legacy Modals */}
       {showCollaborativeInsights && collaborativeSummary && (
         <CollaborativeInsightsModal
           isOpen={showCollaborativeInsights}
@@ -1627,7 +1474,6 @@ Would you like to ask about a specific section or concept?`
         />
       )}
 
-      {/* Detailed Insights Modal */}
       {showDetailedInsights && collaborativeSummary && (
         <DetailedInsightsModal
           isOpen={showDetailedInsights}
@@ -1636,88 +1482,38 @@ Would you like to ask about a specific section or concept?`
           documentTitle={document?.title || 'Attention Is All You Need'}
           summary={collaborativeSummary}
           onNavigateToPage={(pageNumber, position) => {
-            // Close the modal first
             setShowDetailedInsights(false)
-            // Navigate to the specific page and position
-            // This would typically involve scrolling the PDF viewer to the specific page
-            console.log(`Navigating to page ${pageNumber}`, position)
-            // You can add PDF viewer navigation logic here
+            const event = new CustomEvent('document-viewer-navigate', { detail: { pageNumber, position } })
+            window.dispatchEvent(event)
             toast.success(`Navigating to page ${pageNumber}`)
           }}
         />
       )}
 
-      {/* Add Insight Modal */}
-      {showAddInsight && currentUser && (
-        <AddInsightModal
-          isOpen={showAddInsight}
-          onClose={() => setShowAddInsight(false)}
-          documentId={documentId}
-          currentUser={currentUser}
-          onInsightAdded={(insight) => {
-            toast.success('Insight added successfully!')
-            // Optionally refresh collaborative insights
-            if (collaborativeSummary) {
-              // You could refresh the summary here
-            }
-          }}
-        />
-      )}
-
-      {/* Live Activity Modal */}
       {showLiveActivity && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-lg shadow-xl max-w-4xl w-full max-h-[90vh] flex flex-col">
-            {/* Header */}
-            <div className="flex items-center justify-between p-6 border-b">
-              <div className="flex items-center space-x-3">
-                <div className="p-2 bg-gradient-to-r from-orange-600 to-red-600 rounded-lg">
-                  <Users className="h-6 w-6 text-white" />
-                </div>
-                <div>
-                  <h2 className="text-xl font-bold text-gray-900">Live Activity Feed</h2>
-                  <p className="text-sm text-gray-600">Real-time collaboration on {document?.title || 'this document'}</p>
-                </div>
-              </div>
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={() => setShowLiveActivity(false)}
-                className="text-gray-500 hover:text-gray-700"
-              >
-                <X className="h-5 w-5" />
+        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl shadow-2xl max-w-3xl w-full overflow-hidden max-h-[85vh] flex flex-col">
+            <div className="p-4 border-b border-gray-100 flex justify-between items-center">
+              <h2 className="font-semibold text-lg flex items-center gap-2">
+                <Users className="w-5 h-5 text-orange-600" /> Live Activity
+              </h2>
+              <Button variant="ghost" size="icon" onClick={() => setShowLiveActivity(false)} className="rounded-full">
+                <X className="w-5 h-5" />
               </Button>
             </div>
-
-            {/* Content */}
-            <div className="flex-1 overflow-y-auto p-6">
+            <div className="flex-1 overflow-auto">
               <LiveActivityFeed
                 documentId={documentId}
                 isVisible={true}
                 onNavigateToPage={(pageNumber, position) => {
-                  // Close the modal first
                   setShowLiveActivity(false)
-                  // Navigate to the specific page and position
-                  console.log(`Navigating to page ${pageNumber}`, position)
-                  // You can add PDF viewer navigation logic here
-                  toast.success(`Navigating to page ${pageNumber}`)
+                  if (pageNumber) {
+                    const event = new CustomEvent('document-viewer-navigate', { detail: { pageNumber, position } })
+                    window.dispatchEvent(event)
+                    toast.success(`Navigating to page ${pageNumber}`)
+                  }
                 }}
               />
-            </div>
-
-            {/* Footer */}
-            <div className="p-6 border-t bg-gray-50 rounded-b-lg">
-              <div className="flex items-center justify-between">
-                <p className="text-sm text-gray-600">
-                  See what other researchers are working on in real-time
-                </p>
-                <Button
-                  onClick={() => setShowLiveActivity(false)}
-                  className="bg-gradient-to-r from-orange-600 to-red-600 text-white"
-                >
-                  Close
-                </Button>
-              </div>
             </div>
           </div>
         </div>

@@ -310,6 +310,8 @@ export function SystemFlowVisualizer({
     // LIVE SIMULATION (Demonstrates Eye Tracking Logic)
     useEffect(() => {
         // We only want this script to run during Phase 3 (Deep Reading) AND Phase 4 (Extended)
+        // ❌ DISABLED: Simulation turned off to allow real testing
+        return
         if (activeStage < 3) return
 
         const startTimeRef = { current: Date.now() }
@@ -393,13 +395,32 @@ export function SystemFlowVisualizer({
             />
 
             {/* ✅ ADVANCED REFLECTION & GUIDANCE DASHBOARD */}
+            {/* Stage 0: Non-blocking start session chip */}
             <AnimatePresence>
-                {activeStage >= 0 && (
+                {activeStage === 0 && (
+                    <motion.div
+                        initial={{ opacity: 0, y: 10 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        exit={{ opacity: 0, y: 10 }}
+                        className="absolute bottom-14 right-4 z-[45] pointer-events-auto"
+                    >
+                        <button
+                            onClick={() => (window as any).startSession()}
+                            className="flex items-center gap-2 bg-indigo-600 hover:bg-indigo-700 text-white px-3 py-1.5 rounded-full shadow-lg font-semibold text-xs transition-colors"
+                        >
+                            <span className="w-1.5 h-1.5 rounded-full bg-white/70 animate-pulse" />
+                            Start Session
+                        </button>
+                    </motion.div>
+                )}
+            </AnimatePresence>
+            <AnimatePresence>
+                {activeStage >= 1 && (
                     <motion.div
                         initial={{ opacity: 0, y: 20, scale: 0.95 }}
                         animate={{ opacity: 1, y: 0, scale: 1 }}
                         exit={{ opacity: 0, y: 20, scale: 0.95 }}
-                        className="fixed bottom-12 left-1/2 -translate-x-1/2 z-[45] flex flex-col items-center gap-2 pointer-events-none"
+                        className="absolute bottom-12 left-1/2 -translate-x-1/2 z-[45] flex flex-col items-center gap-2 pointer-events-none"
                     >
                         {/* Compact Guided Card (Balanced Size) */}
                         <div className={`bg-white/90 backdrop-blur-md border shadow-2xl rounded-2xl p-3 flex items-center gap-4 pointer-events-auto ring-1 ring-black/5 max-w-lg transition-colors duration-500
@@ -519,7 +540,7 @@ export function SystemFlowVisualizer({
                             animate={{ y: 0 }}
                             exit={{ y: 50 }}
                             onClick={() => setIsOpen(true)}
-                            className="fixed bottom-0 left-0 right-0 z-[50] h-9 bg-gray-900 border-t border-gray-800 flex items-center justify-between px-4 cursor-pointer hover:bg-gray-950 transition-colors"
+                            className="absolute bottom-0 left-0 right-0 z-[50] h-9 bg-gray-900 border-t border-gray-800 flex items-center justify-between px-4 cursor-pointer hover:bg-gray-950 transition-colors"
                         >
                             {/* Left: Status Indicator */}
                             <div className="flex items-center gap-3">
@@ -572,7 +593,7 @@ export function SystemFlowVisualizer({
                             initial={{ opacity: 0, scale: 0.95, y: 10 }}
                             animate={{ opacity: 1, scale: 1, y: 0 }}
                             exit={{ opacity: 0, scale: 0.95, y: 10 }}
-                            className="fixed bottom-20 left-1/2 -translate-x-1/2 z-[55] w-full max-w-xl bg-white/95 backdrop-blur-xl border border-gray-200 shadow-2xl rounded-xl p-6 pointer-events-auto overflow-hidden text-left"
+                            className="absolute bottom-20 left-1/2 -translate-x-1/2 z-[55] w-full max-w-xl bg-white/95 backdrop-blur-xl border border-gray-200 shadow-2xl rounded-xl p-6 pointer-events-auto overflow-hidden text-left"
                         >
                             <div className="flex items-center justify-between mb-4">
                                 <div className="flex items-center gap-2 text-xs font-bold text-indigo-600 uppercase tracking-widest">
@@ -598,7 +619,7 @@ export function SystemFlowVisualizer({
                         animate={{ y: 0 }}
                         exit={{ y: '100%' }}
                         transition={{ type: "spring", damping: 25, stiffness: 200 }}
-                        className="fixed bottom-0 left-0 right-0 z-[60] h-[340px] bg-white border-t border-gray-200 shadow-[0_-10px_40px_-15px_rgba(0,0,0,0.1)] flex flex-col"
+                        className="absolute bottom-0 left-0 right-0 z-[60] h-[340px] bg-white border-t border-gray-200 shadow-[0_-10px_40px_-15px_rgba(0,0,0,0.1)] flex flex-col"
                     >
                         {/* HEADER / TOOLBAR */}
                         <div className="h-10 border-b border-gray-100 flex items-center justify-between px-4 bg-gray-50/50">
@@ -770,7 +791,7 @@ export function SystemFlowVisualizer({
                         initial={{ x: "100%", opacity: 0 }}
                         animate={{ x: 0, opacity: 1 }}
                         exit={{ x: "100%", opacity: 0 }}
-                        className="fixed top-24 right-6 w-80 bg-white/95 backdrop-blur-xl shadow-2xl rounded-2xl border border-white/20 z-[60] overflow-hidden flex flex-col max-h-[70vh]"
+                        className="absolute top-24 right-6 w-80 bg-white/95 backdrop-blur-xl shadow-2xl rounded-2xl border border-white/20 z-[60] overflow-hidden flex flex-col max-h-[70vh]"
                     >
                         <div className="p-4 border-b border-gray-100 flex items-center justify-between bg-gradient-to-r from-indigo-50 to-white">
                             <h3 className="font-bold text-gray-800 text-sm flex items-center gap-2">

@@ -34,6 +34,7 @@ import { agent2_collaborationOrchestrator } from '@/lib/agents/Agent2_Collaborat
 import { agent3_discussionFacilitator } from '@/lib/agents/Agent3_DiscussionFacilitator'  // ✅ ADD THIS LINE
 import { agent5_storyboardCurator } from '@/lib/agents/Agent5_StoryboardCurator'
 import { agent7_implicitAssistance } from '@/lib/agents/Agent7_ImplicitAssistance'
+import ImplicitHelpCard, { type ImplicitHelpTrigger } from '@/components/ImplicitHelpCard'
 
 import InteractionAnalysisDashboard from '@/components/InteractionAnalysisDashboard'
 import { SystemFlowVisualizer } from '@/components/SystemFlowVisualizer'
@@ -89,7 +90,8 @@ import {
   AlertCircle,
   BookOpen,
   Book,
-  BellOff
+  BellOff,
+  Sparkles
 } from 'lucide-react'
 import MathExplainer from './MathExplainer'
 import GeneralExplainer from './GeneralExplainer'
@@ -159,6 +161,11 @@ interface ApryseWebViewerProps {
   onScroll?: (page: number, scrollY: number) => void
   extractedText?: string // Add prop for extracted text from document page
   summary?: any // Add prop for AI summary
+  onDocumentLoaded?: () => void // ✅ Add this prop
+  onBroadcastAnnotationChange?: (data: any) => void
+  onSyncAnnotations?: () => void
+  realtimeAnnotations?: any[]
+  annotationSubscriberCount?: number
 }
 
 interface Collaborator {
@@ -219,7 +226,12 @@ export default function ApryseWebViewer({
   onPageChange,
   onScroll,
   extractedText,
-  summary
+  summary,
+  onDocumentLoaded, // ✅ Destructure here
+  onBroadcastAnnotationChange,
+  onSyncAnnotations,
+  realtimeAnnotations,
+  annotationSubscriberCount
 }: ApryseWebViewerProps) {
   const viewer = useRef<HTMLDivElement>(null)
   const webViewerRef = useRef<any>(null) // ✅ Ref to hold latest instance avoiding stale closures
@@ -231,6 +243,13 @@ export default function ApryseWebViewer({
   useEffect(() => {
     webViewerRef.current = webViewerInstance
   }, [webViewerInstance])
+
+  // ✅ FIX: Disable default header to prevent overlap with custom UI
+  useEffect(() => {
+    if (webViewerInstance && webViewerInstance.UI) {
+      webViewerInstance.UI.disableElements(['header']);
+    }
+  }, [webViewerInstance]);
 
   const [currentPage, setCurrentPage] = useState(1)
   const isJumpingRef = useRef(false)  // ✅ ADD THIS LINE RIGHT AFTER
@@ -254,6 +273,9 @@ export default function ApryseWebViewer({
   const [inviteMessage, setInviteMessage] = useState('')
   const [currentUserRole, setCurrentUserRole] = useState<'viewer' | 'editor' | 'admin'>('viewer')
   const [smartNotifications, setSmartNotifications] = useState<any[]>([])
+  // ✅ Google-quality implicit help card
+  const [implicitHelpTrigger, setImplicitHelpTrigger] = useState<ImplicitHelpTrigger | null>(null)
+  const [cachedDocumentContent, setCachedDocumentContent] = useState<string>('')
 
   const [peerChatOpen, setPeerChatOpen] = useState(false)
   const [peerChatData, setPeerChatData] = useState<{
@@ -327,6 +349,7 @@ export default function ApryseWebViewer({
   // Smart Help Panel state
   const [showHelpPanel, setShowHelpPanel] = useState(false)
   const [helpPanelContext, setHelpPanelContext] = useState<{
+    sectionId: string
     confusedHighlights: Array<{
       id: string
       text: string
@@ -334,9 +357,12 @@ export default function ApryseWebViewer({
       page: number
     }>
     sectionName: string
-    sectionText?: string // ✅ ADDED
-    isGroupSession?: boolean  // ✅ ADD THIS LINE
+    sectionText?: string
+    specificText?: string
+    initialQuestion?: string
+    isGroupSession?: boolean
   }>({
+    sectionId: '',
     confusedHighlights: [],
     sectionName: ''
   })
@@ -408,6 +434,110 @@ export default function ApryseWebViewer({
       }
     }
   }, [broadcastSessionStart])
+
+  // ✅ LISTEN FOR TEXT EXTRACTION REQUESTS
+  useEffect(() => {
+    const handleExtractionRequest = async (evt: Event) => {
+      const e = evt as CustomEvent
+      const { requestId } = e.detail
+      console.log('📄 [WebViewer] Received text extraction request:', requestId)
+
+      if (!webViewerInstance || !webViewerInstance.Core) {
+        console.warn('⚠️ [WebViewer] WebViewer not ready for extraction')
+        return
+      }
+
+      try {
+        const doc = webViewerInstance.Core.documentViewer.getDocument()
+        if (!doc) throw new Error('No document loaded')
+
+        const pageCount = doc.getPageCount()
+        if (pageCount === 0) throw new Error('Document has 0 pages')
+
+        let fullText = ''
+        console.log(`📄 [WebViewer] Extracting text from ${pageCount} pages...`)
+
+        // Extract text from all pages with per-page error handling
+        for (let i = 1; i <= pageCount; i++) {
+          try {
+            const pageText = await doc.loadPageText(i)
+            fullText += pageText ? (pageText + '\n\n') : ''
+          } catch (pageError) {
+            console.warn(`⚠️ [WebViewer] Failed to extract text from page ${i}:`, pageError)
+            fullText += `[Text extraction failed for page ${i}]\n\n`
+          }
+        }
+
+        if (!fullText.trim()) {
+          console.warn('⚠️ [WebViewer] Extracted text is empty. Document might be scanned or image-based.')
+          fullText = "[No text content extracted. This document may be scanned or contain only images.]"
+        }
+
+        console.log(`✅ [WebViewer] Extracted ${fullText.length} characters`)
+
+        // Dispatch response
+        const responseEvent = new CustomEvent('text-extraction-response', {
+          detail: {
+            requestId,
+            success: true,
+            text: fullText
+          }
+        })
+        window.dispatchEvent(responseEvent)
+
+      } catch (error) {
+        console.error('❌ [WebViewer] Extraction failed:', error)
+
+        const responseEvent = new CustomEvent('text-extraction-response', {
+          detail: {
+            requestId,
+            success: false,
+            error: error instanceof Error ? error.message : String(error)
+          }
+        })
+        window.dispatchEvent(responseEvent)
+      }
+    }
+
+    if (typeof window !== 'undefined') {
+      window.addEventListener('extract-text-request', handleExtractionRequest as EventListener)
+    }
+
+    return () => {
+      if (typeof window !== 'undefined') {
+        window.removeEventListener('extract-text-request', handleExtractionRequest as EventListener)
+      }
+    }
+  }, [webViewerInstance])
+
+  // ✅ LISTEN FOR NAVIGATION REQUESTS
+  useEffect(() => {
+    const handleNavigationRequest = (evt: Event) => {
+      const e = evt as CustomEvent
+      const { pageNumber, position } = e.detail
+      // console.log('🧭 Navigation request received:', pageNumber, position)
+
+      if (webViewerInstance && webViewerInstance.Core) {
+        const { documentViewer } = webViewerInstance.Core
+        if (pageNumber) {
+          documentViewer.setCurrentPage(pageNumber)
+          if (position) {
+            // Optional: Zoom or scroll to position
+            documentViewer.zoomTo(1.5, position.x, position.y)
+          }
+        }
+      }
+    }
+
+    if (typeof window !== 'undefined') {
+      window.addEventListener('document-viewer-navigate', handleNavigationRequest as EventListener)
+    }
+    return () => {
+      if (typeof window !== 'undefined') {
+        window.removeEventListener('document-viewer-navigate', handleNavigationRequest as EventListener)
+      }
+    }
+  }, [webViewerInstance])
 
   // console.log('🔧 webViewerInstance in main component:', !!webViewerInstance);
   // console.log('🔧 webViewerInstance details:', webViewerInstance);
@@ -589,7 +719,7 @@ export default function ApryseWebViewer({
   // Collective Wiki state
   const [wikiEntries, setWikiEntries] = useState<WikiEntry[]>([])
   const [wikiInsights, setWikiInsights] = useState<InsightEntry[]>([])
-  const [showWikiPanel, setShowWikiPanel] = useState(true)
+  const [showWikiPanel, setShowWikiPanel] = useState(false)
 
 
 
@@ -605,18 +735,39 @@ export default function ApryseWebViewer({
   }, [pdfSections])
 
   // ✅ NEW: Generate Real Paper Summary
+  const isGeneratingSummary = useRef(false)
+
   useEffect(() => {
     if (webViewerInstance && webViewerInstance.Core) {
       // console.log('📄 Initializing PaperSummaryGenerator...')
       const { documentViewer } = webViewerInstance.Core
 
       const onDocumentLoaded = async () => {
+        // Prevent recursive calls or double generation
+        if (isGeneratingSummary.current) return
+        isGeneratingSummary.current = true
+
+        setIsLoading(false) // ✅ Ensure spinner stops
+        if (onDocumentLoaded) onDocumentLoaded() // ✅ Notify parent
+
         try {
+          // Double check document is actually ready
+          if (!documentViewer.getDocument()) {
+            isGeneratingSummary.current = false
+            return
+          }
+
           const generator = createPaperSummaryGenerator(documentViewer)
           const summaryData = await generator.generateSummary()
           setRealPaperSummary(summaryData)
         } catch (e) {
           console.error("❌ Error generating paper summary:", e)
+        } finally {
+          // Allow generating again if needed (e.g. document reload)
+          // But keep it true for a moment to prevent bounce
+          setTimeout(() => {
+            isGeneratingSummary.current = false
+          }, 1000)
         }
       }
 
@@ -1034,6 +1185,7 @@ export default function ApryseWebViewer({
           console.log(`🔍 [AI Help] Found ${confusedHighlights.length} confused highlights for section ${sectionId}`)
 
           setHelpPanelContext({
+            sectionId: sectionId,
             confusedHighlights,
             sectionName: notification.sectionName || `Section ${sectionId}`,
             sectionText // ✅ Pass extracted text
@@ -1044,6 +1196,7 @@ export default function ApryseWebViewer({
           // If no session, still open panel with empty highlights
           console.warn('⚠️ [AI Help] No active session, opening panel with empty context')
           setHelpPanelContext({
+            sectionId: notification.sectionId || 'Unknown',
             confusedHighlights: [],
             sectionName: notification.sectionName || `Section ${notification.sectionId || 'Unknown'}`,
             sectionText // ✅ Pass extracted text
@@ -1082,25 +1235,45 @@ export default function ApryseWebViewer({
       case 'connect-peer':
         console.log('💡 [Connect Peer] Opening peer chat...')
 
-        const matches = agent2_collaborationOrchestrator.findPeersForHelp(
+        // ✅ PRIORITY 1: Use the helper data stored directly on the notification (most reliable)
+        if (notification.invitationData?.helperUserId && notification.invitationData?.helperUserName) {
+          console.log(`✅ [Connect Peer] Using stored helper from notification: ${notification.invitationData.helperUserName}`)
+          openPeerChat(
+            notification.invitationData.helperUserId,
+            notification.invitationData.helperUserName,
+            notification.sectionId || notification.invitationData.sectionId
+          )
+          break
+        }
+
+        // ✅ PRIORITY 2: Fallback — re-run live lookup
+        const connectMatches = agent2_collaborationOrchestrator.findPeersForHelp(
           userId,
           notification.sectionId
         )
 
-        if (matches.length > 0) {
-          const match = matches[0]
-
+        if (connectMatches.length > 0) {
+          const connectMatch = connectMatches[0]
           openPeerChat(
-            match.helper.userId,
-            match.helper.userName,
+            connectMatch.helper.userId,
+            connectMatch.helper.userName,
             notification.sectionId
           )
-
-          agent2_collaborationOrchestrator.startCollaboration(match, 'peer-tutoring')
-
-          console.log(`✅ [Connect Peer] Chat opened with ${match.helper.userName}`)
+          agent2_collaborationOrchestrator.startCollaboration(connectMatch, 'peer-tutoring')
+          console.log(`✅ [Connect Peer] Chat opened with ${connectMatch.helper.userName}`)
         } else {
-          alert('Sorry, the helper is no longer available.')
+          // ✅ Google-style: no raw browser alerts — use a subtle toast instead
+          console.warn('⚠️ [Connect Peer] Helper no longer available')
+          setSmartNotifications(prev => [...prev, {
+            id: `unavailable-${Date.now()}`,
+            type: 'encouragement',
+            priority: 'low',
+            title: 'Peer is unavailable',
+            message: 'The collaborator may have moved on. Try the AI assistant instead.',
+            timestamp: Date.now(),
+            targetUserId: userId,
+            actionButton: { label: 'Ask AI', action: 'open-ai-help' }
+          }])
         }
         break
 
@@ -1170,6 +1343,7 @@ export default function ApryseWebViewer({
         console.log('👥 [Join Group] Opening group chat...')
 
         setHelpPanelContext({
+          sectionId: notification.sectionId || '',
           confusedHighlights: [],
           sectionName: notification.sectionName || `Section ${notification.sectionId}`,
           isGroupSession: true
@@ -1432,6 +1606,28 @@ export default function ApryseWebViewer({
                 const sectionInfo = getSectionForPage(pageNumber)
                 console.log(`📍 [LOCATION] Mapped page ${pageNumber} → Section: "${sectionInfo.name}"`)
 
+                // ✅ FETCH SECTION CONTENT FOR AI CONTEXT
+                let sectionText = ''
+                try {
+                  const availableSection = pdfSections.find(s => s.heading.id === sectionInfo.id)
+                  if (availableSection && webViewerInstance?.Core) {
+                    const { documentViewer } = webViewerInstance.Core
+                    const doc = documentViewer.getDocument()
+
+                    for (let p = availableSection.startPage; p <= availableSection.endPage; p++) {
+                      const pageText = await doc.loadPageText(p)
+                      if (typeof pageText === 'string') {
+                        sectionText += pageText + '\n';
+                      } else if (pageText && pageText.items) {
+                        sectionText += pageText.items.map((i: any) => i.str).join(' ') + '\n';
+                      }
+                    }
+                    if (sectionText.length > 5000) sectionText = sectionText.substring(0, 5000) + '...'
+                  }
+                } catch (err) {
+                  console.error('Failed to fetch section text for struggle context', err)
+                }
+
                 // ✅ RECORD STRUGGLE START for collaborative insights
                 // Only record if not already tracking this section
                 if (!activeStruggles.has(sectionInfo.id)) {
@@ -1484,6 +1680,7 @@ export default function ApryseWebViewer({
                   userName: userName,
                   sectionId: sectionInfo.id,
                   sectionName: sectionInfo.name,
+                  text: sectionText || highlightedText, // ✅ Pass FULL section text, fallback to highlight
                   severity: severity,
                   indicators: {
                     confusionHighlights: confusionCount,
@@ -1617,70 +1814,96 @@ export default function ApryseWebViewer({
   // }, [documentId, userId])
 
 
+  // ✅ Cache document text when extracted — used by ImplicitHelpCard for AI insights
+  useEffect(() => {
+    const handleTextExtracted = (e: any) => {
+      if (e.detail?.success && e.detail?.text && e.detail.text.length > 100) {
+        setCachedDocumentContent(e.detail.text.slice(0, 6000)) // Keep first 6k chars
+        console.log('📦 [ImplicitHelp] Document text cached for AI insights')
+      }
+    }
+    window.addEventListener('text-extraction-response', handleTextExtracted)
+    return () => window.removeEventListener('text-extraction-response', handleTextExtracted)
+  }, [])
+
   useEffect(() => {
     const handleNotification = (e: any) => {
       const notification = e.detail
 
       console.log(`🔔 [Event] Notification received:`, {
         title: notification.title,
+        type: notification.type,
         targetUserId: notification.targetUserId,
         currentUserId: userId
       })
 
-      // ✅ CRITICAL: Filter at event level - only add if for this user
+      // ✅ Filter: only process notifications for this user
       if (notification.targetUserId && notification.targetUserId !== userId) {
         console.log(`❌ [Event] BLOCKED - Not for user ${userId}`)
-        return  // Don't even add to state
+        return
       }
-
       if (notification.targetUserIds && !notification.targetUserIds.includes(userId)) {
         console.log(`❌ [Event] BLOCKED - Not in target group`)
         return
       }
 
-      // ✅ FIX: Check if this notification was already dismissed
-      // Only add if not already dismissed
-      if (!dismissedNotifications.has(notification.id)) {
-        console.log(`✅ [Event] ACCEPTED - Adding to notifications`)
+      if (dismissedNotifications.has(notification.id)) {
+        console.log(`⏭️ [Event] Already dismissed, skipping`)
+        return
+      }
 
-        // ✅ VISIBLE FEEDBACK: Show Toast immediately
-        // COMMENTED OUT to avoid duplication with SmartNotification component
-        /* toast(notification.title, {
-          description: notification.message,
-          duration: 8000,
-          action: notification.actionButton ? {
-            label: notification.actionButton.label,
-            onClick: () => handleNotificationAction(notification)
-          } : undefined,
-          cancel: {
-            label: 'Ignore',
-            onClick: () => {
-              console.log('❌ Implicit help ignored by user')
-              setDismissedNotifications(prev => new Set(prev).add(notification.id))
-            }
-          }
-        }) */
+      // ✅ ROUTE: Struggle notifications → 3-stage ImplicitHelpCard
+      // All other notifications (invitations, collaboration) → existing smartNotifications
+      const isStruggleType = ['struggle-awareness', 'confusion-loop', 'slow-zone'].includes(notification.type)
 
+      if (isStruggleType) {
+        console.log(`🧠 [ImplicitHelp] Routing to 3-stage card — stage based on severity`)
+
+        // Map notification priority to UI stage
+        // low/medium → chip (stage 2), high → full card (stage 3)
+        // First occurrence always starts at ambient dot (stage 1)
+        const existingTrigger = implicitHelpTrigger
+        let stage: 1 | 2 | 3 = 1
+        if (existingTrigger?.sectionId === notification.sectionId) {
+          // Already showing something for this section — escalate
+          stage = Math.min(3, ((existingTrigger as any).stage ?? 1) + 1) as 1 | 2 | 3
+        } else if (notification.priority === 'high') {
+          stage = 2  // High priority → skip dot, show chip immediately
+        } else {
+          stage = 1  // Normal → start at ambient dot
+        }
+
+        // Derive a readable name if not provided
+        const sectionId = notification.sectionId || 'unknown'
+        const fallbackName = sectionId.startsWith('page-')
+          ? `Page ${sectionId.replace('page-', '')}`
+          : sectionId.startsWith('page-range-')
+            ? `Pages ${sectionId.replace('page-range-', '')}`
+            : 'Current section'
+
+        setImplicitHelpTrigger({
+          sectionId,
+          sectionName: notification.sectionName || fallbackName,
+          sectionText: notification.text || '',
+          confidence: notification.confidence || 0.75,
+          contributingFactors: notification.contributingFactors || ['extended reading time'],
+          stage
+        })
+
+      } else {
+        // Collaboration, invitations, encouragement → legacy list
         setSmartNotifications(prev => {
-          // Also check for duplicates in the current list
           const exists = prev.some(n => n.id === notification.id)
-          if (exists) {
-            console.log(`⏭️ [Event] Notification ${notification.id} already in list, skipping`)
-            return prev
-          }
+          if (exists) return prev
           return [...prev, notification]
         })
-      } else {
-        console.log(`⏭️ [Event] Notification ${notification.id} was dismissed, skipping`)
       }
     }
 
     window.addEventListener('agent7:notification', handleNotification)
+    return () => { window.removeEventListener('agent7:notification', handleNotification) }
+  }, [userId, implicitHelpTrigger, dismissedNotifications])  // eslint-disable-line react-hooks/exhaustive-deps
 
-    return () => {
-      window.removeEventListener('agent7:notification', handleNotification)
-    }
-  }, [userId])  // ✅ Add userId to dependencies
 
 
 
@@ -2321,19 +2544,24 @@ export default function ApryseWebViewer({
 
 
 
-    // ✅ IMPROVED: Mouse/Hover Tracking as Fallback to Eye Tracking
-    // Tracks where user is hovering and detects struggle based on dwell time + text extraction
+    // ✅ PROBABILISTIC: Continuous Behavioral Signal Emitter
+    // Instead of "10s = struggling", we emit raw signals every mouse move.
+    // Agent 1's probability model accumulates these and fires when score > 0.72.
+    let lastEmitTime = 0
+    let lastScrollY = 0
+    let scrollHandlerRef: ((e: Event) => void) | null = null
+
     const handleMouseMove = async (e: MouseEvent) => {
-      // Rate limit to avoid performance issues
-      if (Date.now() % 200 > 50) return
+      const now = Date.now()
+      // Throttle to 100ms for performance (10 signals/sec max)
+      if (now - lastEmitTime < 100) return
+      lastEmitTime = now
 
       const viewerRect = viewer.current?.getBoundingClientRect()
       if (!viewerRect || !webViewerRef.current?.Core) return
 
       try {
         const { documentViewer } = webViewerRef.current.Core
-
-        // Get the page and position under the mouse
         const displayMode = documentViewer.getDisplayModeManager().getDisplayMode()
         const mouseX = e.clientX
         const mouseY = e.clientY
@@ -2342,8 +2570,6 @@ export default function ApryseWebViewer({
         if (!pages || pages.length === 0) return
 
         const currentPage = pages[0].pageNumber
-
-        // Find which section this page belongs to
         const section = pdfSectionsRef.current.find(s =>
           s.startPage <= currentPage && s.endPage >= currentPage
         )
@@ -2351,74 +2577,104 @@ export default function ApryseWebViewer({
         const currentSectionId = section ? section.heading.id : `page-${currentPage}`
         const currentSectionName = section ? section.heading.text : `Page ${currentPage}`
 
-        // ✅ Extract actual text at mouse position (for better context)
-        let hoveredText = ''
-        try {
-          const doc = documentViewer.getDocument()
-          const pageText = await doc.loadPageText(currentPage)
+        // 🚦 EMIT MOUSE SIGNAL to Agent 1's probability engine
+        window.dispatchEvent(new CustomEvent('agent1:mouse-signal', {
+          detail: { x: mouseX, y: mouseY, sectionId: currentSectionId, timestamp: now }
+        }))
 
-          if (pageText) {
-            // Get a meaningful sample (first 100 chars or so)
-            hoveredText = pageText.substring(0, 100).trim()
-          }
-        } catch (err) {
-          // Fallback to DOM text if PDF extraction fails
-          const element = document.elementFromPoint(mouseX, mouseY)
-          if (element) {
-            hoveredText = element.textContent?.substring(0, 100).trim() || ''
-          }
-        }
-
-        // Track this as a fixation (passive tracking)
-        interactionCollector.trackFixation(currentSectionId, hoveredText)
-
-        // ✅ DWELL DETECTION: If user stays on same section for threshold time
+        // ── Section Change: Extract the actual page text ──────────────────────
+        // CRITICAL: Only update when section changes. Never call trackFixation('')
+        // because that erases the good text we just extracted.
         if (lastHoveredSectionRef.current !== currentSectionId) {
-          // Moved to a new section! Reset timer.
-          if (dwellTimerRef.current) clearTimeout(dwellTimerRef.current)
+          console.log(`📍 [Agent1 Signals] Now on section: "${currentSectionName}"`)
           lastHoveredSectionRef.current = currentSectionId
 
-          dwellTimerRef.current = setTimeout(() => {
-            // User has been on this section for the threshold time!
+          // Extract the actual text from the current page(s)
+          let extractedText = ''
+          try {
+            const doc = documentViewer.getDocument()
+            const startPage = section ? section.startPage : currentPage
+            const endPage = section ? Math.min(section.endPage, startPage + 1) : currentPage // max 2 pages
 
-            // 🚫 PREVENT DUPLICATE NOTIFICATIONS
-            if (notifiedSectionsRef.current.has(currentSectionId)) {
-              console.log(`🔕 [Hover Dwell] Ignoring ${currentSectionId} - already notified`)
-              return
+            for (let p = startPage; p <= endPage; p++) {
+              try {
+                const pageText = await doc.loadPageText(p)
+                if (typeof pageText === 'string' && pageText.trim().length > 0) {
+                  extractedText += pageText.replace(/\s+/g, ' ').trim() + ' '
+                }
+              } catch { /* skip page */ }
             }
+            extractedText = extractedText.trim().slice(0, 800)
+          } catch { /* ignore */ }
 
-            console.log(`⏱️ [Hover Dwell] Threshold reached for "${currentSectionName}"`)
-            console.log(`📝 [Hover Dwell] Text context: "${hoveredText.substring(0, 50)}..."`)
+          // ✅ Store in interactionCollector with REAL text (not empty string)
+          if (extractedText.length > 20) {
+            interactionCollector.trackFixation(currentSectionId, extractedText)
+          } else {
+            // Still register the fixation, just without text
+            interactionCollector.trackFixation(currentSectionId)
+          }
 
-            // Mark as notified
-            notifiedSectionsRef.current.add(currentSectionId)
-
-            // Trigger struggle detection with the actual text
-            aiCoordinationCore.routeAgentEvent('agent-1', 'struggle-detected', {
+          // ✅ Broadcast current-section-text so coordination core uses it
+          // when struggle fires RIGHT NOW — not stale text from minutes ago
+          window.dispatchEvent(new CustomEvent('agent1:current-section-text', {
+            detail: {
               sectionId: currentSectionId,
               sectionName: currentSectionName,
-              text: hoveredText, // ✅ Pass the actual text
-              severity: 'medium',
-              confidence: 0.8,
-              timestamp: Date.now(),
-              userId: userId,
-              userName: userName,
-              documentId: documentId
-            })
+              text: extractedText,
+              page: currentPage
+            }
+          }))
 
-          }, 30000) // 30 seconds threshold (reduced from 60s for faster testing)
+        } else {
+          // Same section — just register the fixation tick (no text update needed)
+          interactionCollector.trackFixation(currentSectionId)
         }
+
       } catch (err) {
-        console.warn('[Hover Tracking] Error:', err)
+        // Silently ignore errors in signal emission
       }
     }
 
-    // ✅ FORCE GLOBAL LISTENER: Catch mouse even over iframes/canvas
+    // ✅ SCROLL REGRESSION DETECTOR
+    // Detects backward scrolling (reading backwards) — strong struggle signal
+    const handleScroll = (e: Event) => {
+      const container = e.target as HTMLElement
+      if (!container) return
+
+      const currentScrollY = container.scrollTop ?? window.scrollY
+      const delta = currentScrollY - lastScrollY
+
+      if (Math.abs(delta) > 50) { // Significant scroll (not micro-scrolls)
+        const sectionId = lastHoveredSectionRef.current || 'unknown'
+        window.dispatchEvent(new CustomEvent('agent1:scroll-regression', {
+          detail: {
+            sectionId,
+            direction: delta < 0 ? 'up' : 'down',
+            magnitude: Math.abs(delta)
+          }
+        }))
+      }
+
+      lastScrollY = currentScrollY
+    }
+
+    // Attach scroll listener to the viewer container
+    const viewerEl = viewer.current
+    if (viewerEl) {
+      scrollHandlerRef = handleScroll
+      viewerEl.addEventListener('scroll', handleScroll, { passive: true })
+      // Also listen on window for cases where scroll happens on body
+      window.addEventListener('scroll', handleScroll, { passive: true })
+    }
+
     window.addEventListener('mousemove', handleMouseMove)
 
     return () => {
       eyeTracker.end()
       window.removeEventListener('mousemove', handleMouseMove)
+      window.removeEventListener('scroll', handleScroll)
+      if (viewerEl && scrollHandlerRef) viewerEl.removeEventListener('scroll', scrollHandlerRef)
       if (dwellTimerRef.current) clearTimeout(dwellTimerRef.current)
     }
   }, [])
@@ -2630,37 +2886,45 @@ export default function ApryseWebViewer({
 
 
 
-  // Register all collaborators with Agent 2 whenever collaborators list changes
+  // Register all collaborators with Agent 2 whenever collaborators list or page changes
   useEffect(() => {
     if (collaborators.length > 0) {
       console.log('🤝 Registering all collaborators with Agent 2...')
-      console.log('👥 Collaborators to register:', collaborators)
 
       collaborators.forEach(collab => {
-        // Safety check: only register if userId exists
         if (collab.userId && collab.name) {
-          console.log(`  ✅ Registering: ${collab.name} (${collab.userId})`)
           agent2_collaborationOrchestrator.registerPeer(collab.userId, collab.name)
 
-          // Mock: Set understanding scores (in real system, this would come from actual data)
-          // For testing, let's say current user is struggling, others are proficient
-          const mockScore = collab.userId === userId ? 30 : 85
-          const sectionId = `section-page-${currentPage}`
-
-          console.log(`  📊 Setting ${collab.name} score: ${mockScore} for ${sectionId}`)
-          agent2_collaborationOrchestrator.updatePeerStatus(
-            collab.userId,
-            sectionId,
-            mockScore
-          )
+          // Mock: Set understanding scores ONLY for other simulated users
+          if (collab.userId !== userId) {
+            const mockScore = 85
+            const sectionId = `section-page-${currentPage}`
+            agent2_collaborationOrchestrator.updatePeerStatus(collab.userId, sectionId, mockScore)
+            console.log(`  📊 Mock peer ${collab.name} set to sectionId=${sectionId}, score=${mockScore}`)
+          }
         }
       })
-
-      // Debug: Check what Agent 2 knows
-      console.log('🔍 Agent 2 peer profiles:', agent2_collaborationOrchestrator.getPeerStatus(userId))
-      console.log('✅ All collaborators registered with Agent 2!')
     }
   }, [collaborators, userId, currentPage])
+
+  // ✅ KEY FIX: Whenever Agent 1 fires a struggle signal, sync mock peers to the EXACT sectionId
+  // so that Agent 2's strict sectionId match always succeeds
+  useEffect(() => {
+    const handleStruggleSync = (e: any) => {
+      const { sectionId } = e.detail || {}
+      if (!sectionId) return
+
+      collaborators.forEach(collab => {
+        if (collab.userId && collab.userId !== userId) {
+          // Patch mock peer to the exact section the struggling user is on
+          agent2_collaborationOrchestrator.updatePeerStatus(collab.userId, sectionId, 85)
+          console.log(`🔄 [PeerSync] Synced mock peer ${collab.name} → sectionId: ${sectionId}`)
+        }
+      })
+    }
+    window.addEventListener('agent1:route-struggle', handleStruggleSync)
+    return () => window.removeEventListener('agent1:route-struggle', handleStruggleSync)
+  }, [collaborators, userId])
 
 
 
@@ -3969,35 +4233,10 @@ ${documentContent}
         // Call the function to apply styles
         addCommentPanelStyles();
 
-        // ✅ Dummy Image Help Prompt - only trigger once system is fully online
-        const triggerDummyHelp = () => {
-          if (dummyHelpTimerRef.current) clearTimeout(dummyHelpTimerRef.current)
-
-          dummyHelpTimerRef.current = setTimeout(() => {
-            if (!aiCoordinationCore.isOnline()) {
-              console.log('⏳ [ApryseWebViewer] Delaying dummy help until system is online')
-              // Check again in 30s
-              triggerDummyHelp()
-              return
-            }
-
-            // Check if help is snoozed (Check both local and core state)
-            const now = Date.now();
-            if (aiCoordinationCore.isMuted() || (helpSnoozedUntil && now < helpSnoozedUntil)) {
-              console.log('Help notifications are snoozed');
-              return;
-            }
-
-            console.log('💡 [ApryseWebViewer] Triggering implicit image help')
-            setImageHelpPrompt({
-              x: window.innerWidth / 2 - 150, // Center horizontally
-              y: window.innerHeight / 2 - 100, // Center vertically
-              visible: true
-            });
-          }, 60000); // 1 minute delay after system is online
-        }
-
-        triggerDummyHelp();
+        // ✅ Implicit help is now handled entirely by Agent 1's probabilistic model.
+        // The old dummy timer (triggerDummyHelp) has been removed — it fired
+        // unconditionally after 60s which contradicted behavioral detection.
+        // Help now appears ONLY when the struggle score crosses 0.72.
 
 
         // Set user information for annotations
@@ -4808,6 +5047,15 @@ ${documentContent}
           // Add event listener for text extraction requests AFTER WebViewer is fully initialized
           window.addEventListener('extract-text-request', handleTextExtractionRequest as unknown as EventListener)
           console.log('[WEBVIEWER] ✅ Event listener added after initialization')
+
+          // ✅ PROACTIVE: Automatically extract text for the AI context cache
+          // This ensures ImplicitHelpCard has context even if Agent 1 hasn't updated the live section yet
+          setTimeout(() => {
+            console.log('📦 [WebViewer] Requesting proactive text extraction for AI context')
+            window.dispatchEvent(new CustomEvent('extract-text-request', {
+              detail: { requestId: 'initial-load-cache' }
+            }))
+          }, 2000)
         });
 
         documentViewer.addEventListener('documentLoadFailed', (error: any) => {
@@ -5602,731 +5850,219 @@ ${documentContent}
       )}
       {/* Academic Sidebar */}
 
-      <div className="w-72 bg-gradient-to-b from-slate-50 to-white border-r border-slate-200/60 flex flex-col h-full shadow-sm">
-        {/* Document Info - Improved */}
-        <div className="p-4 border-b border-slate-200/60 bg-white/80 backdrop-blur-sm">
-          {/* ✅ UPDATED: Your Reflection Card (Interactive) */}
-          {reflectionSubmitted && reflectionData && (
+      {/* Google-Style Minimalist Sidebar */}
+      <div className="w-64 bg-slate-50 border-r border-slate-200 flex flex-col h-full">
+
+        {/* Top: Doc Info */}
+        <div className="px-4 py-5 border-b border-slate-100 bg-white">
+          <div className="mb-1">
+            <div className="text-[15px] font-semibold text-slate-900 leading-snug line-clamp-2" title={documentTitle}>
+              {documentTitle || 'Untitled Document'}
+            </div>
+            <p className="text-[11px] text-slate-500 mt-1 truncate">
+              {documentAuthors || 'Analysis in progress'}
+            </p>
+          </div>
+
+          {/* Phase 1 Pill */}
+          <div className="mt-3">
+            <button
+              onClick={() => setShowReflectionIntake(true)}
+              className={`w-full flex items-center gap-2 px-2 py-1.5 rounded-md text-xs font-medium transition-colors
+                 ${reflectionSubmitted
+                  ? 'bg-indigo-50 text-indigo-700 hover:bg-indigo-100/80 border border-indigo-100'
+                  : 'bg-white border border-slate-200 text-slate-600 hover:border-slate-300 hover:text-slate-900 shadow-sm'}
+               `}
+            >
+              <Brain className={`w-3.5 h-3.5 ${reflectionSubmitted ? 'text-indigo-600' : 'text-slate-400'}`} />
+              {reflectionSubmitted ? 'My Context' : 'Set Context'}
+            </button>
+          </div>
+        </div>
+
+        {/* Action Row */}
+        <div className="px-2 py-3 grid grid-cols-3 gap-1 border-b border-slate-100 bg-white relative z-20">
+          {/* Download Button + Menu */}
+          <div className="relative">
             <button
               onClick={() => {
-                console.log('🧠 Opening my reflection...')
-                setShowReflectionIntake(true)
+                setShowDownloadMenu(!showDownloadMenu);
+                setShowShareMenu(false);
               }}
-              className="w-full mb-4 bg-indigo-50/50 border-2 border-indigo-100 rounded-2xl p-3 text-left transition-all hover:bg-white hover:border-indigo-400 hover:shadow-md group relative text-inherit font-inherit"
+              className={`w-full flex flex-col items-center justify-center py-2 rounded-lg transition-all duration-200 gap-1.5 ${showDownloadMenu ? 'bg-indigo-50 text-indigo-700 shadow-sm ring-1 ring-indigo-100' : 'text-slate-600 hover:bg-slate-50 hover:text-slate-900'}`}
+              title="Download Options"
             >
-              <div className="flex items-center justify-between mb-1.5">
-                <div className="flex items-center gap-2">
-                  <Brain className="w-3 h-3 text-indigo-600" />
-                  <span className="text-[10px] font-black text-indigo-600 uppercase tracking-widest">My Baseline</span>
-                </div>
-                <div className="text-[9px] font-bold text-indigo-400 opacity-0 group-hover:opacity-100 transition-opacity">Edit Profile →</div>
-              </div>
-              <p className="text-[11px] text-slate-600 line-clamp-2 font-medium italic leading-relaxed">
-                "{reflectionData.content}"
-              </p>
+              <Download className="w-4 h-4" />
+              <span className="text-[10px] font-semibold tracking-wide">Download</span>
             </button>
-          )}
 
-          <div className="flex items-center gap-2 mb-2">
-            <div className="w-6 h-6 bg-gradient-to-br from-blue-500 to-indigo-600 rounded-lg flex items-center justify-center shadow-sm flex-shrink-0">
-              <FileText className="w-3 h-3 text-white" />
-            </div>
-            <div className="flex-1 min-w-0">
-              <h3 className="font-medium text-xs text-slate-800 truncate leading-tight">
-                {documentTitle || 'Academic Paper'}
-              </h3>
-              <p className="text-[10px] text-slate-500 truncate">
-                {documentAuthors ? documentAuthors.split(',')[0] : 'Document Analysis'}
-              </p>
-            </div>
-            {/* Replace PDF Button - Enhanced */}
-            <input
-              ref={fileInputRef}
-              type="file"
-              accept="application/pdf"
-              style={{ display: 'none' }}
-              onChange={async e => {
-                if (e.target.files && e.target.files[0]) {
-                  const file = e.target.files[0];
-                  let publicUrl = '';
-                  try {
-                    const formData = new FormData();
-                    formData.append('file', file);
-                    const uploadRes = await fetch('/api/upload', {
-                      method: 'POST',
-                      body: formData
-                    });
-                    if (uploadRes.ok) {
-                      const uploadData = await uploadRes.json();
-                      publicUrl = uploadData.document.url;
-                    } else {
-                      throw new Error('Upload failed');
-                    }
-                  } catch (err) {
-                    console.error('Failed to upload PDF', err);
-                    return;
-                  }
-                  const cacheBustedUrl = publicUrl + (publicUrl.includes('?') ? '&' : '?') + 't=' + Date.now();
-
-                  // Add as new tab instead of replacing current
-                  addNewTab(file.name, cacheBustedUrl);
-
-                  // Update backend reference
-                  lastLoadedBackendPdfUrlRef.current = publicUrl;
-                  try {
-                    await fetch('/api/socket', {
-                      method: 'POST',
-                      headers: { 'Content-Type': 'application/json' },
-                      body: JSON.stringify({
-                        action: 'pdf-replaced',
-                        documentId,
-                        pdfUrl: publicUrl,
-                        userId,
-                        userName
-                      })
-                    });
-                  } catch (err) {
-                    console.error('Failed to notify backend of PDF replacement', err);
-                  }
-                }
-              }}
-            />
-            <Button
-              size="icon"
-              variant="ghost"
-              className="h-7 w-7 hover:bg-blue-50 rounded-xl border border-slate-200/60 transition-all duration-200 hover:shadow-sm flex-shrink-0"
-              onClick={() => fileInputRef.current && fileInputRef.current.click()}
-              title="Add Document"
-            >
-              <Plus className="w-3.5 h-3.5 text-blue-600" />
-            </Button>
-          </div>
-
-
-
-          {/* Socket.io Connection Status */}
-          <div className="px-4 py-2 border-b border-slate-200/60">
-            <div className="flex items-center justify-between">
-              <div className="flex items-center space-x-2">
-                <div className={`w-2 h-2 rounded-full ${isConnected ? 'bg-green-500' : 'bg-red-500'}`} />
-                <span className="text-xs text-slate-600 font-medium">
-                  {isConnected ? 'Live' : 'Offline'}
-                </span>
-              </div>
-
-              {isConnected && (
-                <div className="flex items-center space-x-1">
-                  <Users className="w-3 h-3 text-blue-600" />
-                  <span className="text-xs text-slate-500">
-                    {collaborators.filter(c => c.status === 'online').length} user{collaborators.filter(c => c.status === 'online').length !== 1 ? 's' : ''}
-                  </span>
-                </div>
-              )}
-            </div>
-          </div>
-
-          {/* Socket.io Connection Status */}
-          {/* <div className="px-4 py-2 border-b border-slate-200/60">
-      <div className="flex items-center justify-between">
-        <div className="flex items-center space-x-2">
-          <div className={`w-2 h-2 rounded-full ${isConnected ? 'bg-green-500' : 'bg-red-500'}`} />
-          <span className="text-xs text-slate-600 font-medium">
-            {isConnected ? 'Live' : 'Offline'}
-          </span>
-        </div>
-        
-        {isConnected && connectedUsers.length > 0 && (
-          <div className="flex items-center space-x-1">
-            <Users className="w-3 h-3 text-blue-600" />
-            <span className="text-xs text-slate-500">
-              {connectedUsers.length} user{connectedUsers.length !== 1 ? 's' : ''}
-            </span>
-          </div>
-        )}
-      </div>
-      
-      {connectionError && (
-        <div className="mt-1 text-xs text-red-600 bg-red-50 px-2 py-1 rounded text-center">
-          Connection Error
-        </div>
-      )}
-    </div> */}
-
-
-          {/* Quick Actions - Glass Style */}
-          <div className="flex gap-2 flex-wrap">
-
-
-            {/* ✅ GLOBAL SNOOZE NOTIFICATIONS BUTTON */}
-            <Button
-              variant="outline"
-              size="sm"
-              className={`h-8 text-xs px-2 transition-all duration-300 backdrop-blur-md rounded-xl flex items-center gap-1.5 shadow-sm
-                ${helpSnoozedUntil && Date.now() < helpSnoozedUntil
-                  ? 'bg-amber-100 text-amber-700 border-amber-300 ring-2 ring-amber-200'
-                  : 'bg-slate-50 border-slate-200 text-slate-600 hover:bg-slate-100 hover:border-slate-300'}
-              `}
-              onClick={() => {
-                if (helpSnoozedUntil && Date.now() < helpSnoozedUntil) {
-                  setHelpSnoozedUntil(null);
-                  aiCoordinationCore.unmuteNotifications();
-                  localStorage.removeItem('litSense_helpSnoozedUntil');
-                  toast.success("Notifications resumed", { icon: "🔔" });
-                } else {
-                  // Default snooze to 10 minutes for better utility
-                  const snoozeUntil = Date.now() + 10 * 60 * 1000;
-                  setHelpSnoozedUntil(snoozeUntil);
-                  aiCoordinationCore.muteNotifications(10);
-                  localStorage.setItem('litSense_helpSnoozedUntil', snoozeUntil.toString());
-                  toast.success("All notifications paused for 10 mins", { icon: "🔕" });
-                }
-              }}
-              title={helpSnoozedUntil && Date.now() < helpSnoozedUntil ? "Click to resume notifications" : "Temporarily pause help notifications"}
-            >
-              <BellOff className={`w-3.5 h-3.5 ${helpSnoozedUntil && Date.now() < helpSnoozedUntil ? 'animate-pulse text-amber-700' : 'text-slate-500'}`} />
-              <span className="font-bold">
-                {helpSnoozedUntil && Date.now() < helpSnoozedUntil ? 'Paused' : 'Snooze'}
-              </span>
-            </Button>
-
-            <div className="relative flex-1">
-              <Button
-                variant="outline"
-                size="sm"
-                className="w-full h-8 text-xs px-2 download-button border-slate-200/60 hover:bg-blue-50/80 hover:border-blue-300/60 transition-all duration-200 backdrop-blur-sm bg-white/60 rounded-xl"
-                onClick={() => setShowDownloadMenu(!showDownloadMenu)}
-              >
-                <Download className="w-3 h-3 mr-1.5" />
-                <span className="font-medium">Download</span>
-                <ChevronDown className="w-3 h-3 ml-auto" />
-              </Button>
-
-              {/* Enhanced Download Menu */}
+            <AnimatePresence>
               {showDownloadMenu && (
-                <div className="absolute top-full left-0 mt-2 w-48 bg-white/95 backdrop-blur-md border border-slate-200/60 rounded-xl shadow-lg z-20 download-menu ring-1 ring-black/5">
-                  <div className="py-2">
-                    <button onClick={handleDownloadOriginal} className="w-full px-3 py-2 text-left text-xs hover:bg-blue-50/80 flex items-center gap-2 rounded-lg mx-2 transition-colors">
-                      <FileDown className="w-3.5 h-3.5 text-blue-600" />
-                      <div className="flex-1">
-                        <div className="font-medium text-slate-900">Original PDF</div>
-                        <div className="text-slate-500">Download source file</div>
-                      </div>
-                    </button>
-                    <button onClick={handleDownloadWithAnnotations} className="w-full px-3 py-2 text-left text-xs hover:bg-blue-50/80 flex items-center gap-2 rounded-lg mx-2 transition-colors">
-                      <NotebookPen className="w-3.5 h-3.5 text-green-600" />
-                      <div className="flex-1">
-                        <div className="font-medium text-slate-900">With Annotations</div>
-                        <div className="text-slate-500">Include highlights & notes</div>
-                      </div>
-                    </button>
-                    <button onClick={handleDownloadAnnotations} className="w-full px-3 py-2 text-left text-xs hover:bg-blue-50/80 flex items-center gap-2 rounded-lg mx-2 transition-colors">
-                      <FileText className="w-3.5 h-3.5 text-purple-600" />
-                      <div className="flex-1">
-                        <div className="font-medium text-slate-900">Annotations Only</div>
-                        <div className="text-slate-500">Export XFDF file</div>
-                      </div>
-                    </button>
-                  </div>
-
-                  {/* ✅ TEAM REFLECTIONS PANEL */}
-                  <TeamReflections
-                    currentUserId={userId}
-                    currentUserName={userName}
-                    documentId={documentId}
-                  />
-                </div>
+                <motion.div
+                  initial={{ opacity: 0, scale: 0.95, y: 5 }}
+                  animate={{ opacity: 1, scale: 1, y: 0 }}
+                  exit={{ opacity: 0, scale: 0.95, y: 5 }}
+                  className="absolute left-0 top-full mt-2 w-48 bg-white rounded-lg shadow-xl border border-slate-100 p-1 z-50 origin-top-left"
+                >
+                  <div className="px-2 py-1.5 text-[10px] font-bold text-slate-400 uppercase tracking-widest">Formats</div>
+                  <button className="w-full flex items-center gap-2 px-2 py-2 text-xs font-medium text-slate-700 hover:bg-slate-50 hover:text-indigo-600 rounded-md transition-colors text-left" onClick={() => toast.success('Downloading PDF...')}>
+                    <FileText className="w-3.5 h-3.5" /> PDF Document (.pdf)
+                  </button>
+                  <button className="w-full flex items-center gap-2 px-2 py-2 text-xs font-medium text-slate-700 hover:bg-slate-50 hover:text-indigo-600 rounded-md transition-colors text-left" onClick={() => toast.success('Exporting Annotations...')}>
+                    <MessageSquare className="w-3.5 h-3.5" /> Annotations Only (.json)
+                  </button>
+                  <button className="w-full flex items-center gap-2 px-2 py-2 text-xs font-medium text-slate-700 hover:bg-slate-50 hover:text-indigo-600 rounded-md transition-colors text-left" onClick={() => toast.success('Generating Summary...')}>
+                    <Sparkles className="w-3.5 h-3.5" /> Summary Report (.md)
+                  </button>
+                </motion.div>
               )}
-            </div>
+            </AnimatePresence>
+          </div>
 
-            <div className="relative flex-1">
-              <Button
-                variant="outline"
-                size="sm"
-                className="w-full h-8 text-xs px-2 share-button border-slate-200/60 hover:bg-green-50/80 hover:border-green-300/60 transition-all duration-200 backdrop-blur-sm bg-white/60 rounded-xl"
-                onClick={() => setShowShareMenu(!showShareMenu)}
-              >
-                <Share2 className="w-3 h-3 mr-1.5" />
-                <span className="font-medium">Share</span>
-                <ChevronDown className="w-3 h-3 ml-auto" />
-              </Button>
+          {/* Share Button + Menu */}
+          <div className="relative">
+            <button
+              onClick={() => {
+                setShowShareMenu(!showShareMenu);
+                setShowDownloadMenu(false);
+              }}
+              className={`w-full flex flex-col items-center justify-center py-2 rounded-lg transition-all duration-200 gap-1.5 ${showShareMenu ? 'bg-indigo-50 text-indigo-700 shadow-sm ring-1 ring-indigo-100' : 'text-slate-600 hover:bg-slate-50 hover:text-slate-900'}`}
+              title="Share Access"
+            >
+              <Share2 className="w-4 h-4" />
+              <span className="text-[10px] font-semibold tracking-wide">Share</span>
+            </button>
 
-              {/* Enhanced Share Menu */}
+            <AnimatePresence>
               {showShareMenu && (
-                <div className="absolute top-full right-0 mt-2 w-48 bg-white/95 backdrop-blur-md border border-slate-200/60 rounded-xl shadow-lg z-20 share-menu ring-1 ring-black/5">
-                  <div className="py-2">
-                    <button onClick={handleCopyLink} className="w-full px-3 py-2 text-left text-xs hover:bg-green-50/80 flex items-center gap-2 rounded-lg mx-2 transition-colors">
-                      {copied ? <Check className="w-3.5 h-3.5 text-green-600" /> : <Copy className="w-3.5 h-3.5 text-blue-600" />}
-                      <div className="flex-1">
-                        <div className="font-medium text-slate-900">{copied ? 'Copied!' : 'Copy Link'}</div>
-                        <div className="text-slate-500">Share document URL</div>
-                      </div>
-                    </button>
-                    <button onClick={handleEmailShare} className="w-full px-3 py-2 text-left text-xs hover:bg-green-50/80 flex items-center gap-2 rounded-lg mx-2 transition-colors">
-                      <Mail className="w-3.5 h-3.5 text-orange-600" />
-                      <div className="flex-1">
-                        <div className="font-medium text-slate-900">Email</div>
-                        <div className="text-slate-500">Send via email</div>
-                      </div>
-                    </button>
-
-                    <button
-                      onClick={handleCopyCollaborationLink}
-                      className="w-full px-3 py-2 text-left text-xs hover:bg-purple-50/80 flex items-center gap-2 rounded-lg mx-2 transition-colors"
-                    >
-                      <Users className="w-3.5 h-3.5 text-purple-600" />
-                      <div className="flex-1">
-                        <div className="font-medium text-slate-900">Copy Collab Link</div>
-                        <div className="text-slate-500">Real-time co-reading</div>
-                      </div>
-                    </button>
-
-                    <button onClick={handleDirectShare} className="w-full px-3 py-2 text-left text-xs hover:bg-green-50/80 flex items-center gap-2 rounded-lg mx-2 transition-colors">
-                      <ExternalLink className="w-3.5 h-3.5 text-purple-600" />
-                      <div className="flex-1">
-                        <div className="font-medium text-slate-900">Share</div>
-                        <div className="text-slate-500">Native sharing</div>
-                      </div>
-                    </button>
-                    <div className="border-t border-slate-200/60 mt-2 pt-2">
-                      <button onClick={() => setShowInviteModal(true)} className="w-full px-3 py-2 text-left text-xs hover:bg-green-50/80 flex items-center gap-2 rounded-lg mx-2 transition-colors">
-                        <UserPlus className="w-3.5 h-3.5 text-indigo-600" />
-                        <div className="flex-1">
-                          <div className="font-medium text-slate-900">Invite</div>
-                          <div className="text-slate-500">Add collaborators</div>
-                        </div>
-                      </button>
-                    </div>
-                  </div>
-                </div>
-              )}
-            </div>
-          </div>
-        </div>
-
-        {/* Enhanced Team Section */}
-        <div className="px-4 py-3 border-b border-slate-200/60">
-          <div className="flex items-center justify-between mb-3">
-            <div className="flex items-center gap-2">
-              <h4 className="font-semibold text-xs text-slate-700 uppercase tracking-wide">Team</h4>
-              <div className="w-2 h-2 rounded-full bg-green-400 animate-pulse ring-2 ring-green-100"></div>
-            </div>
-            <Badge variant="secondary" className="bg-green-100/80 text-green-700 text-xs px-2 py-0.5 h-5 font-medium rounded-full border border-green-200/60">
-              {collaborators.filter(c => c.status === 'online').length}
-            </Badge>
-          </div>
-
-          {showCollaborators && (
-            <div className="space-y-2">
-              {/* Your Sections - Always visible with Jump */}
-              {sectionAssignments.filter(a => a.userId === userId).length > 0 && (
-                <div className="px-3 py-2 bg-blue-50 border-l-4 border-blue-500 rounded-r-lg mb-3">
-                  <div className="text-xs font-semibold text-blue-900 mb-2">Your Sections:</div>
-                  <div className="space-y-1">
-                    {sectionAssignments
-                      .filter(a => a.userId === userId)
-                      .map(assignment => {
-                        const section = pdfSections.find(s => s.heading.id === assignment.sectionId)
-                        return section ? (
-                          <div key={assignment.sectionId} className="text-xs text-blue-700 flex items-center justify-between gap-2">
-                            <span className="truncate flex-1">• {section.heading.text}</span>
-                            <button
-                              onClick={() => {
-                                if (webViewerInstance?.Core?.documentViewer) {
-                                  const { documentViewer } = webViewerInstance.Core
-
-                                  isJumpingRef.current = true
-                                  documentViewer.setCurrentPage(section.startPage)
-
-                                  setTimeout(() => {
-                                    isJumpingRef.current = false
-                                    setCurrentPage(section.startPage)
-                                  }, 500)
-
-                                  console.log(`✅ Jumped to page ${section.startPage}`)
-                                }
-                              }}
-                              className="text-blue-600 hover:text-blue-800 underline text-xs font-medium flex-shrink-0"
-                            >
-                              Jump
-                            </button>
-                          </div>
-                        ) : null
-                      })}
-                  </div>
-                </div>
-              )}
-
-              {/* Team Reading Progress - Collapsible */}
-              <div className="mb-3">
-                <button
-                  onClick={() => setShowTeamProgress(!showTeamProgress)}
-                  className="w-full flex items-center justify-between text-xs font-semibold text-slate-700 uppercase tracking-wide hover:text-slate-900 py-1 px-2 hover:bg-slate-50 rounded transition-colors"
+                <motion.div
+                  initial={{ opacity: 0, scale: 0.95, y: 5 }}
+                  animate={{ opacity: 1, scale: 1, y: 0 }}
+                  exit={{ opacity: 0, scale: 0.95, y: 5 }}
+                  className="absolute left-1/2 -translate-x-1/2 top-full mt-2 w-52 bg-white rounded-lg shadow-xl border border-slate-100 p-1 z-50 origin-top"
                 >
-                  <span>Team Reading Progress</span>
-                  {showTeamProgress ? (
-                    <ChevronDown className="w-4 h-4" />
-                  ) : (
-                    <ChevronRight className="w-4 h-4" />
-                  )}
-                </button>
+                  <div className="px-2 py-1.5 text-[10px] font-bold text-slate-400 uppercase tracking-widest">Share</div>
+                  <button className="w-full flex items-center gap-2 px-2 py-2 text-xs font-medium text-slate-700 hover:bg-slate-50 hover:text-indigo-600 rounded-md transition-colors text-left" onClick={() => { navigator.clipboard.writeText(window.location.href); toast.success('Link copied!') }}>
+                    <Link2 className="w-3.5 h-3.5" /> Copy Link
+                  </button>
+                  <button className="w-full flex items-center gap-2 px-2 py-2 text-xs font-medium text-slate-700 hover:bg-slate-50 hover:text-indigo-600 rounded-md transition-colors text-left" onClick={() => setShowInviteModal(true)}>
+                    <Mail className="w-3.5 h-3.5" /> Invite via Email...
+                  </button>
+                  <div className="h-px bg-slate-100 my-1" />
+                  <button className="w-full flex items-center gap-2 px-2 py-2 text-xs font-medium text-slate-700 hover:bg-slate-50 hover:text-rose-600 rounded-md transition-colors text-left" onClick={() => toast.info('Managing Access...')}>
+                    <Users className="w-3.5 h-3.5" /> Manage Access
+                  </button>
+                </motion.div>
+              )}
+            </AnimatePresence>
+          </div>
 
-                {showTeamProgress && sectionAssignments.length > 0 && (
-                  <div
-                    key={`team-progress-${collaborators.length}-${sectionAssignments.length}`}
-                    className="mt-2 px-3 py-2 bg-purple-50 border-l-4 border-purple-500 rounded-r-lg space-y-2"
-                  >
-                    {collaborators.filter(c => c.status === 'online').map(collab => {
-                      const userAssignments = sectionAssignments.filter(a => a.userId === collab.id)
-                      if (userAssignments.length === 0) return null
-
-                      return (
-                        <div key={collab.id} className="mb-2 last:mb-0">
-                          <div className="flex items-center gap-2 mb-1">
-                            <div
-                              className="w-2 h-2 rounded-full"
-                              style={{ backgroundColor: (collab as any).color || '#6b7280' }}
-                            />
-                            <span className="text-xs font-medium text-purple-800">{collab.name}:</span>
-                          </div>
-                          <div className="space-y-1">
-                            {userAssignments.map(assignment => {
-                              const section = pdfSections.find(s => s.heading.id === assignment.sectionId)
-                              return section ? (
-                                <div key={assignment.sectionId} className="ml-4">
-                                  <div className="flex items-center gap-2 text-xs text-purple-700">
-                                    {assignment.status === 'completed' && <CheckCircle className="w-3 h-3 text-green-600" />}
-                                    {assignment.status === 'reading' && <Eye className="w-3 h-3 text-blue-600" />}
-                                    {assignment.status === 'assigned' && <AlertCircle className="w-3 h-3 text-amber-600" />}
-                                    <span className="truncate flex-1">• {section.heading.text}</span>
-                                    <span className="text-[10px] text-purple-600 font-medium">{assignment.progress}%</span>
-                                    <button
-                                      onClick={() => {
-                                        if (webViewerInstance?.Core?.documentViewer) {
-                                          const { documentViewer } = webViewerInstance.Core
-
-                                          isJumpingRef.current = true
-                                          documentViewer.setCurrentPage(section.startPage)
-
-                                          setTimeout(() => {
-                                            isJumpingRef.current = false
-                                            setCurrentPage(section.startPage)
-                                          }, 500)
-
-                                          console.log(`✅ Jumped to page ${section.startPage}`)
-                                        }
-                                      }}
-                                      className="text-[10px] text-blue-600 hover:text-blue-800 underline font-medium flex-shrink-0"
-                                    >
-                                      Jump
-                                    </button>
-                                  </div>
-                                </div>
-                              ) : null
-                            })}
-                          </div>
-                        </div>
-                      )
-                    })}
-                  </div>
-                )}
-              </div>
-
-              {/* Regular Team Members List */}
-              {collaborators.slice(0, 4).map((collaborator) => {
-                const userAssignments = sectionAssignments.filter(a => a.userId === collaborator.id)
-
-                return (
-                  <div key={collaborator.id} className="group">
-                    <div className="flex items-center gap-3 p-2 rounded-xl hover:bg-slate-50/80 transition-all duration-200 cursor-pointer ring-1 ring-transparent hover:ring-slate-200/60">
-                      <div className="relative flex-shrink-0">
-                        <div className={`w-7 h-7 rounded-xl flex items-center justify-center text-xs font-semibold transition-all duration-200
-                  ${collaborator.isCurrentUser
-                            ? 'bg-gradient-to-br from-blue-500 via-purple-500 to-pink-500 text-white shadow-sm ring-2 ring-purple-100'
-                            : 'bg-slate-200 text-slate-700 ring-2 ring-slate-100'
-                          }`}>
-                          {collaborator.name.split(' ').map(n => n[0]).join('')}
-                        </div>
-                        {collaborator.status === 'online' && (
-                          <div className="absolute -bottom-0.5 -right-0.5 w-2.5 h-2.5 rounded-full bg-green-400 ring-2 ring-white shadow-sm" />
-                        )}
-                      </div>
-
-                      <div className="flex-1 min-w-0">
-                        <div className="flex items-center gap-2">
-                          <span className="text-xs font-medium text-slate-900 truncate">
-                            {collaborator.name}
-                          </span>
-                          {collaborator.isCurrentUser && (
-                            <Badge variant="outline" className="text-xs px-1.5 py-0 h-4 rounded-full border-blue-200 text-blue-700 bg-blue-50">You</Badge>
-                          )}
-                        </div>
-
-                        {/* Show assigned sections count */}
-                        {userAssignments.length > 0 && (
-                          <div className="text-xs text-slate-500 mt-0.5">
-                            {userAssignments.length} section{userAssignments.length !== 1 ? 's' : ''} assigned
-                          </div>
-                        )}
-                      </div>
-
-                      {!collaborator.isCurrentUser && (
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          className="opacity-0 group-hover:opacity-100 h-6 w-6 p-0 flex-shrink-0 rounded-lg transition-all duration-200"
-                          onClick={() => toggleInlineChat(collaborator.userId!)}
-                        >
-                          <MessageSquare className="h-3 w-3 text-slate-400 hover:text-blue-600" />
-                        </Button>
-                      )}
-                    </div>
-
-                    {/* Show assigned sections when expanded */}
-                    {userAssignments.length > 0 && (
-                      <div className="ml-10 mt-1 space-y-1">
-                        {userAssignments.map(assignment => {
-                          const section = pdfSections.find(s => s.heading.id === assignment.sectionId)
-                          return section ? (
-                            <div key={assignment.sectionId} className="text-xs text-slate-600 truncate">
-                              • {section.heading.text}
-                            </div>
-                          ) : null
-                        })}
-                      </div>
-                    )}
-                  </div>
-                )
-              })}
-            </div>
-          )}
+          <button
+            onClick={() => {
+              if (helpSnoozedUntil && Date.now() < helpSnoozedUntil) {
+                setHelpSnoozedUntil(null);
+                aiCoordinationCore.unmuteNotifications();
+                toast.success("Notifications Resumed");
+              } else {
+                const snoozeUntil = Date.now() + 10 * 60 * 1000;
+                setHelpSnoozedUntil(snoozeUntil);
+                aiCoordinationCore.muteNotifications(10);
+                toast.success("Paused for 10m");
+              }
+            }}
+            className={`flex flex-col items-center justify-center py-2 rounded-lg transition-all duration-200 gap-1.5 ${helpSnoozedUntil ? 'text-amber-600 bg-amber-50 ring-1 ring-amber-100' : 'text-slate-600 hover:bg-slate-50 hover:text-slate-900'}`}
+            title="Snooze Notifications"
+          >
+            <BellOff className="w-4 h-4" />
+            <span className="text-[10px] font-semibold tracking-wide">{helpSnoozedUntil ? 'On' : 'Snooze'}</span>
+          </button>
         </div>
 
-        {/* ✅ UPDATED: Collaborator Reflections Section (Interactive & Inclusive) */}
-        <div className="px-4 py-3 border-b border-indigo-100 bg-indigo-50/20">
-          <div className="flex items-center justify-between mb-3">
-            <h4 className="font-semibold text-[10px] text-indigo-700 uppercase tracking-widest flex items-center gap-2">
-              <Brain className="w-3 h-3" /> Collective Reflections
-            </h4>
-            <Badge variant="outline" className="text-[8px] bg-white border-indigo-100 text-indigo-400">
-              {Array.from(collaboratorReflections.keys()).length}/{collaborators.length} Syllabled
-            </Badge>
-          </div>
-          <div className="space-y-3">
-            {collaborators.filter(c => !c.isCurrentUser).map((collab) => {
-              const reflection = collaboratorReflections.get(collab.id)
+        {/* Scrollable Content */}
+        <div className="flex-1 overflow-y-auto overflow-x-hidden p-3 space-y-6 pb-24 scrollbar-thin scrollbar-thumb-slate-200 scrollbar-track-transparent">
 
-              return reflection ? (
-                <button
-                  key={collab.id}
-                  className="w-full bg-white/80 border border-indigo-100 rounded-xl p-2.5 shadow-sm hover:shadow-md transition-all text-left flex flex-col group active:scale-[0.98]"
-                  onClick={() => {
-                    toast.info(`${reflection.userName}'s Reflection`, {
-                      description: `"${reflection.content}"`,
-                      duration: 8000,
-                      icon: <Brain className="w-4 h-4 text-indigo-600" />
-                    })
-                  }}
-                >
-                  <div className="flex items-center gap-2 mb-1.5 w-full">
-                    <div className="w-5 h-5 rounded-lg bg-indigo-600 text-white text-[10px] flex items-center justify-center font-bold">
-                      {reflection.userName.charAt(0)}
-                    </div>
-                    <span className="text-[11px] font-bold text-slate-800">{reflection.userName}</span>
-                    <Badge variant="outline" className="text-[8px] px-1 h-3 rounded-full ml-auto uppercase border-indigo-200 text-indigo-600">{reflection.type}</Badge>
+          {/* Team Section */}
+          <div className="group">
+            <div className="flex items-center justify-between px-1 mb-2">
+              <span className="text-[11px] font-bold text-slate-500 uppercase tracking-wider group-hover:text-slate-700 transition-colors">Team</span>
+              <button
+                onClick={() => setShowInviteModal(true)}
+                className="text-[10px] font-semibold text-blue-600 hover:text-blue-700 bg-blue-50 hover:bg-blue-100 px-2 py-0.5 rounded-full transition-colors"
+                title="Invite new collaborator"
+              >
+                + Add
+              </button>
+            </div>
+            <div className="space-y-1">
+              {collaborators.map(c => (
+                <div key={c.id} className="flex items-center gap-3 px-2 py-2 rounded-lg hover:bg-white hover:shadow-sm hover:ring-1 hover:ring-slate-100 transition-all cursor-pointer group/user">
+                  <div className={`relative w-6 h-6 rounded-full flex items-center justify-center text-[10px] font-bold text-white shadow-sm ring-2 ring-white ${c.isCurrentUser ? 'bg-gradient-to-br from-blue-500 to-indigo-600' : 'bg-slate-400'}`}>
+                    {c.name.charAt(0)}
+                    {c.status === 'online' && <div className="absolute bottom-0 right-0 w-2 h-2 rounded-full bg-green-500 ring-1.5 ring-white"></div>}
                   </div>
-                  <p className="text-[10px] text-slate-500 italic line-clamp-2 leading-relaxed">
-                    "{reflection.content}"
-                  </p>
-                </button>
-              ) : (
-                <div key={collab.id} className="bg-slate-50/50 border border-slate-100 border-dashed rounded-xl p-3 flex items-center gap-3 opacity-60">
-                  <div className="w-5 h-5 rounded-lg bg-slate-200 text-slate-400 text-[10px] flex items-center justify-center font-bold">
-                    {collab.name.charAt(0)}
-                  </div>
-                  <div className="flex-1">
-                    <p className="text-[11px] font-bold text-slate-400">{collab.name}</p>
-                    <p className="text-[9px] text-slate-300 italic uppercase tracking-tighter">Initializing reflection...</p>
-                  </div>
+                  <span className="text-[13px] font-medium text-slate-700 truncate flex-1 group-hover/user:text-slate-900">{c.name}</span>
                 </div>
-              )
-            })}
-          </div>
-        </div>
-
-        {/* Enhanced Stats Cards */}
-        <div className="px-4 py-3">
-          <div className="grid grid-cols-2 gap-3">
-            <div className="bg-gradient-to-br from-blue-50/80 to-indigo-50/60 rounded-xl p-3 text-center border border-blue-100/60 ring-1 ring-blue-100/30 hover:shadow-sm transition-all duration-200 cursor-pointer">
-              <div className="text-xl font-bold bg-gradient-to-r from-blue-600 to-indigo-600 bg-clip-text text-transparent">
-                {totalPages || 0}
-              </div>
-              <div className="text-xs text-slate-600 uppercase tracking-wide font-medium">Pages</div>
-            </div>
-            <div className="bg-gradient-to-br from-purple-50/80 to-pink-50/60 rounded-xl p-3 text-center border border-purple-100/60 ring-1 ring-purple-100/30 hover:shadow-sm transition-all duration-200 cursor-pointer">
-              <div className="text-xl font-bold bg-gradient-to-r from-purple-600 to-pink-600 bg-clip-text text-transparent">
-                {capturedSelections.length}
-              </div>
-              <div className="text-xs text-slate-600 uppercase tracking-wide font-medium">Notes</div>
+              ))}
             </div>
           </div>
-        </div>
 
-        {/* Enhanced Tools */}
-        <div className="px-4 py-3 flex-1 overflow-y-auto" style={{ maxHeight: 'calc(100vh - 500px)' }}>
-          <h4 className="font-semibold text-xs text-slate-700 uppercase tracking-wide mb-3">Tools</h4>
+          <div className="h-px bg-slate-100/80" />
 
-          <div className="space-y-2">
-            {/* AI Tools Group */}
-            <div className="space-y-2">
+          {/* Tools Menu */}
+          <div className="group">
+            <div className="px-1 mb-2 text-[11px] font-bold text-slate-500 uppercase tracking-wider group-hover:text-slate-700 transition-colors">Analysis Tools</div>
+            <div className="space-y-1">
               <button
                 onClick={() => setShowScreenCapture(true)}
-                className="group w-full rounded-xl border border-blue-200/60 bg-gradient-to-r from-blue-50/60 to-cyan-50/40 hover:from-blue-100/80 hover:to-cyan-100/60 p-3 text-left shadow-sm transition-all duration-200 hover:shadow-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2"
+                className="w-full flex items-center gap-3 px-2 py-2.5 text-left rounded-lg hover:bg-white hover:shadow-sm hover:ring-1 hover:ring-slate-100 transition-all group/tool"
               >
-                <div className="flex items-center gap-3">
-                  <div className="rounded-lg ring-1 ring-blue-200/60 bg-white/60 p-2">
-                    <Camera className="h-4 w-4 text-blue-600" />
-                  </div>
-                  <div className="flex-1">
-                    <div className="text-sm font-medium text-blue-800">Snip & Analyze</div>
-                    <div className="text-xs text-blue-600 mt-0.5">Extract figures, run AI summary</div>
-                  </div>
-                  <ChevronRight className="h-4 w-4 text-blue-500 group-hover:translate-x-0.5 transition-transform" />
+                <div className="w-6 h-6 rounded-md bg-white border border-slate-200 flex items-center justify-center group-hover/tool:border-indigo-200 group-hover/tool:bg-indigo-50 transition-colors">
+                  <Camera className="w-3.5 h-3.5 text-slate-400 group-hover/tool:text-indigo-600" />
+                </div>
+                <div className="flex-1">
+                  <span className="block text-[13px] font-medium text-slate-700 group-hover/tool:text-slate-900">Snip & Analyze</span>
                 </div>
               </button>
 
               <button
-                onClick={() => {
-                  console.log('═══════════════════════════════════════════════════');
-                  console.log('🎬 RESEARCH STORYBOARD BUTTON CLICKED!');
-                  console.log('═══════════════════════════════════════════════════');
-                  console.log('📊 Current capturedSelections state:', capturedSelections.length);
-                  console.log('📝 Current selections:', capturedSelections.slice(0, 3));
-
-                  // CRITICAL: Get fresh highlights from WebViewer RIGHT NOW
-                  const freshHighlights: Array<{
-                    text: string;
-                    timestamp: number;
-                    page: number;
-                  }> = [];
-
-                  if (webViewerInstance && webViewerInstance.Core) {
-                    const { annotationManager } = webViewerInstance.Core;
-                    const annotations = annotationManager.getAnnotationsList();
-
-                    console.log('🔍 Total annotations in WebViewer:', annotations.length);
-
-                    annotations.forEach((annotation: any, idx: number) => {
-                      if (annotation.Subject === 'Highlight' || annotation.Subject === 'highlight') {
-                        const text = annotation.Contents || 'Highlighted text';
-                        const highlight = {
-                          text: text,
-                          timestamp: Date.now() - (annotations.length - idx) * 1000, // Stagger timestamps
-                          page: annotation.PageNumber || currentPage
-                        };
-
-                        console.log(`  ✅ Adding highlight ${idx + 1}:`, {
-                          text: text.substring(0, 50) + '...',
-                          textLength: text.length,
-                          timestamp: highlight.timestamp,
-                          page: highlight.page
-                        });
-
-                        freshHighlights.push(highlight);
-                      }
-                    });
-                  } else {
-                    console.warn('⚠️ WebViewer instance not available!');
-                  }
-
-                  // ALSO include any text selections from state (avoiding duplicates)
-                  console.log('\n📚 Processing state selections...');
-                  capturedSelections.forEach((sel, idx) => {
-                    const selTimestamp = typeof sel.timestamp === 'string'
-                      ? new Date(sel.timestamp).getTime()
-                      : (typeof sel.timestamp === 'number' ? sel.timestamp : Date.now());
-
-                    // Check if this selection is already in freshHighlights (avoid duplicates)
-                    const isDuplicate = freshHighlights.some(h =>
-                      h.text === sel.text && Math.abs(h.timestamp - selTimestamp) < 5000
-                    );
-
-                    if (!isDuplicate) {
-                      const highlight = {
-                        text: sel.text,
-                        timestamp: selTimestamp,
-                        page: sel.pageNumber || currentPage
-                      };
-
-                      freshHighlights.push(highlight);
-
-                      console.log(`  ✅ Adding selection ${idx + 1}:`, {
-                        text: sel.text.substring(0, 50) + '...',
-                        textLength: sel.text.length,
-                        timestamp: highlight.timestamp,
-                        page: highlight.page
-                      });
-                    } else {
-                      console.log(`  ⏭️ Skipping duplicate selection ${idx + 1}`);
-                    }
-                  });
-
-                  console.log('\n📊 FINAL RESULTS:');
-                  console.log('  Total highlights collected:', freshHighlights.length);
-                  console.log('  Sample highlights:', freshHighlights.slice(0, 3).map(h => ({
-                    text: h.text.substring(0, 30) + '...',
-                    timestamp: h.timestamp,
-                    page: h.page
-                  })));
-
-                  // Update state BEFORE opening (convert back to the expected format)
-                  const stateFormat = freshHighlights.map((h, idx) => ({
-                    text: h.text,
-                    timestamp: new Date(h.timestamp).toISOString(),
-                    pageNumber: h.page,
-                    position: { x: 0, y: 0 }
-                  }));
-
-                  console.log('\n💾 Updating capturedSelections state...');
-                  console.log('  New state format:', stateFormat.slice(0, 2));
-                  setCapturedSelections(stateFormat);
-
-                  // Force a small delay to ensure state updates
-                  setTimeout(() => {
-                    console.log('\n🚀 OPENING STORYBOARD NOW!');
-                    console.log('  Passing', freshHighlights.length, 'highlights to storyboard');
-                    console.log('═══════════════════════════════════════════════════\n');
-                    setShowStoryboard(true);
-                  }, 100);
-                }}
-                className="group w-full rounded-xl border border-indigo-200/60 bg-gradient-to-r from-indigo-50/60 to-blue-50/40 hover:from-indigo-100/80 hover:to-blue-100/60 p-3 text-left shadow-sm transition-all duration-200 hover:shadow-md"
+                onClick={() => setShowStoryboard(true)}
+                className="w-full flex items-center gap-3 px-2 py-2.5 text-left rounded-lg hover:bg-white hover:shadow-sm hover:ring-1 hover:ring-slate-100 transition-all group/tool"
               >
-                <div className="flex items-center gap-3">
-                  <div className="rounded-lg ring-1 ring-indigo-200/60 bg-white/60 p-2">
-                    <Activity className="h-4 w-4 text-indigo-600" />
-                  </div>
-                  <div className="flex-1">
-                    <div className="text-sm font-medium text-indigo-800">Research Storyboard</div>
-                    <div className="text-xs text-indigo-600 mt-0.5">View your reading journey ({capturedSelections.length} tracked)</div>
-                  </div>
-                  <ChevronRight className="h-4 w-4 text-indigo-500 group-hover:translate-x-0.5 transition-transform" />
+                <div className="w-6 h-6 rounded-md bg-white border border-slate-200 flex items-center justify-center group-hover/tool:border-indigo-200 group-hover/tool:bg-indigo-50 transition-colors">
+                  <Activity className="w-3.5 h-3.5 text-slate-400 group-hover/tool:text-indigo-600" />
+                </div>
+                <div className="flex-1">
+                  <span className="block text-[13px] font-medium text-slate-700 group-hover/tool:text-slate-900">Research Storyboard</span>
                 </div>
               </button>
 
               <button
                 onClick={() => setShowAIResearchPrerequisites(true)}
-                className="group w-full rounded-xl border border-purple-200/60 bg-gradient-to-r from-purple-50/60 to-pink-50/40 hover:from-purple-100/80 hover:to-pink-100/60 p-3 text-left shadow-sm transition-all duration-200 hover:shadow-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-purple-500 focus-visible:ring-offset-2"
+                className="w-full flex items-center gap-3 px-2 py-2.5 text-left rounded-lg hover:bg-white hover:shadow-sm hover:ring-1 hover:ring-slate-100 transition-all group/tool"
               >
-                <div className="flex items-center gap-3">
-                  <div className="rounded-lg ring-1 ring-purple-200/60 bg-white/60 p-2">
-                    <Brain className="h-4 w-4 text-purple-600" />
-                  </div>
-                  <div className="flex-1">
-                    <div className="text-sm font-medium text-purple-800">Prerequisites</div>
-                    <div className="text-xs text-purple-600 mt-0.5">Auto-map background readings</div>
-                  </div>
-                  <ChevronRight className="h-4 w-4 text-purple-500 group-hover:translate-x-0.5 transition-transform" />
+                <div className="w-6 h-6 rounded-md bg-white border border-slate-200 flex items-center justify-center group-hover/tool:border-purple-200 group-hover/tool:bg-purple-50 transition-colors">
+                  <Brain className="w-3.5 h-3.5 text-slate-400 group-hover/tool:text-purple-600" />
+                </div>
+                <div className="flex-1">
+                  <span className="block text-[13px] font-medium text-slate-700 group-hover/tool:text-slate-900">Prerequisites</span>
                 </div>
               </button>
+
+              <button
+                onClick={() => {
+                  if (pdfSections.length > 0) setShowSectionAssignment(true);
+                  else toast.error('Wait for analysis...');
+                }}
+                className="w-full flex items-center gap-3 px-2 py-2.5 text-left rounded-lg hover:bg-white hover:shadow-sm hover:ring-1 hover:ring-slate-100 transition-all group/tool"
+              >
+                <div className="w-6 h-6 rounded-md bg-white border border-slate-200 flex items-center justify-center group-hover/tool:border-rose-200 group-hover/tool:bg-rose-50 transition-colors">
+                  <Users className="w-3.5 h-3.5 text-slate-400 group-hover/tool:text-rose-600" />
+                </div>
+                <div className="flex-1">
+                  <span className="block text-[13px] font-medium text-slate-700 group-hover/tool:text-slate-900">Assign Sections</span>
+                </div>
+              </button>
+
               <button
                 onClick={() => {
                   if (eyeTrackingEnabled) {
@@ -6336,266 +6072,213 @@ ${documentContent}
                     setShowEyeCalibration(true)
                   }
                 }}
-                className="group w-full rounded-xl border border-green-200/60 bg-gradient-to-r from-green-50/60 to-emerald-50/40 hover:from-green-100/80 hover:to-emerald-100/60 p-3 text-left shadow-sm transition-all duration-200 hover:shadow-md"
+                className="w-full flex items-center gap-3 px-2 py-2.5 text-left rounded-lg hover:bg-white hover:shadow-sm hover:ring-1 hover:ring-slate-100 transition-all group/tool"
               >
-                <div className="flex items-center gap-3">
-                  <div className="rounded-lg ring-1 ring-green-200/60 bg-white/60 p-2">
-                    <Eye className="h-4 w-4 text-green-600" />
-                  </div>
-                  <div className="flex-1">
-                    <div className="text-sm font-medium text-green-800">
-                      {eyeTrackingEnabled ? 'Pause Eye Tracking' : 'Start Eye Tracking'}
-                    </div>
-                    <div className="text-xs text-green-600 mt-0.5">Track reading patterns</div>
-                  </div>
-                  <ChevronRight className="h-4 w-4 text-green-500 group-hover:translate-x-0.5 transition-transform" />
+                <div className="w-6 h-6 rounded-md bg-white border border-slate-200 flex items-center justify-center group-hover/tool:border-emerald-200 group-hover/tool:bg-emerald-50 transition-colors">
+                  <Eye className="w-3.5 h-3.5 text-slate-400 group-hover/tool:text-emerald-600" />
+                </div>
+                <div className="flex-1">
+                  <span className="block text-[13px] font-medium text-slate-700 group-hover/tool:text-slate-900">
+                    {eyeTrackingEnabled ? 'Pause Tracking' : 'Eye Tracking'}
+                  </span>
                 </div>
               </button>
-
-              {eyeTrackingEnabled && (
-                <button
-                  onClick={() => setShowGazeHeatmap(!showGazeHeatmap)}
-                  className="group w-full rounded-xl border border-orange-200/60 bg-gradient-to-r from-orange-50/60 to-red-50/40 hover:from-orange-100/80 hover:to-red-100/60 p-3 text-left shadow-sm transition-all duration-200 hover:shadow-md"
-                >
-                  <div className="flex items-center gap-3">
-                    <div className="rounded-lg ring-1 ring-orange-200/60 bg-white/60 p-2">
-                      <Eye className="h-4 w-4 text-orange-600" />
-                    </div>
-                    <div className="flex-1">
-                      <div className="text-sm font-medium text-orange-800">
-                        {showGazeHeatmap ? 'Hide' : 'Show'} Gaze Heatmap
-                      </div>
-                      <div className="text-xs text-orange-600 mt-0.5">Visualize where you looked</div>
-                    </div>
-                  </div>
-                </button>
-              )}
-
-              <button
-                onClick={() => {
-                  const gazePoints = eyeTracker.getGazePoints(currentPage)
-                  console.log('👁️ Gaze Points on current page:', gazePoints.length)
-                  console.log('Sample points:', gazePoints.slice(0, 10))
-                }}
-                className="group w-full rounded-xl border border-amber-200/60 bg-gradient-to-r from-amber-50/60 to-yellow-50/40 hover:from-amber-100/80 hover:to-yellow-100/60 p-3 text-left shadow-sm transition-all duration-200 hover:shadow-md"
-              >
-                <div className="flex items-center gap-3">
-                  <div className="rounded-lg ring-1 ring-amber-200/60 bg-white/60 p-2">
-                    <Activity className="h-4 w-4 text-amber-600" />
-                  </div>
-                  <div className="flex-1">
-                    <div className="text-sm font-medium text-amber-800">Check Gaze Data</div>
-                    <div className="text-xs text-amber-600 mt-0.5">View tracked points in console</div>
-                  </div>
-                </div>
-              </button>
-
-              <button
-                onClick={() => {
-                  const gazePoints = eyeTracker.getGazePoints(currentPage)
-                  console.log('👁️ Gaze Points on current page:', gazePoints.length)
-                  console.log('Sample points:', gazePoints.slice(0, 10))
-                }}
-                className="group w-full rounded-xl border border-amber-200/60 bg-gradient-to-r from-amber-50/60 to-yellow-50/40 hover:from-amber-100/80 hover:to-yellow-100/60 p-3 text-left shadow-sm transition-all duration-200 hover:shadow-md"
-              >
-                <div className="flex items-center gap-3">
-                  <div className="rounded-lg ring-1 ring-amber-200/60 bg-white/60 p-2">
-                    <Activity className="h-4 w-4 text-amber-600" />
-                  </div>
-                  <div className="flex-1">
-                    <div className="text-sm font-medium text-amber-800">Check Gaze Data</div>
-                    <div className="text-xs text-amber-600 mt-0.5">View tracked points in console</div>
-                  </div>
-                </div>
-              </button>
-
-              {/* ✅ FIXED Section Assignment Button */}
-              <button
-                onClick={() => {
-                  console.log('🎯 Section Assignments button clicked!')
-                  console.log('📚 Number of sections:', pdfSections.length)
-
-                  if (pdfSections.length === 0) {
-                    toast.error('No sections found. Please wait for PDF to load completely.')
-                    return
-                  }
-
-                  const newState = !showSectionAssignment
-                  console.log('🔄 showSectionAssignment changing from', showSectionAssignment, 'to', newState)
-                  setShowSectionAssignment(newState)
-
-                  // Check after 100ms if state actually changed
-                  setTimeout(() => {
-                    console.log('✅ showSectionAssignment after 100ms:', newState)
-                  }, 100)
-                }}
-                className="group w-full rounded-xl border border-rose-200/60 bg-gradient-to-r from-rose-50/60 to-pink-50/40 hover:from-rose-100/80 hover:to-pink-100/60 p-3 text-left shadow-sm transition-all duration-200 hover:shadow-md"
-              >
-                <div className="flex items-center gap-3">
-                  <div className="rounded-lg ring-1 ring-rose-200/60 bg-white/60 p-2">
-                    <Users className="h-4 w-4 text-rose-600" />
-                  </div>
-                  <div className="flex-1">
-                    <div className="text-sm font-medium text-rose-800">Section Assignments</div>
-                    <div className="text-xs text-rose-600 mt-0.5">
-                      {extractingHeadings ? 'Extracting sections...' : `Assign to collaborators (${pdfSections.length} sections)`}
-                    </div>
-                  </div>
-                </div>
-              </button>
-
-
-              {/* ✅ ADD THIS DEBUG BUTTON HERE */}
-              <button
-                onClick={() => {
-                  console.log('='.repeat(50))
-                  console.log('🔍 DEBUGGING SECTION ASSIGNMENT')
-                  console.log('='.repeat(50))
-                  console.log('📚 pdfSections length:', pdfSections.length)
-                  console.log('📚 pdfSections data:', pdfSections)
-                  console.log('📚 extractingHeadings:', extractingHeadings)
-                  console.log('📚 showSectionAssignment:', showSectionAssignment)
-                  console.log('='.repeat(50))
-                }}
-                className="w-full p-2 bg-yellow-100 text-yellow-900 text-xs rounded-lg mt-2"
-              >
-                🐛 DEBUG: Check pdfSections State
-              </button>
-
             </div>
 
-            {/* Divider */}
-            <div className="border-t border-slate-200/60 my-3"></div>
-
-            {/* Navigation Tools */}
-            <div className="space-y-2">
+            <div className="mt-2 grid grid-cols-2 gap-2">
               <button
                 onClick={() => webViewerInstance?.UI.openElements(['searchPanel'])}
-                className="group w-full rounded-xl hover:bg-slate-50/80 p-3 text-left transition-all duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-500 focus-visible:ring-offset-2"
+                className="flex flex-col items-center justify-center gap-1.5 p-2 rounded-lg border border-slate-200 bg-white hover:border-blue-200 hover:bg-blue-50/50 transition-all group/mini"
               >
-                <div className="flex items-center gap-3">
-                  <div className="rounded-lg ring-1 ring-slate-200/60 bg-white/60 p-2">
-                    <Search className="h-4 w-4 text-slate-600" />
-                  </div>
-                  <div className="flex-1">
-                    <div className="text-sm font-medium text-slate-700">Search</div>
-                    <div className="text-xs text-slate-500 mt-0.5">Cmd/Ctrl + K</div>
-                  </div>
-                  <ChevronRight className="h-4 w-4 text-slate-400 group-hover:translate-x-0.5 transition-transform" />
-                </div>
+                <Search className="w-3.5 h-3.5 text-slate-400 group-hover/mini:text-blue-600" />
+                <span className="text-[10px] font-medium text-slate-600 group-hover/mini:text-blue-700">Search</span>
               </button>
-
               <button
                 onClick={() => webViewerInstance?.UI.openElements(['outlinesPanel'])}
-                className="group w-full rounded-xl hover:bg-slate-50/80 p-3 text-left transition-all duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-500 focus-visible:ring-offset-2"
+                className="flex flex-col items-center justify-center gap-1.5 p-2 rounded-lg border border-slate-200 bg-white hover:border-blue-200 hover:bg-blue-50/50 transition-all group/mini"
               >
-                <div className="flex items-center gap-3">
-                  <div className="rounded-lg ring-1 ring-slate-200/60 bg-white/60 p-2">
-                    <Bookmark className="h-4 w-4 text-slate-600" />
-                  </div>
-                  <div className="flex-1">
-                    <div className="text-sm font-medium text-slate-700">Contents</div>
-                    <div className="text-xs text-slate-500 mt-0.5">Headings & figures</div>
-                  </div>
-                  <ChevronRight className="h-4 w-4 text-slate-400 group-hover:translate-x-0.5 transition-transform" />
-                </div>
-              </button>
-
-
-
-
-
-              <button
-                onClick={() => setShowInteractionAnalysis(true)}
-                className="group w-full rounded-xl hover:bg-slate-50/80 p-3 text-left transition-all duration-200"
-              >
-                <div className="flex items-center gap-3">
-                  <div className="rounded-lg ring-1 ring-slate-200/60 bg-white/60 p-2">
-                    <Activity className="h-4 w-4 text-slate-600" />
-                  </div>
-                  <div className="flex-1">
-                    <div className="text-sm font-medium text-slate-700">Analysis</div>
-                    <div className="text-xs text-slate-500 mt-0.5">View insights</div>
-                  </div>
-                  <ChevronRight className="h-4 w-4 text-slate-400 group-hover:translate-x-0.5 transition-transform" />
-                </div>
+                <Bookmark className="w-3.5 h-3.5 text-slate-400 group-hover/mini:text-blue-600" />
+                <span className="text-[10px] font-medium text-slate-600 group-hover/mini:text-blue-700">Outline</span>
               </button>
             </div>
+          </div>
+
+          <div className="h-px bg-slate-100/80" />
+
+          {/* 🎯 GOOGLE-STYLE: Set Reading Context Card */}
+          <div className="group/context">
+            <div className="px-1 mb-2 text-[11px] font-bold text-slate-500 uppercase tracking-wider group-hover/context:text-slate-700 transition-colors">Session Context</div>
+
+            {!reflectionSubmitted ? (
+              <motion.button
+                onClick={() => setShowReflectionIntake(true)}
+                className="w-full relative overflow-hidden rounded-xl bg-gradient-to-br from-blue-50 via-indigo-50 to-purple-50 border border-blue-100 hover:border-blue-200 p-4 transition-all hover:shadow-md active:scale-[0.98] group/btn"
+                whileHover={{ y: -1 }}
+                whileTap={{ scale: 0.98 }}
+              >
+                {/* Subtle background pattern */}
+                <div className="absolute inset-0 bg-grid-slate-100 [mask-image:linear-gradient(0deg,white,rgba(255,255,255,0.6))] opacity-20" />
+
+                <div className="relative flex items-center gap-3">
+                  <div className="w-10 h-10 rounded-full bg-gradient-to-br from-blue-500 to-indigo-600 flex items-center justify-center shadow-sm group-hover/btn:shadow-md transition-shadow">
+                    <NotebookPen className="w-5 h-5 text-white" />
+                  </div>
+                  <div className="flex-1 text-left">
+                    <div className="text-sm font-semibold text-slate-800 mb-0.5">Set Context</div>
+                    <div className="text-xs text-slate-600 leading-relaxed">Share your reading goals</div>
+                  </div>
+                  <ChevronRight className="w-4 h-4 text-blue-400 group-hover/btn:translate-x-0.5 transition-transform" />
+                </div>
+              </motion.button>
+            ) : (
+              <motion.div
+                initial={{ opacity: 0, scale: 0.95 }}
+                animate={{ opacity: 1, scale: 1 }}
+                className="relative overflow-hidden rounded-xl bg-gradient-to-br from-emerald-50 via-teal-50 to-cyan-50 border border-emerald-200 p-4"
+              >
+                {/* Success checkmark animation */}
+                <div className="absolute top-2 right-2">
+                  <motion.div
+                    initial={{ scale: 0, rotate: -180 }}
+                    animate={{ scale: 1, rotate: 0 }}
+                    transition={{ type: "spring", stiffness: 200, damping: 15 }}
+                    className="w-6 h-6 rounded-full bg-emerald-500 flex items-center justify-center"
+                  >
+                    <CheckCircle className="w-4 h-4 text-white" />
+                  </motion.div>
+                </div>
+
+                <div className="flex items-start gap-3 pr-8">
+                  <div className="w-10 h-10 rounded-full bg-gradient-to-br from-emerald-500 to-teal-600 flex items-center justify-center shadow-sm">
+                    <NotebookPen className="w-5 h-5 text-white" />
+                  </div>
+                  <div className="flex-1">
+                    <div className="text-sm font-semibold text-emerald-900 mb-1">Context Set</div>
+                    <div className="text-xs text-emerald-700 leading-relaxed line-clamp-2">
+                      {reflectionData?.content || 'Your reading context has been saved'}
+                    </div>
+                    <button
+                      onClick={() => {
+                        setReflectionSubmitted(false)
+                        setReflectionData(null)
+                        setShowReflectionIntake(true)
+                      }}
+                      className="mt-2 text-xs font-medium text-emerald-600 hover:text-emerald-700 underline underline-offset-2"
+                    >
+                      Update context
+                    </button>
+                  </div>
+                </div>
+              </motion.div>
+            )}
+          </div>
+
+          <div className="h-px bg-slate-100/80" />
+
+          {/* Connected Peers Reflections (Minimal) */}
+          {collaboratorReflections.size > 0 && (
+            <div className="group">
+              <div className="px-1 mb-2 text-[11px] font-bold text-slate-500 uppercase tracking-wider group-hover:text-slate-700 transition-colors">Team Thoughts</div>
+              <div className="space-y-2.5">
+                {Array.from(collaboratorReflections.entries()).map(([uid, r]) => (
+                  <div key={uid} className="relative bg-white border border-slate-200 rounded-xl p-3 shadow-sm cursor-pointer hover:border-indigo-300 hover:shadow-md transition-all group/thought" onClick={() => toast.info(`${r.userName}: ${r.content}`)}>
+                    <div className="flex items-center gap-2 mb-1.5">
+                      <div className="w-5 h-5 rounded-full bg-gradient-to-br from-indigo-500 to-purple-600 flex items-center justify-center text-[10px] font-bold text-white">
+                        {r.userName.charAt(0)}
+                      </div>
+                      <span className="text-[11px] font-bold text-slate-700 group-hover/thought:text-indigo-700">{r.userName}</span>
+                      <span className="text-[9px] text-slate-400 ml-auto">Just now</span>
+                    </div>
+                    <p className="text-[11px] text-slate-600 leading-relaxed italic border-l-2 border-indigo-100 pl-2">"{r.content}"</p>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+        </div>
+
+        {/* Footer Stats - Minimal */}
+        <div className="border-t border-slate-200 bg-white p-2">
+          <div className="flex items-center justify-between px-2 text-[10px] text-slate-400 font-medium">
+            <span>{totalPages} Pages</span>
+            <span>{capturedSelections.length} Notes</span>
           </div>
         </div>
       </div>
 
-
       {/* Section Assignment Panel - Slides out next to sidebar */}
-      {showSectionAssignment && pdfSections.length > 0 && (
-        <div className="fixed right-4 top-20 w-[420px] h-[calc(100vh-100px)] z-[9999]">
-          <div className="h-full bg-white rounded-lg shadow-2xl overflow-visible border border-gray-200">
-            <div className="flex items-center justify-between p-4 border-b bg-gradient-to-r from-rose-50 to-pink-50">
-              <div className="flex items-center gap-2">
-                <Users className="w-5 h-5 text-rose-600" />
-                <h3 className="font-bold text-lg text-rose-900">Section Assignments</h3>
+      {
+        showSectionAssignment && pdfSections.length > 0 && (
+          <div className="fixed right-4 top-20 w-[420px] h-[calc(100vh-100px)] z-[9999]">
+            <div className="h-full bg-white rounded-lg shadow-2xl overflow-visible border border-gray-200">
+              <div className="flex items-center justify-between p-4 border-b bg-gradient-to-r from-rose-50 to-pink-50">
+                <div className="flex items-center gap-2">
+                  <Users className="w-5 h-5 text-rose-600" />
+                  <h3 className="font-bold text-lg text-rose-900">Section Assignments</h3>
+                </div>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => setShowSectionAssignment(false)}
+                  className="hover:bg-rose-100"
+                >
+                  <X className="w-4 h-4" />
+                </Button>
               </div>
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={() => setShowSectionAssignment(false)}
-                className="hover:bg-rose-100"
-              >
-                <X className="w-4 h-4" />
-              </Button>
-            </div>
-            <div className="overflow-y-auto" style={{ height: 'calc(100% - 73px)' }}>
-              <SectionAssignmentPanel
-                sections={pdfSections}
-                collaborators={(() => {
-                  // Create a Map to deduplicate by userId
-                  const uniqueCollabs = new Map()
+              <div className="overflow-y-auto" style={{ height: 'calc(100% - 73px)' }}>
+                <SectionAssignmentPanel
+                  sections={pdfSections}
+                  collaborators={(() => {
+                    // Create a Map to deduplicate by userId
+                    const uniqueCollabs = new Map()
 
-                  // Add current user first
-                  uniqueCollabs.set(userId, {
-                    id: userId,
-                    name: userName,
-                    color: '#3b82f6'
-                  })
-
-                  // Add other collaborators
-                  collaborators
-                    .filter(c => c.status === 'online' && c.id !== userId)
-                    .forEach((c, index) => {
-                      if (!uniqueCollabs.has(c.id)) {
-                        uniqueCollabs.set(c.id, {
-                          id: c.id,
-                          name: c.name,
-                          color: ['#10b981', '#8b5cf6', '#ef4444', '#f59e0b', '#06b6d4'][index % 5] || '#6b7280'
-                        })
-                      }
+                    // Add current user first
+                    uniqueCollabs.set(userId, {
+                      id: userId,
+                      name: userName,
+                      color: '#3b82f6'
                     })
 
-                  return Array.from(uniqueCollabs.values())
-                })()}
-                currentUserId={userId}
-                documentId={documentId}
-                socket={socketInstance}
-                reflections={(() => {
-                  const allReflections = new Map(collaboratorReflections)
-                  if (reflectionData) {
-                    allReflections.set(userId, { ...reflectionData, userName })
-                  }
-                  return allReflections
-                })()}
-                onAssignmentChange={(assignments) => {
-                  console.log('📚 Section assignments updated:', assignments)
-                  setSectionAssignments(assignments)
-                }}
-                onJumpToSection={handleJumpToSection}
-                glowingSections={glowingSections}
-                ghostHighlights={ghostHighlights}
-                onShowJourneyReplay={handleShowJourneyReplay}
-              />
+                    // Add other collaborators
+                    collaborators
+                      .filter(c => c.status === 'online' && c.id !== userId)
+                      .forEach((c, index) => {
+                        if (!uniqueCollabs.has(c.id)) {
+                          uniqueCollabs.set(c.id, {
+                            id: c.id,
+                            name: c.name,
+                            color: ['#10b981', '#8b5cf6', '#ef4444', '#f59e0b', '#06b6d4'][index % 5] || '#6b7280'
+                          })
+                        }
+                      })
+
+                    return Array.from(uniqueCollabs.values())
+                  })()}
+                  currentUserId={userId}
+                  documentId={documentId}
+                  socket={socketInstance}
+                  reflections={(() => {
+                    const allReflections = new Map(collaboratorReflections)
+                    if (reflectionData) {
+                      allReflections.set(userId, { ...reflectionData, userName })
+                    }
+                    return allReflections
+                  })()}
+                  onAssignmentChange={(assignments) => {
+                    console.log('📚 Section assignments updated:', assignments)
+                    setSectionAssignments(assignments)
+                  }}
+                  onJumpToSection={handleJumpToSection}
+                  glowingSections={glowingSections}
+                  ghostHighlights={ghostHighlights}
+                  onShowJourneyReplay={handleShowJourneyReplay}
+                />
+              </div>
             </div>
           </div>
-        </div>
-      )}
+        )
+      }
 
       {/* Journey Replay Panel */}
       <JourneyReplayPanel
@@ -6613,55 +6296,59 @@ ${documentContent}
 
       {/* Collective Wiki Panel (Floating Left) */}
       {/* Collective Wiki Panel (Sidebar Overlay) */}
-      {showWikiPanel && (
-        <div className="fixed right-0 top-0 h-full z-[50] shadow-2xl animate-in slide-in-from-right-10 fade-in duration-300">
-          <CollectiveWikiPanel
-            entries={wikiEntries}
-            insights={wikiInsights}
-            activities={wikiActivities}
-            onVerifyEntry={(entryId) => {
-              // Verify logic
-              setWikiEntries(prev => prev.map(e => e.id === entryId ? {
-                ...e,
-                verifiedBy: [...e.verifiedBy, userId],
-                source: 'manual'
-              } : e))
-              toast.success('Definition verified!')
-            }}
-            onLikeInsight={(insightId) => {
-              // Like logic
-              setWikiInsights(prev => prev.map(i => i.id === insightId ? {
-                ...i,
-                likes: i.likes + 1
-              } : i))
-            }}
-            onClose={() => setShowWikiPanel(false)}
-          />
-        </div>
-      )}
+      {
+        showWikiPanel && (
+          <div className="fixed right-0 top-0 h-full z-[50] shadow-2xl animate-in slide-in-from-right-10 fade-in duration-300">
+            <CollectiveWikiPanel
+              entries={wikiEntries}
+              insights={wikiInsights}
+              activities={wikiActivities}
+              onVerifyEntry={(entryId) => {
+                // Verify logic
+                setWikiEntries(prev => prev.map(e => e.id === entryId ? {
+                  ...e,
+                  verifiedBy: [...e.verifiedBy, userId],
+                  source: 'manual'
+                } : e))
+                toast.success('Definition verified!')
+              }}
+              onLikeInsight={(insightId) => {
+                // Like logic
+                setWikiInsights(prev => prev.map(i => i.id === insightId ? {
+                  ...i,
+                  likes: i.likes + 1
+                } : i))
+              }}
+              onClose={() => setShowWikiPanel(false)}
+            />
+          </div>
+        )
+      }
 
       {/* Floating Trigger when Closed */}
-      {!showWikiPanel && (
-        <button
-          onClick={() => setShowWikiPanel(true)}
-          className="fixed right-6 bottom-6 z-[60] bg-indigo-600 text-white p-3.5 rounded-full shadow-xl hover:bg-indigo-700 transition-all hover:scale-105 group flex flex-row-reverse items-center gap-0 overflow-hidden"
-          title="Open Collective Memory"
-        >
-          <Book className="w-5 h-5 flex-shrink-0" />
-          <span className="max-w-0 opacity-0 group-hover:max-w-[140px] group-hover:opacity-100 group-hover:mr-2 transition-all duration-300 ease-in-out whitespace-nowrap text-sm font-semibold">
-            Collective Memory
-          </span>
-          {/* Notification Badge */}
-          {(wikiEntries.length + wikiInsights.length) > 0 && (
-            <span className="absolute -top-1 -right-1 flex h-3.5 w-3.5">
-              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-pink-400 opacity-75"></span>
-              <span className="relative inline-flex rounded-full h-3.5 w-3.5 bg-pink-500 border border-white text-[8px] text-white items-center justify-center font-bold shadow-sm">
-                {wikiEntries.length + wikiInsights.length}
-              </span>
+      {
+        !showWikiPanel && (
+          <button
+            onClick={() => setShowWikiPanel(true)}
+            className="fixed right-6 bottom-6 z-[60] bg-indigo-600 text-white p-3.5 rounded-full shadow-xl hover:bg-indigo-700 transition-all hover:scale-105 group flex flex-row-reverse items-center gap-0 overflow-hidden"
+            title="Open Collective Memory"
+          >
+            <Book className="w-5 h-5 flex-shrink-0" />
+            <span className="max-w-0 opacity-0 group-hover:max-w-[140px] group-hover:opacity-100 group-hover:mr-2 transition-all duration-300 ease-in-out whitespace-nowrap text-sm font-semibold">
+              Collective Memory
             </span>
-          )}
-        </button>
-      )}
+            {/* Notification Badge */}
+            {(wikiEntries.length + wikiInsights.length) > 0 && (
+              <span className="absolute -top-1 -right-1 flex h-3.5 w-3.5">
+                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-pink-400 opacity-75"></span>
+                <span className="relative inline-flex rounded-full h-3.5 w-3.5 bg-pink-500 border border-white text-[8px] text-white items-center justify-center font-bold shadow-sm">
+                  {wikiEntries.length + wikiInsights.length}
+                </span>
+              </span>
+            )}
+          </button>
+        )
+      }
 
       {/* PDF Viewer Container */}
       {/* Tabbed PDF Viewer Container */}
@@ -7240,6 +6927,8 @@ ${documentContent}
           selectedText={prerequisiteText}
         />
 
+
+
         {/* AI Research Prerequisites */}
         <AIResearchPrerequisites
           isOpen={showAIResearchPrerequisites}
@@ -7327,11 +7016,15 @@ ${documentContent}
 
 
         {/* ========== [ADV] Visual Summary Render ========== */}
-        <div className="max-w-6xl mx-auto px-4 py-6">
-          {advSummary && (
-            <VisualSummaryPanel advSummary={advSummary} goToPage={goToPage} />
-          )}
-        </div>
+        {advSummary && (
+          <div className="absolute inset-0 bg-white/95 z-40 overflow-auto p-8">
+            <div className="max-w-5xl mx-auto relative">
+              <Button variant="ghost" className="absolute top-0 right-0" onClick={() => setAdvSummary(null)}>Close</Button>
+              <VisualSummaryPanel advSummary={advSummary} goToPage={goToPage} />
+            </div>
+          </div>
+        )}
+
         {/* Research Storyboard */}
         {/* <RealResearchStoryboard
   isOpen={showStoryboard}
@@ -7385,84 +7078,114 @@ ${documentContent}
 
 
 
+        {/* ✅ GOOGLE-QUALITY IMPLICIT HELP — 3-stage ambient assistance */}
+        <ImplicitHelpCard
+          trigger={implicitHelpTrigger}
+          documentTitle={documentTitle}
+          documentContent={cachedDocumentContent}
+          onDismiss={() => setImplicitHelpTrigger(null)}
+          onHelpChosen={(type, text) => {
+            // Map to the appropriate help panel action
+            setHelpPanelContext({
+              sectionId: implicitHelpTrigger?.sectionId || '',
+              sectionName: implicitHelpTrigger?.sectionName || '',
+              confusedHighlights: [],
+              specificText: text,
+              initialQuestion: type === 'explain'
+                ? `Can you explain this part simply: "${text.slice(0, 100)}"`
+                : type === 'example'
+                  ? `Can you give me a real-world example for: "${text.slice(0, 100)}"`
+                  : `I want to ask about this part of the paper: "${text.slice(0, 100)}"`
+            })
+            setShowHelpPanel(true)
+            setImplicitHelpTrigger(null)
+          }}
+        />
+
         {/* Smart Notifications from Agent 7 */}
-        {/* Smart Notifications from Agent 7 */}
-        {smartNotifications.length > 0 && (
-          <div className="fixed top-20 right-4 w-80 space-y-2 z-50">
-            {smartNotifications
-              .filter(n => !dismissedNotifications.has(n.id))
-              .filter(n => {
-                console.log(`🔍 [UI Filter] Checking notification:`, {
-                  title: n.title,
-                  targetUserId: n.targetUserId,
-                  currentUserId: userId,
-                  match: n.targetUserId === userId
+
+        {/* Google-Style Implicit Help Assistant */}
+        <AnimatePresence>
+          {smartNotifications.length > 0 && (
+            <div className="fixed bottom-32 right-8 z-[100] flex flex-col items-end space-y-4 pointer-events-none">
+              {smartNotifications
+                .filter(n => !dismissedNotifications.has(n.id))
+                .filter(n => {
+                  // Strict User Targeting Logic
+                  if (n.targetUserId === userId) return true
+                  if (n.targetUserIds && n.targetUserIds.includes(userId)) return true
+                  return false
                 })
-
-                // ✅ STRICT: Only show if explicitly targeted to this user
-                if (n.targetUserId === userId) {
-                  console.log('✅ [UI Filter] MATCH - Showing notification')
-                  return true
-                }
-
-                if (n.targetUserIds && n.targetUserIds.includes(userId)) {
-                  console.log('✅ [UI Filter] GROUP MATCH - Showing notification')
-                  return true
-                }
-
-                console.log('❌ [UI Filter] NO MATCH - Hiding notification')
-                return false  // ✅ CRITICAL: Don't show if targetUserId doesn't match
-              })
-              .slice(-3)
-              .map((notif, idx) => (
-                <div key={idx} className="bg-blue-50 border border-blue-200 rounded-lg p-4 shadow-lg relative">
-                  <button
-                    onClick={() => {
-                      setDismissedNotifications(prev => new Set(prev).add(notif.id))
-                      setSmartNotifications(prev => prev.filter(n => n.id !== notif.id))
-                    }}
-                    className="absolute top-2 left-2 text-gray-400 hover:text-gray-600"
+                .slice(-1) // Only show the verified latest context
+                .map((notif, idx) => (
+                  <motion.div
+                    key={notif.id}
+                    initial={{ opacity: 0, y: 50, scale: 0.9 }}
+                    animate={{ opacity: 1, y: 0, scale: 1 }}
+                    exit={{ opacity: 0, y: 20, scale: 0.95 }}
+                    transition={{ type: 'spring', damping: 25, stiffness: 300 }}
+                    className="pointer-events-auto bg-white/95 backdrop-blur-xl border border-white/50 shadow-[0_8px_32px_rgba(0,0,0,0.12)] rounded-[28px] p-1 pr-1.5 flex items-center gap-3 max-w-md w-auto overflow-hidden ring-1 ring-black/5"
                   >
-                    ✕
-                  </button>
-                  <p className="font-semibold text-sm pr-6">{notif.title}</p>
-                  <p className="text-xs text-gray-600 mt-1">{notif.message}</p>
-                  {(notif.actionButton || notif.secondaryButton) && (
-                    <div className="mt-3 flex gap-2">
+                    {/* Icon Container */}
+                    <div className="w-10 h-10 rounded-full bg-gradient-to-br from-indigo-500 via-purple-500 to-pink-500 flex items-center justify-center shrink-0 shadow-sm ml-1">
+                      <Sparkles className="w-5 h-5 text-white" />
+                    </div>
+
+                    {/* Content */}
+                    <div className="flex flex-col py-2 px-1 min-w-[200px]">
+                      <h4 className="text-sm font-semibold text-gray-900 leading-tight">
+                        {notif.title}
+                      </h4>
+                      <p className="text-xs text-gray-500 mt-0.5 leading-snug">
+                        {notif.message}
+                      </p>
+                    </div>
+
+                    {/* Actions */}
+                    <div className="flex items-center gap-1 pl-2 border-l border-gray-100 h-full py-1">
                       {notif.actionButton && (
                         <button
                           onClick={() => handleNotificationAction(notif)}
-                          className="text-xs bg-blue-600 text-white px-4 py-1.5 rounded hover:bg-blue-700 transition font-medium"
+                          className="h-8 px-4 rounded-full bg-gray-900 text-white text-xs font-medium hover:bg-gray-800 transition-all shadow-sm active:scale-95 whitespace-nowrap"
                         >
                           {notif.actionButton.label}
                         </button>
                       )}
-                      {notif.secondaryButton && (
+
+                      {notif.secondaryButton ? (
                         <button
                           onClick={() => {
-                            // Handle secondary button action
                             if (notif.secondaryButton?.action === 'dismiss-invitation') {
                               handleNotificationAction({
                                 ...notif,
                                 actionButton: { ...notif.secondaryButton, action: 'dismiss-invitation' }
                               })
                             } else {
-                              // Default: just dismiss
                               setDismissedNotifications(prev => new Set(prev).add(notif.id))
                               setSmartNotifications(prev => prev.filter(n => n.id !== notif.id))
                             }
                           }}
-                          className="text-xs bg-gray-200 text-gray-700 px-4 py-1.5 rounded hover:bg-gray-300 transition font-medium"
+                          className="h-8 px-3 rounded-full text-gray-500 hover:bg-gray-100 text-xs font-medium transition-colors"
                         >
                           {notif.secondaryButton.label}
                         </button>
+                      ) : (
+                        <button
+                          onClick={() => {
+                            setDismissedNotifications(prev => new Set(prev).add(notif.id))
+                            setSmartNotifications(prev => prev.filter(n => n.id !== notif.id))
+                          }}
+                          className="w-8 h-8 rounded-full flex items-center justify-center text-gray-400 hover:text-gray-600 hover:bg-gray-50 transition-colors"
+                        >
+                          <X className="w-4 h-4" />
+                        </button>
                       )}
                     </div>
-                  )}
-                </div>
-              ))}
-          </div>
-        )}
+                  </motion.div>
+                ))}
+            </div>
+          )}
+        </AnimatePresence>
 
 
 
@@ -7498,14 +7221,19 @@ ${documentContent}
 
 
 
-        {/* Peer Chat Modal */}
-        {/* Peer Chat Modal */}
-        {peerChatOpen && peerChatData && (
-          <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-[100]">
-            <div className="w-[450px] h-[650px] rounded-2xl overflow-hidden shadow-2xl ring-1 ring-white/20">
+        {/* Floating Peer Chat Window (Google Style) */}
+        <AnimatePresence>
+          {peerChatOpen && peerChatData && (
+            <motion.div
+              initial={{ opacity: 0, y: 30, scale: 0.95 }}
+              animate={{ opacity: 1, y: 0, scale: 1 }}
+              exit={{ opacity: 0, y: 20, scale: 0.95 }}
+              transition={{ type: 'spring', stiffness: 300, damping: 28 }}
+              className="fixed bottom-0 right-16 z-[150] w-[360px] h-[500px] bg-white rounded-t-2xl shadow-[0_4px_24px_rgba(0,0,0,0.15)] ring-1 ring-gray-200 overflow-hidden flex flex-col"
+            >
               <ChatSidebar
                 documentId={documentId}
-                currentUser={{ id: userId, name: userName, color: '#3b82f6' }}
+                currentUser={{ id: userId, name: userName, color: '#1a73e8' }}
                 isOpen={true}
                 onClose={() => setPeerChatOpen(false)}
                 topic={`Chat with ${peerChatData.peerName}`}
@@ -7524,9 +7252,9 @@ ${documentContent}
                 }}
                 onSendMessage={handlePeerChatMessageSend}
               />
-            </div>
-          </div>
-        )}
+            </motion.div>
+          )}
+        </AnimatePresence>
         <SystemFlowVisualizer
           summary={summary}
           entries={wikiEntries}
@@ -7567,22 +7295,9 @@ ${documentContent}
           }}
         />
 
-        {/* ✅ FLOATING REFLECTION TRIGGER */}
-        <div className="fixed bottom-32 right-8 z-[200]">
-          <button
-            onClick={() => setShowReflectionIntake(true)}
-            className={`w-14 h-14 rounded-full shadow-2xl flex items-center justify-center transition-all hover:scale-110 active:scale-95 group border-4 border-white
-               ${reflectionSubmitted ? 'bg-indigo-100 text-indigo-600' : 'bg-indigo-600 text-white animate-pulse shadow-indigo-200'}
-             `}
-            title="Open Reflection Creator"
-          >
-            <Brain className="w-7 h-7" />
-            <div className="absolute right-full mr-4 bg-slate-900 text-white px-3 py-1.5 rounded-lg text-xs font-bold opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap pointer-events-none">
-              {reflectionSubmitted ? 'View Reflection' : 'Phase 1: Reflection'}
-            </div>
-          </button>
-        </div>
+
       </div>
-    </div>
+    </div >
+
   )
 }
