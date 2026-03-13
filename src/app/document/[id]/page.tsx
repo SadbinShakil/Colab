@@ -330,7 +330,7 @@ export default function DocumentViewer({ params }: { params: Promise<{ id: strin
           // Try to find the actual file in uploads directory by looking for files that start with the documentId
           const mockDocument: Document = {
             id: documentId,
-            title: `Check: document-${documentId}.pdf`,
+            title: `Document`,
             authors: 'Document Authors',
             journal: 'Academic Journal',
             year: '2024',
@@ -361,7 +361,7 @@ export default function DocumentViewer({ params }: { params: Promise<{ id: strin
         // Create a basic fallback document
         const fallbackDocument: Document = {
           id: documentId,
-          title: `Check: ${documentId}.pdf`,
+          title: `Document`,
           authors: 'Unknown',
           journal: 'Unknown',
           year: '2024',

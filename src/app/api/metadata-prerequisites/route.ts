@@ -317,15 +317,16 @@ IMPORTANT: Use your actual knowledge of real papers, authors, and venues. Provid
   const completion = await openai.chat.completions.create({
     model: 'gpt-4o',
     messages: [
-      { role: 'system', content: 'You are an expert academic research advisor specializing in prerequisite analysis and learning path recommendations.' },
+      { role: 'system', content: 'You are an expert academic research advisor specializing in prerequisite analysis and learning path recommendations. Always respond with valid JSON only.' },
       { role: 'user', content: prompt }
     ],
     max_tokens: 4000,
     temperature: 0.3,
+    response_format: { type: 'json_object' },
   })
 
   const response = completion.choices[0]?.message?.content || ''
-  
+
   try {
     // Try to parse as JSON
     const analysis = JSON.parse(response)

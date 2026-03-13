@@ -30,8 +30,21 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Messages are required' }, { status: 400 })
     }
 
-    if (!process.env.OPENAI_API_KEY) {
-      return NextResponse.json({ error: 'AI not configured' }, { status: 500 })
+    if (!process.env.OPENAI_API_KEY || process.env.OPENAI_API_KEY === 'sk-your-openai-api-key-here') {
+      const demoResponses: Record<string, string> = {
+        insights: `**Key Insights from Discussion**\n\n• The group engaged with the core methodology and raised thoughtful questions about applicability\n• Several participants connected the paper's approach to prior work in the field\n• The experimental design section generated the most discussion\n\n**Open Questions**\n• How does this scale to larger datasets?\n• What are the reproducibility implications?\n\n*Demo mode — add OPENAI_API_KEY for real analysis*`,
+        summary: `**Discussion Summary**\n\n• Team covered the abstract, methodology, and results sections\n• General agreement on the paper's main contribution\n• Some uncertainty around the evaluation metrics used\n\n*Demo mode — add OPENAI_API_KEY for real analysis*`,
+        gaps: `**Knowledge Gaps Identified**\n\n• The statistical significance of results was not discussed\n• Background on related work (cited papers) wasn't explored\n• Limitations section deserves more attention\n\n*Demo mode — add OPENAI_API_KEY for real analysis*`,
+        consensus: `**Team Consensus**\n\n• Main contribution: A novel approach that advances the state of the art\n• Methodology: Sound experimental design with clear baselines\n• Limitations: Acknowledged by the authors; scope is reasonable\n• Overall: Worth reading in full; relevant to the team's research\n\n*Demo mode — add OPENAI_API_KEY for real analysis*`
+      }
+      return NextResponse.json({
+        success: true,
+        analysis: demoResponses[analysisType] || demoResponses.insights,
+        analysisType,
+        participantCount: new Set(messages.map(m => m.userId)).size,
+        messageCount: messages.length,
+        timestamp: new Date().toISOString()
+      })
     }
 
     const conversationText = messages
