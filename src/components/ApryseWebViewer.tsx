@@ -6522,30 +6522,6 @@ ${documentContent}
         )
       }
 
-      {/* Floating Trigger when Closed */}
-      {
-        !showWikiPanel && (
-          <button
-            onClick={() => setShowWikiPanel(true)}
-            className="fixed right-6 bottom-20 z-[60] bg-indigo-600 text-white p-3.5 rounded-full shadow-xl hover:bg-indigo-700 transition-all hover:scale-105 group flex flex-row-reverse items-center gap-0 overflow-hidden"
-            title="Open Collective Memory"
-          >
-            <Book className="w-5 h-5 flex-shrink-0" />
-            <span className="max-w-0 opacity-0 group-hover:max-w-[140px] group-hover:opacity-100 group-hover:mr-2 transition-all duration-300 ease-in-out whitespace-nowrap text-sm font-semibold">
-              Collective Memory
-            </span>
-            {/* Notification Badge */}
-            {(wikiEntries.length + wikiInsights.length) > 0 && (
-              <span className="absolute -top-1 -right-1 flex h-3.5 w-3.5">
-                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-pink-400 opacity-75"></span>
-                <span className="relative inline-flex rounded-full h-3.5 w-3.5 bg-pink-500 border border-white text-[8px] text-white items-center justify-center font-bold shadow-sm">
-                  {wikiEntries.length + wikiInsights.length}
-                </span>
-              </span>
-            )}
-          </button>
-        )
-      }
 
       {/* PDF Viewer Container */}
       {/* Tabbed PDF Viewer Container */}
