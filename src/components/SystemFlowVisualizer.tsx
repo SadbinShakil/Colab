@@ -155,10 +155,6 @@ export function SystemFlowVisualizer({
 
     const toggle = () => setIsOpen(!isOpen)
 
-    // Trigger Guided Flow on Mount
-    const [timeLeft, setTimeLeft] = useState(0)
-    const [totalDuration, setTotalDuration] = useState(1)
-
     // Refs to track state inside interval without re-triggering effect
     const stageRef = React.useRef(0)
 
@@ -166,130 +162,82 @@ export function SystemFlowVisualizer({
     useEffect(() => {
         if (hasOnboarded) return
 
-        let timer: NodeJS.Timeout
+        let roleTimer: NodeJS.Timeout
 
-
-
-        const runPhase = (stage: number, duration: number) => {
+        const goToStage = (stage: number) => {
             setActiveStage(stage)
             stageRef.current = stage
-            setTotalDuration(duration)
-            setTimeLeft(duration)
         }
 
         const advanceStage = () => {
             const currentStage = stageRef.current
-
-            // Phase Transition Logic
             if (currentStage === 1) {
-                // Move to Phase 2: Assignment
-                runPhase(2, 60) // 1 minute for role assignment review
-                toast.success('Reflection Phase Complete', {
-                    description: 'Based on the reflection phase, we are now assigning sections based on your interest. You can also self-select your focus.',
-                    duration: 5000,
+                // Move to Phase 2: Role Assignment (auto-advances after 3s)
+                goToStage(2)
+                toast.success('Reflection complete', {
+                    description: 'Assigning reading roles based on your goals…',
+                    duration: 3000,
                 })
-                return 60
-            } else if (currentStage === 2) {
-                // Move to Phase 3: Focused Reading
-                runPhase(3, 120) // 2 mins reading time
-                toast.success('Role Assigned: Critical Reviewer', {
-                    description: 'Read the "Results" section. Agents are assisting.',
-                    duration: 5000,
-                })
-                return 120
+                // Stage 2 auto-advances after 3 seconds
+                roleTimer = setTimeout(() => {
+                    goToStage(3)
+                    toast.success('Roles assigned', {
+                        description: 'Deep reading mode active. AI agents are assisting.',
+                        duration: 4000,
+                    })
+                }, 3000)
             } else if (currentStage === 3) {
                 // Session Complete
                 setHasOnboarded(true)
                 stageRef.current = 4
-                setActiveStage(4) // New "Done" stage
-                setShowReport(true) // Auto-show summary
-                clearInterval(timer)
-
-                // Broadcast Session End to other tabs
+                setActiveStage(4)
+                setShowReport(true)
                 if (typeof window !== 'undefined') {
                     localStorage.setItem('session_status', 'ended_' + Date.now())
                 }
-                return 0
             }
-            return 0
         }
 
-        // Expose skip function to window for the button to access
-        (window as any).skipPhase = () => advanceStage()
+        // Expose functions to window
+        ;(window as any).skipPhase = () => advanceStage()
 
-        const startFlow = async (startTime: number = Date.now()) => {
+        const startFlow = (startTime: number = Date.now()) => {
             setIsOpen(true)
-
-            // Calculate elapsed time to sync with other users
-            const elapsedSeconds = Math.floor((Date.now() - startTime) / 1000)
-            const remaining = Math.max(0, 120 - elapsedSeconds)
-
-            // PHASE 1: REFLECTION (Synced)
-            runPhase(1, 120) // Reset to max default
-            setTimeLeft(remaining) // Override with synced time
-
-            toast.message('Step 1: Reflection Analysis', {
-                description: 'We are in Reflection Analysis phase. Skim the paper, see Intro/Abstract to get the initial idea.',
-                duration: 7000,
+            goToStage(1)
+            toast.message('Session started · Step 1: Reflection', {
+                description: 'Skim the abstract and introduction. Click "Continue" when ready.',
+                duration: 6000,
             })
         }
 
-        // Expose start function for the button
-        (window as any).startSession = () => {
+        ;(window as any).startSession = () => {
             const now = Date.now()
-            // 1. Local Sync (Fastest for same browser)
             localStorage.setItem('session_status', 'started_' + now)
-            // 2. Remote Sync (Sockets for different browsers/users)
             window.dispatchEvent(new CustomEvent('request-session-start', { detail: now }))
-
             startFlow(now)
         }
 
-        // Timer Logic
-        timer = setInterval(() => {
-            // Only tick if active stage > 0
-            if (stageRef.current === 0) return
-
-            setTimeLeft(prev => {
-                if (prev <= 1) {
-                    return advanceStage()
-                }
-                return prev - 1
-            })
-        }, 1000)
-
-        // Listen for Session Events (Start/End) from other tabs
         const handleStorageChange = (e: StorageEvent) => {
-            console.log('📦 Storage Event:', e.key, e.newValue)
             if (e.key === 'session_status') {
                 if (e.newValue?.startsWith('ended_')) {
-                    console.log('🛑 Session Ended Signal Received')
                     setHasOnboarded(true)
                     setActiveStage(4)
                     setShowReport(true)
-                    clearInterval(timer)
                 } else if (e.newValue?.startsWith('started_')) {
-                    console.log('🚀 Session Start Signal Received (Storage)')
                     const startTime = parseInt(e.newValue.split('_')[1])
                     startFlow(startTime)
                 }
             }
         }
 
-        // ✅ Listen for Remote Socket Events
         const handleRemoteStart = (e: CustomEvent) => {
-            console.log('🚀 Remote Session Start Signal Received (Socket)', e.detail)
             startFlow(e.detail)
         }
 
-        // Initial Check (in case user refreshes mid-session)
         const currentSession = localStorage.getItem('session_status')
         if (currentSession?.startsWith('started_')) {
             const startTime = parseInt(currentSession.split('_')[1])
-            // Only resume if within reasonable window (e.g. 10 mins)
-            if (Date.now() - startTime < 600000) {
-                startFlow(startTime)
-            }
+            if (Date.now() - startTime < 600000) startFlow(startTime)
         }
 
         if (typeof window !== 'undefined') {
@@ -298,7 +246,7 @@ export function SystemFlowVisualizer({
         }
 
         return () => {
-            clearInterval(timer)
+            clearTimeout(roleTimer)
             if (typeof window !== 'undefined') {
                 window.removeEventListener('storage', handleStorageChange)
                 window.removeEventListener('remote-session-start', handleRemoteStart as EventListener)
@@ -394,142 +342,127 @@ export function SystemFlowVisualizer({
                 collaborationData={{}} // Will be passed from parent
             />
 
-            {/* ✅ ADVANCED REFLECTION & GUIDANCE DASHBOARD */}
-            {/* Stage 0: Non-blocking start session chip */}
+            {/* ─── SESSION BANNER (top-center of PDF viewer) ─── */}
             <AnimatePresence>
                 {activeStage === 0 && (
                     <motion.div
-                        initial={{ opacity: 0, y: 10 }}
+                        initial={{ opacity: 0, y: -8 }}
                         animate={{ opacity: 1, y: 0 }}
-                        exit={{ opacity: 0, y: 10 }}
-                        className="absolute bottom-24 right-4 z-[45] pointer-events-auto"
+                        exit={{ opacity: 0, y: -8 }}
+                        className="absolute top-3 left-1/2 -translate-x-1/2 z-[45] pointer-events-auto"
                     >
-                        <button
-                            onClick={() => (window as any).startSession()}
-                            className="flex items-center gap-2 bg-indigo-600 hover:bg-indigo-700 text-white px-3 py-1.5 rounded-full shadow-lg font-semibold text-xs transition-colors"
-                        >
-                            <span className="w-1.5 h-1.5 rounded-full bg-white/70 animate-pulse" />
-                            Start Session
-                        </button>
+                        <div className="flex items-center gap-2.5 bg-white border border-gray-200 rounded-full px-4 py-2 shadow-sm">
+                            <span className="w-1.5 h-1.5 rounded-full bg-gray-300" />
+                            <span className="text-[12px] text-gray-500 font-medium">Ready for collaborative reading</span>
+                            <span className="w-px h-3 bg-gray-200" />
+                            <button
+                                onClick={() => (window as any).startSession()}
+                                className="bg-indigo-600 hover:bg-indigo-700 text-white px-3 py-1 rounded-full text-[11px] font-semibold transition-colors"
+                            >
+                                Start Session
+                            </button>
+                        </div>
                     </motion.div>
                 )}
             </AnimatePresence>
+
             <AnimatePresence>
                 {activeStage >= 1 && (
                     <motion.div
-                        initial={{ opacity: 0, y: 20, scale: 0.95 }}
-                        animate={{ opacity: 1, y: 0, scale: 1 }}
-                        exit={{ opacity: 0, y: 20, scale: 0.95 }}
-                        className="absolute bottom-12 left-1/2 -translate-x-1/2 z-[45] flex flex-col items-center gap-2 pointer-events-none"
+                        key="session-banner"
+                        initial={{ opacity: 0, y: -8 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        exit={{ opacity: 0, y: -8 }}
+                        className="absolute top-3 left-1/2 -translate-x-1/2 z-[45] pointer-events-auto"
                     >
-                        {/* Compact Guided Card (Balanced Size) */}
-                        <div className={`bg-white/90 backdrop-blur-md border shadow-2xl rounded-2xl p-3 flex items-center gap-4 pointer-events-auto ring-1 ring-black/5 max-w-lg transition-colors duration-500
-                            ${activeStage === 3 ? 'border-green-200 bg-green-50/80' : activeStage === 4 ? 'border-indigo-200 bg-indigo-50/80' : 'border-white/50'}
-                        `}>
-
-                            {/* SMALL TIMER/ICON */}
-                            <div className="relative w-10 h-10 flex-shrink-0 flex items-center justify-center">
-                                {activeStage <= 3 && (
-                                    <>
-                                        <svg className="w-full h-full -rotate-90">
-                                            <circle className="text-gray-200" strokeWidth="2.5" stroke="currentColor" fill="transparent" r="18" cx="20" cy="20" />
-                                            <motion.circle
-                                                className={activeStage === 1 ? "text-indigo-600" : activeStage === 2 ? "text-purple-600" : "text-green-600"}
-                                                strokeWidth="2.5"
-                                                stroke="currentColor"
-                                                fill="transparent"
-                                                r="18" cx="20" cy="20"
-                                                initial={{ pathLength: 1 }}
-                                                animate={{ pathLength: timeLeft / totalDuration }}
-                                                transition={{ duration: 1, ease: "linear" }}
-                                            />
-                                        </svg>
-                                        <div className="absolute inset-0 flex items-center justify-center text-[9px] font-bold text-gray-700">
-                                            {formatTime(timeLeft)}
-                                        </div>
-                                    </>
-                                )}
-                                {activeStage === 4 && (
-                                    <div className="w-full h-full rounded-full bg-indigo-100 flex items-center justify-center text-indigo-600 animate-pulse">
-                                        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10" /><path d="M12 6v6l4 2" /></svg>
-                                    </div>
-                                )}
+                        <div className={`flex items-center gap-3 bg-white border rounded-full px-4 py-2 shadow-sm transition-colors duration-300 ${activeStage === 3 ? 'border-emerald-200' : activeStage === 4 ? 'border-indigo-200' : 'border-gray-200'}`}>
+                            {/* Step dots */}
+                            <div className="flex items-center gap-1.5">
+                                {[1, 2, 3].map(s => (
+                                    <div key={s} className={`rounded-full transition-all duration-300 ${
+                                        (hasOnboarded && s <= 3) || s < activeStage
+                                            ? 'w-1.5 h-1.5 bg-emerald-500'
+                                            : s === activeStage
+                                                ? 'w-2 h-2 bg-indigo-600'
+                                                : 'w-1.5 h-1.5 bg-gray-200'
+                                    }`} />
+                                ))}
                             </div>
 
-                            {/* CONTENT Area */}
-                            <div className="flex flex-col">
-                                <h3 className="text-xs font-bold text-gray-800 flex items-center gap-1.5">
-                                    <span className={`w-1.5 h-1.5 rounded-full animate-pulse
-                                        ${activeStage === 0 ? 'bg-gray-400' : activeStage === 1 ? 'bg-indigo-500' : activeStage === 2 ? 'bg-purple-500' : 'bg-green-500'}
-                                    `} />
-                                    {activeStage === 0 && "Waiting for Team"}
-                                    {activeStage === 1 && "Reflection Analysis"}
-                                    {activeStage === 2 && "Assigning Role"}
-                                    {activeStage === 3 && "Agents Active"}
-                                    {activeStage === 4 && "Extended Session"}
-                                </h3>
+                            <span className="w-px h-3 bg-gray-200" />
 
-                                <AnimatePresence mode="wait">
-                                    <motion.div
-                                        key={activeStage}
-                                        initial={{ opacity: 0, y: 5 }}
-                                        animate={{ opacity: 1, y: 0 }}
-                                        exit={{ opacity: 0, y: -5 }}
-                                        className="text-[10px] text-gray-600 max-w-[260px] leading-relaxed line-clamp-2"
+                            {/* Stage label + description */}
+                            <AnimatePresence mode="wait">
+                                <motion.div
+                                    key={activeStage}
+                                    initial={{ opacity: 0, x: 4 }}
+                                    animate={{ opacity: 1, x: 0 }}
+                                    exit={{ opacity: 0, x: -4 }}
+                                    className="flex items-center gap-2"
+                                >
+                                    <span className="text-[12px] font-semibold text-gray-800">
+                                        {activeStage === 1 && "Reflect"}
+                                        {activeStage === 2 && "Assigning Roles"}
+                                        {activeStage === 3 && "Deep Reading"}
+                                        {activeStage === 4 && "Session Done"}
+                                    </span>
+                                    <span className="text-[11px] text-gray-400">
+                                        {activeStage === 1 && "· Skim the abstract and intro"}
+                                        {activeStage === 2 && "· AI is assigning reading roles…"}
+                                        {activeStage === 3 && "· Agents active"}
+                                        {activeStage === 4 && "· Session complete"}
+                                    </span>
+                                </motion.div>
+                            </AnimatePresence>
+
+                            {/* Action buttons */}
+                            {activeStage === 1 && (
+                                <>
+                                    <span className="w-px h-3 bg-gray-200" />
+                                    <button
+                                        onClick={() => (window as any).skipPhase()}
+                                        className="bg-indigo-600 hover:bg-indigo-700 text-white px-3 py-1 rounded-full text-[11px] font-semibold transition-colors"
                                     >
-                                        {activeStage === 0 && (
-                                            <div className="flex items-center gap-2 mt-1">
-                                                <span>Session ready.</span>
-                                                <button
-                                                    onClick={() => (window as any).startSession()}
-                                                    className="bg-indigo-600 hover:bg-indigo-700 text-white px-2 py-0.5 rounded-md shadow-sm font-semibold transition-colors text-[9px]"
-                                                >
-                                                    Start Session
-                                                </button>
-                                            </div>
-                                        )}
-                                        {activeStage === 1 && "Skim the paper, see Intro/Abstract to get the initial idea."}
-                                        {activeStage === 2 && "Assigning sections based on your interest..."}
-                                        {activeStage === 3 && "Deep reading agents are assisting your research."}
-                                        {activeStage === 4 && (
-                                            <div className="flex items-center gap-2 mt-1">
-                                                <span>Timer ended.</span>
-                                                <button
-                                                    onClick={() => setShowReport(true)}
-                                                    className="bg-indigo-600 hover:bg-indigo-700 text-white px-2 py-0.5 rounded-md shadow-sm font-semibold transition-colors text-[9px]"
-                                                >
-                                                    View Report
-                                                </button>
-                                            </div>
-                                        )}
-                                    </motion.div>
-                                </AnimatePresence>
-                            </div>
-
-                            {/* Skip / Summary Controls */}
-                            {activeStage >= 1 && activeStage <= 3 && (
-                                <div className="flex items-center gap-1.5 border-l pl-3 ml-1 border-gray-200">
+                                        Continue →
+                                    </button>
+                                </>
+                            )}
+                            {activeStage === 2 && (
+                                <div className="w-3 h-3 border-2 border-indigo-400 border-t-transparent rounded-full animate-spin ml-1" />
+                            )}
+                            {activeStage === 3 && (
+                                <>
+                                    <span className="w-px h-3 bg-gray-200" />
                                     <button
                                         onClick={() => setShowSummary(!showSummary)}
-                                        className={`px-2 py-1 rounded-md text-[9px] font-bold transition-all
-                                            ${showSummary ? 'bg-indigo-100 text-indigo-700' : 'text-gray-500 hover:bg-gray-100'}
-                                        `}
+                                        className={`px-2.5 py-1 rounded-full text-[11px] font-semibold transition-colors ${showSummary ? 'bg-indigo-100 text-indigo-600' : 'text-gray-500 hover:bg-gray-100'}`}
                                     >
                                         Summary
                                     </button>
                                     <button
                                         onClick={() => (window as any).skipPhase()}
-                                        className="p-1 hover:bg-gray-100 rounded-md text-gray-400 transition-colors"
-                                        title="Skip Stage"
+                                        className="text-gray-400 hover:text-gray-600 text-[11px] font-medium transition-colors px-1"
+                                        title="End session"
                                     >
-                                        <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polygon points="5 4 15 12 5 20 5 4" /><line x1="19" y1="5" x2="19" y2="19" /></svg>
+                                        End
                                     </button>
-                                </div>
+                                </>
+                            )}
+                            {activeStage === 4 && (
+                                <>
+                                    <span className="w-px h-3 bg-gray-200" />
+                                    <button
+                                        onClick={() => setShowReport(true)}
+                                        className="bg-indigo-600 hover:bg-indigo-700 text-white px-3 py-1 rounded-full text-[11px] font-semibold transition-colors"
+                                    >
+                                        View Report
+                                    </button>
+                                </>
                             )}
                         </div>
                     </motion.div>
                 )}
-            </AnimatePresence >
+            </AnimatePresence>
 
             {/* MINIMIZED STATUS BAR (Click to Open) */}
             <AnimatePresence>
@@ -684,9 +617,9 @@ export function SystemFlowVisualizer({
                                         <motion.span
                                             initial={{ opacity: 0 }}
                                             animate={{ opacity: 1 }}
-                                            className="text-[10px] text-blue-500 font-medium pl-1 animate-pulse"
+                                            className="text-[10px] text-indigo-500 font-medium pl-1 animate-pulse"
                                         >
-                                            {formatTime(timeLeft)} remaining...
+                                            In progress…
                                         </motion.span>
                                     )}
                                 </div>
@@ -727,9 +660,9 @@ export function SystemFlowVisualizer({
                                         <motion.span
                                             initial={{ opacity: 0 }}
                                             animate={{ opacity: 1 }}
-                                            className="text-[10px] text-blue-500 font-medium pl-1 animate-pulse"
+                                            className="text-[10px] text-purple-500 font-medium pl-1 animate-pulse"
                                         >
-                                            {formatTime(timeLeft)} remaining...
+                                            Assigning…
                                         </motion.span>
                                     )}
                                 </div>
@@ -756,18 +689,18 @@ export function SystemFlowVisualizer({
                         </div>
 
                         {/* FOOTER LOG */}
-                        <div className="h-8 bg-gray-900 flex items-center px-4 gap-4 overflow-hidden">
-                            <div className="text-[10px] uppercase font-bold text-gray-500 flex-shrink-0">Term_Log &gt;</div>
+                        <div className="h-7 bg-gray-50 border-t border-gray-100 flex items-center px-4 gap-3 overflow-hidden">
+                            <div className="text-[10px] uppercase font-bold text-gray-400 flex-shrink-0">Activity</div>
                             <AnimatePresence mode="wait">
                                 {recentEvents.length > 0 && (
                                     <motion.div
                                         key={recentEvents[0].timestamp}
-                                        initial={{ opacity: 0, x: 20 }}
+                                        initial={{ opacity: 0, x: 10 }}
                                         animate={{ opacity: 1, x: 0 }}
-                                        exit={{ opacity: 0, x: -20 }}
-                                        className="flex items-center gap-2 text-xs font-mono text-gray-300 truncate"
+                                        exit={{ opacity: 0, x: -10 }}
+                                        className="flex items-center gap-2 text-[11px] text-gray-500 truncate"
                                     >
-                                        <span className="text-green-400">[{recentEvents[0].agent.replace('agent-', 'AG_')}]</span>
+                                        <span className="text-indigo-500 font-medium">{recentEvents[0].agent.replace('agent-', 'Agent ')}</span>
                                         <span>{recentEvents[0].event}</span>
                                     </motion.div>
                                 )}
