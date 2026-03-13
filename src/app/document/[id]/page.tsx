@@ -1240,58 +1240,58 @@ Would you like to ask about a specific section or concept?`
 
         {/* Right Sidebar: Collaboration Panel */}
         {showChat && (
-          <div className="w-[400px] bg-white border-l border-gray-200 flex flex-col shadow-[-4px_0_24px_rgba(0,0,0,0.02)] z-20">
+          <div className="w-[320px] bg-white border-l border-gray-100 flex flex-col z-20">
             {/* Tab Switcher */}
-            <div className="px-4 py-3 border-b border-gray-100 flex items-center justify-between shrink-0 bg-white">
-              <div className="flex bg-slate-100 p-1 rounded-xl w-full mr-2">
+            <div className="px-3 py-2 border-b border-gray-100 flex items-center gap-2 shrink-0 bg-white">
+              <div className="flex bg-gray-100 p-0.5 rounded-lg flex-1 gap-0.5">
                 <button
                   onClick={() => setActiveTab('chat')}
-                  className={`flex-1 text-center py-1.5 text-xs font-semibold rounded-lg transition-all ${activeTab === 'chat' ? 'bg-white text-slate-800 shadow-sm ring-1 ring-black/5' : 'text-gray-500 hover:text-gray-700'}`}
+                  className={`flex-1 text-center py-1 text-[11px] font-semibold rounded-md transition-all flex items-center justify-center gap-1 ${activeTab === 'chat' ? 'bg-white text-gray-800 shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}
                 >
-                  Chat
+                  <MessageCircle className="w-3 h-3" /> Chat
                 </button>
                 <button
                   onClick={() => setActiveTab('ai')}
-                  className={`flex-1 text-center py-1.5 text-xs font-semibold rounded-lg transition-all flex items-center justify-center gap-1.5 ${activeTab === 'ai' ? 'bg-white text-blue-600 shadow-sm ring-1 ring-black/5' : 'text-gray-500 hover:text-gray-700'}`}
+                  className={`flex-1 text-center py-1 text-[11px] font-semibold rounded-md transition-all flex items-center justify-center gap-1 ${activeTab === 'ai' ? 'bg-white text-indigo-600 shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}
                 >
-                  <Sparkles className="w-3 h-3" /> AI Help
+                  <Sparkles className="w-3 h-3" /> AI
                 </button>
                 <button
                   onClick={() => setActiveTab('metadata')}
-                  className={`flex-1 text-center py-1.5 text-xs font-semibold rounded-lg transition-all ${activeTab === 'metadata' ? 'bg-white text-slate-800 shadow-sm ring-1 ring-black/5' : 'text-gray-500 hover:text-gray-700'}`}
+                  className={`flex-1 text-center py-1 text-[11px] font-semibold rounded-md transition-all ${activeTab === 'metadata' ? 'bg-white text-gray-800 shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}
                 >
                   Info
                 </button>
               </div>
-              <Button variant="ghost" size="icon" className="h-8 w-8 rounded-full text-gray-400 hover:text-gray-600 hover:bg-gray-100" onClick={() => setShowChat(false)}>
-                <X className="w-4 h-4" />
+              <Button variant="ghost" size="icon" className="h-6 w-6 rounded-full text-gray-400 hover:text-gray-600 hover:bg-gray-100 shrink-0" onClick={() => setShowChat(false)}>
+                <X className="w-3.5 w-3.5" />
               </Button>
             </div>
 
             {/* Tab Content */}
-            <div className="flex-1 overflow-y-auto bg-slate-50/50 relative">
+            <div className="flex-1 overflow-y-auto bg-white relative">
 
               {activeTab === 'chat' && (
                 <div className="flex flex-col h-full absolute inset-0">
-                  <div className="flex-1 p-4 space-y-6 overflow-y-auto">
+                  <div className="flex-1 p-3 space-y-3 overflow-y-auto">
                     {collaboration.chatMessages.length === 0 ? (
-                      <div className="flex flex-col items-center justify-center h-full text-center p-8 opacity-60">
-                        <div className="w-16 h-16 bg-blue-50 rounded-full flex items-center justify-center mb-4">
-                          <MessageCircle className="w-8 h-8 text-blue-200" />
+                      <div className="flex flex-col items-center justify-center h-32 text-center px-4 mt-4">
+                        <div className="w-8 h-8 bg-gray-100 rounded-xl flex items-center justify-center mb-2">
+                          <MessageCircle className="w-4 h-4 text-gray-400" />
                         </div>
-                        <h3 className="text-gray-900 font-medium mb-1">No messages yet</h3>
-                        <p className="text-sm text-gray-500">Be the first to start the conversation!</p>
+                        <p className="text-[12px] font-medium text-gray-500">No messages yet</p>
+                        <p className="text-[11px] text-gray-400 mt-0.5">Start the conversation</p>
                       </div>
                     ) : (
                       collaboration.chatMessages.map((msg: any) => (
-                        <div key={msg.id} className={`flex flex-col space-y-1 ${msg.userId === currentUser?.id ? 'items-end' : 'items-start'}`}>
-                          <div className="flex items-center gap-2 px-1">
-                            <span className="text-[10px] font-bold text-gray-400">{msg.userName}</span>
+                        <div key={msg.id} className={`flex flex-col gap-0.5 ${msg.userId === currentUser?.id ? 'items-end' : 'items-start'}`}>
+                          <div className="flex items-center gap-1.5 px-1">
+                            <span className="text-[10px] font-semibold text-gray-500">{msg.userId === currentUser?.id ? 'You' : msg.userName}</span>
                             <span className="text-[10px] text-gray-300">{new Date(msg.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
                           </div>
-                          <div className={`px-4 py-2.5 rounded-2xl max-w-[85%] text-sm shadow-sm ${msg.userId === currentUser?.id
-                            ? 'bg-blue-600 text-white rounded-tr-sm'
-                            : 'bg-white border border-gray-200 text-gray-800 rounded-tl-sm'
+                          <div className={`px-3 py-2 rounded-2xl max-w-[85%] text-[13px] leading-snug ${msg.userId === currentUser?.id
+                            ? 'bg-indigo-600 text-white rounded-tr-sm'
+                            : 'bg-gray-100 text-gray-800 rounded-tl-sm'
                             }`}>
                             {msg.content}
                           </div>
@@ -1301,24 +1301,22 @@ Would you like to ask about a specific section or concept?`
                     <div ref={aiMessagesEndRef} />
                   </div>
 
-                  <div className="p-4 bg-white border-t border-gray-200 shrink-0">
-                    <div className="relative flex items-center gap-2">
-                      <Button variant="ghost" size="icon" className="text-gray-400 hover:text-gray-600">
-                        <Paperclip className="w-4 h-4" />
-                      </Button>
+                  <div className="px-3 py-2.5 bg-white border-t border-gray-100 shrink-0">
+                    <div className="flex items-center gap-1.5 bg-gray-50 border border-gray-200 rounded-xl px-3 py-1 focus-within:bg-white focus-within:border-indigo-300 focus-within:ring-1 focus-within:ring-indigo-200 transition-all">
                       <Input
-                        placeholder="Type a message..."
-                        className="grow rounded-full border-gray-200 bg-gray-50 focus-visible:ring-blue-500 focus-visible:bg-white transition-all pl-4"
+                        placeholder="Type a message…"
+                        className="grow border-0 focus-visible:ring-0 shadow-none bg-transparent h-8 text-[13px] pl-0 text-gray-800 placeholder:text-gray-400"
                         value={chatMessage}
                         onChange={(e) => setChatMessage(e.target.value)}
                         onKeyPress={handleKeyPress}
                       />
                       <Button
                         size="icon"
-                        className="h-9 w-9 rounded-full bg-blue-600 hover:bg-blue-700 shadow-md shrink-0"
+                        className={`h-7 w-7 rounded-lg shrink-0 transition-all ${chatMessage.trim() ? 'bg-indigo-600 hover:bg-indigo-700' : 'bg-gray-200'}`}
                         onClick={handleSendMessage}
+                        disabled={!chatMessage.trim()}
                       >
-                        <Send className="w-4 h-4 text-white" />
+                        <Send className="w-3.5 h-3.5 text-white" />
                       </Button>
                     </div>
                   </div>
@@ -1327,58 +1325,54 @@ Would you like to ask about a specific section or concept?`
 
               {activeTab === 'ai' && (
                 <div className="flex flex-col h-full absolute inset-0">
-                  <div className="flex-1 p-4 space-y-6 overflow-y-auto">
+                  <div className="flex-1 p-3 space-y-3 overflow-y-auto">
 
                     {/* AI Welcome Card */}
-                    <div className="bg-gradient-to-br from-indigo-50 to-blue-50 border border-blue-100 rounded-xl p-4 mb-6">
-                      <div className="flex items-center gap-3 mb-2">
-                        <div className="w-8 h-8 rounded-lg bg-blue-100 flex items-center justify-center text-blue-600">
-                          <Sparkles className="w-4 h-4" />
+                    <div className="bg-indigo-50 border border-indigo-100 rounded-xl p-3 mt-1">
+                      <div className="flex items-center gap-2 mb-1">
+                        <div className="w-6 h-6 rounded-lg bg-indigo-100 flex items-center justify-center text-indigo-600">
+                          <Sparkles className="w-3.5 h-3.5" />
                         </div>
-                        <h3 className="font-semibold text-blue-900 text-sm">Research Assistant</h3>
+                        <span className="font-semibold text-indigo-900 text-[12px]">Research Assistant</span>
                       </div>
-                      <p className="text-xs text-blue-800/80 leading-relaxed">
-                        I can extract key findings, methodologies, and limitations from this paper. Try asking specific questions!
+                      <p className="text-[11px] text-indigo-700/80 leading-relaxed">
+                        Ask about findings, methods, limitations, or anything in this paper.
                       </p>
                     </div>
 
                     {aiMessages.map((msg) => (
-                      <div key={msg.id} className="space-y-3 animate-in fade-in slide-in-from-bottom-2 duration-300">
+                      <div key={msg.id} className="space-y-2 animate-in fade-in slide-in-from-bottom-2 duration-300">
                         {/* User Question */}
                         <div className="flex justify-end">
-                          <div className="bg-slate-100 text-slate-700 font-medium rounded-2xl rounded-tr-sm px-4 py-2.5 text-sm max-w-[85%] shadow-sm">
+                          <div className="bg-indigo-600 text-white rounded-2xl rounded-tr-sm px-3 py-2 text-[13px] max-w-[85%]">
                             {msg.question}
                           </div>
                         </div>
                         {/* AI Response */}
-                        <div className="flex justify-start">
-                          <div className="flex gap-3 max-w-[95%]">
-                            <div className="w-8 h-8 rounded-full bg-gradient-to-br from-purple-500 to-indigo-600 flex items-center justify-center shrink-0 shadow-sm mt-1">
-                              <Sparkles className="w-4 h-4 text-white" />
-                            </div>
-                            <div className="space-y-2 flex-1">
-                              <div className="bg-white border border-gray-100 shadow-sm rounded-2xl rounded-tl-sm px-5 py-4 text-sm text-gray-700 leading-relaxed">
-                                {msg.isLoading ? (
-                                  <div className="flex items-center gap-2 text-gray-500">
-                                    <Loader2 className="w-4 h-4 animate-spin text-purple-600" />
-                                    <span className="text-xs font-medium">Analyzing document context...</span>
-                                  </div>
-                                ) : (
-                                  <div className="whitespace-pre-wrap">{msg.answer}</div>
-                                )}
+                        <div className="flex justify-start gap-2">
+                          <div className="w-6 h-6 rounded-lg bg-gradient-to-br from-purple-500 to-indigo-600 flex items-center justify-center shrink-0 shadow-sm mt-1">
+                            <Sparkles className="w-3 h-3 text-white" />
+                          </div>
+                          <div className="bg-gray-50 border border-gray-200 rounded-2xl rounded-tl-sm px-3 py-2.5 text-[13px] text-gray-700 leading-relaxed flex-1">
+                            {msg.isLoading ? (
+                              <div className="flex items-center gap-2 text-gray-400">
+                                <Loader2 className="w-3.5 h-3.5 animate-spin text-indigo-500" />
+                                <span className="text-[11px]">Analyzing…</span>
                               </div>
-                            </div>
+                            ) : (
+                              <div className="whitespace-pre-wrap">{msg.answer}</div>
+                            )}
                           </div>
                         </div>
                       </div>
                     ))}
                     <div ref={aiMessagesEndRef} />
                   </div>
-                  <div className="p-4 bg-white border-t border-gray-200 shrink-0">
-                    <div className="relative flex items-center gap-2">
+                  <div className="px-3 py-2.5 bg-white border-t border-gray-100 shrink-0">
+                    <div className="flex items-center gap-1.5 bg-indigo-50/50 border border-indigo-100 rounded-xl px-3 py-1 focus-within:bg-white focus-within:border-indigo-300 focus-within:ring-1 focus-within:ring-indigo-200 transition-all">
                       <Input
-                        placeholder="Ask AI about this document..."
-                        className="grow rounded-full border-purple-100 bg-purple-50/50 focus-visible:ring-purple-500 focus-visible:bg-white transition-all pl-4 text-purple-900 placeholder:text-purple-300"
+                        placeholder="Ask AI about this paper…"
+                        className="grow border-0 focus-visible:ring-0 shadow-none bg-transparent h-8 text-[13px] pl-0 text-gray-800 placeholder:text-indigo-300"
                         value={aiQuestion}
                         onChange={(e) => setAiQuestion(e.target.value)}
                         onKeyPress={handleKeyPress}
@@ -1386,10 +1380,10 @@ Would you like to ask about a specific section or concept?`
                       />
                       <Button
                         size="icon"
-                        className="h-9 w-9 rounded-full bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-700 hover:to-indigo-700 shadow-md shrink-0"
+                        className="h-7 w-7 rounded-lg bg-indigo-600 hover:bg-indigo-700 shrink-0 transition-all"
                         onClick={handleAIQuestion}
                       >
-                        {isAILoading ? <Loader2 className="w-4 h-4 animate-spin text-white" /> : <Sparkles className="w-4 h-4 text-white" />}
+                        {isAILoading ? <Loader2 className="w-3.5 h-3.5 animate-spin text-white" /> : <Sparkles className="w-3.5 h-3.5 text-white" />}
                       </Button>
                     </div>
                   </div>
