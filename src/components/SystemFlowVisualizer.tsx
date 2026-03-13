@@ -540,44 +540,37 @@ export function SystemFlowVisualizer({
                             animate={{ y: 0 }}
                             exit={{ y: 50 }}
                             onClick={() => setIsOpen(true)}
-                            className="absolute bottom-0 left-0 right-0 z-[50] h-9 bg-gray-900 border-t border-gray-800 flex items-center justify-between px-4 cursor-pointer hover:bg-gray-950 transition-colors"
+                            className="absolute bottom-0 left-0 right-0 z-[50] h-8 bg-white border-t border-gray-200 flex items-center justify-between px-4 cursor-pointer hover:bg-gray-50 transition-colors"
                         >
-                            {/* Left: Status Indicator */}
-                            <div className="flex items-center gap-3">
-                                <h3 className="text-[10px] font-bold text-gray-400 uppercase tracking-widest flex items-center gap-2">
-                                    <span className={`w-1.5 h-1.5 rounded-full ${!hasOnboarded ? 'bg-blue-500 animate-pulse' : 'bg-green-500'} `} />
-                                    System Flow
-                                </h3>
-                                <div className="bg-gray-700 w-[1px] h-3" />
-                                <span className="text-[10px] text-gray-500 font-mono">
-                                    {!hasOnboarded ? `INIT_PHASE_${activeStage}` : 'LIVE_ORCHESTRATION'}
-                                </span>
+                            {/* Left: AI Session status */}
+                            <div className="flex items-center gap-2">
+                                <div className="flex items-center gap-1.5">
+                                    <span className={`w-1.5 h-1.5 rounded-full ${!hasOnboarded ? 'bg-blue-500 animate-pulse' : 'bg-green-500'}`} />
+                                    <span className="text-[11px] font-medium text-gray-500">
+                                        {!hasOnboarded ? 'AI initializing…' : 'AI agents active'}
+                                    </span>
+                                </div>
+                                {latestEvent && (
+                                    <>
+                                        <div className="w-px h-3 bg-gray-200" />
+                                        <span className="text-[11px] text-gray-400 truncate max-w-[360px]">{latestEvent.event}</span>
+                                    </>
+                                )}
                             </div>
 
-                            {/* Center: Latest Event Ticker */}
-                            {latestEvent && (
-                                <div className="flex items-center gap-2 max-w-[500px] overflow-hidden">
-                                    <span className="text-[10px] font-mono text-green-500">[{latestEvent.agent.replace('agent-', 'AG_')}]</span>
-                                    <span className="text-[10px] text-gray-300 truncate">{latestEvent.event}</span>
-                                </div>
-                            )}
-
-                            {/* Right: Expand Hint & Summary Toggle */}
-                            <div className="flex items-center gap-4">
+                            {/* Right: Summary toggle + expand */}
+                            <div className="flex items-center gap-3">
                                 <button
-                                    onClick={(e) => {
-                                        e.stopPropagation();
-                                        setShowSummary(!showSummary);
-                                    }}
-                                    className={`flex items-center gap-2 text-xs font-medium transition-colors ${showSummary ? 'text-indigo-400' : 'text-gray-400 hover:text-indigo-300'}`}
+                                    onClick={(e) => { e.stopPropagation(); setShowSummary(!showSummary); }}
+                                    className={`flex items-center gap-1.5 text-[11px] font-medium transition-colors ${showSummary ? 'text-indigo-600' : 'text-gray-400 hover:text-indigo-500'}`}
                                     title="Toggle AI Summary"
                                 >
-                                    <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20" /><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z" /></svg>
-                                    <span>Quick Summary</span>
+                                    <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20" /><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z" /></svg>
+                                    <span>Summary</span>
                                 </button>
-                                <div className="h-4 w-[1px] bg-gray-700" />
-                                <div className="text-gray-500">
-                                    <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="m18 15-6-6-6 6" /></svg>
+                                <div className="w-px h-3 bg-gray-200" />
+                                <div className="text-gray-300">
+                                    <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="m18 15-6-6-6 6" /></svg>
                                 </div>
                             </div>
                         </motion.div>
