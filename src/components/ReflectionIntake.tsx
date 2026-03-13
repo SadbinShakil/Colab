@@ -1,11 +1,13 @@
 'use client'
 
-import React, { useState, useRef } from 'react'
+import React, { useState, useRef, useEffect } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
-import { Brain, Mic, Upload, Send, X, FileText, CheckCircle2, Sparkles, AudioLines, ChevronRight } from 'lucide-react'
+import { Brain, Mic, Upload, X, FileText, CheckCircle2, Sparkles, AudioLines, ChevronRight, Loader2, ArrowLeft, Wand2, Target, ScanSearch } from 'lucide-react'
 import { Button } from '@/components/ui/button'
-import { Card } from '@/components/ui/card'
 import { toast } from 'sonner'
+
+// Google Material 3 Spring Physics
+const SPRING_TRANSITION = { type: "spring", stiffness: 300, damping: 30 }
 
 interface ReflectionIntakeProps {
     isOpen: boolean
@@ -21,48 +23,70 @@ export default function ReflectionIntake({ isOpen, onClose, onSubmit, onReset, r
     const [textContent, setTextContent] = useState(currentReflection?.type === 'text' ? currentReflection.content : '')
     const [isRecording, setIsRecording] = useState(false)
     const [isUploading, setIsUploading] = useState(false)
-    const [isTranscribing, setIsTranscribing] = useState(false)
-    const [uploadedFile, setUploadedFile] = useState<string | null>(currentReflection?.type === 'file' ? currentReflection.content.replace('File report uploaded: ', '') : null)
+
+    // ANALYSIS STATES for "System Logic"
+    const [isAnalyzing, setIsAnalyzing] = useState(false)
+    const [analysisStep, setAnalysisStep] = useState(0) // 0: Idle, 1: Text Processing, 2: Section Matching, 3: Complete
+
     const [hasFinished, setHasFinished] = useState(false)
     const [processedContent, setProcessedContent] = useState<string>(currentReflection?.content || '')
+    const [uploadedFile, setUploadedFile] = useState<string | null>(currentReflection?.type === 'file' ? currentReflection.content.replace('File report uploaded: ', '') : null)
 
-    // Real MediaRecorder state
     const mediaRecorderRef = useRef<MediaRecorder | null>(null)
-    const [audioChunks, setAudioChunks] = useState<Blob[]>([])
     const [recordingDuration, setRecordingDuration] = useState(0)
     const timerRef = useRef<NodeJS.Timeout | null>(null)
-
-    // Real File input ref
     const fileInputRef = useRef<HTMLInputElement>(null)
+
+    // SUGGESTION CHIPS to guide the user (Familiarity, Interest, Goals)
+    const suggestions = [
+        "I'm new to this topic.",
+        "I'm an expert in this field.",
+        "Interested in methodology.",
+        "Focusing on results analysis.",
+        "Looking for research gaps."
+    ]
 
     const handleTextSubmit = () => {
         if (!textContent.trim()) return
-        onSubmit({ type: 'text', content: textContent })
-        toast.success('Reflection updated!', { description: 'Your cognitive profile has been refreshed.' })
-        onClose()
+        startAnalysisFlow('text', textContent)
     }
 
-    // REAL AUDIO LOGIC
+    // SIMULATED SYSTEM ANALYSIS -> "Producing Match Scores"
+    const startAnalysisFlow = (type: 'text' | 'audio' | 'file', content: string) => {
+        setIsAnalyzing(true)
+        setAnalysisStep(1) // Processing Text
+
+        // Step 1: Text Analysis
+        setTimeout(() => {
+            setAnalysisStep(2) // Calculating Section alignment
+        }, 1500)
+
+        // Step 2: Alignment Complete
+        setTimeout(() => {
+            setAnalysisStep(3)
+            setHasFinished(true)
+            onSubmit({ type, content })
+            toast.success('Session Calibrated', { description: 'Document sections aligned to your profile.' })
+
+            setTimeout(() => {
+                onClose()
+                setIsAnalyzing(false)
+                setAnalysisStep(0)
+            }, 1000)
+        }, 3500)
+    }
+
     const startRecording = async () => {
         try {
             const stream = await navigator.mediaDevices.getUserMedia({ audio: true })
             const mediaRecorder = new MediaRecorder(stream)
             mediaRecorderRef.current = mediaRecorder
 
-            const chunks: Blob[] = []
-            mediaRecorder.ondataavailable = (e) => {
-                if (e.data.size > 0) chunks.push(e.data)
-            }
-
             mediaRecorder.onstop = () => {
-                setIsTranscribing(true)
-                // Simulate AI Transcription
-                setTimeout(() => {
-                    setIsTranscribing(false)
-                    setHasFinished(true)
-                    setProcessedContent("User indicated a strong background in gaze tracking but expressed specific interest in how Agent 1 handles 'semantic loops'. Goal: Focus on the Interaction Collector architecture.")
-                    toast.success('Audio transcribed successfully!')
-                }, 2500)
+                // Determine content based on simulation
+                const simulatedText = "User expressed high familiarity with HCI methods but requested focus on the statistical evaluation sections."
+                setProcessedContent(simulatedText)
+                startAnalysisFlow('audio', simulatedText)
 
                 setIsRecording(false)
                 if (timerRef.current) clearInterval(timerRef.current)
@@ -71,14 +95,11 @@ export default function ReflectionIntake({ isOpen, onClose, onSubmit, onReset, r
             mediaRecorder.start()
             setIsRecording(true)
             setRecordingDuration(0)
-
-            timerRef.current = setInterval(() => {
-                setRecordingDuration(prev => prev + 1)
-            }, 1000)
+            timerRef.current = setInterval(() => setRecordingDuration(p => p + 1), 1000)
 
         } catch (err) {
-            console.error('Failed to start recording:', err)
-            toast.error('Microphone Error', { description: 'Please ensure microphone permissions are granted.' })
+            console.error(err)
+            toast.error('Microphone access denied')
         }
     }
 
@@ -89,26 +110,18 @@ export default function ReflectionIntake({ isOpen, onClose, onSubmit, onReset, r
         }
     }
 
-    // REAL FILE LOGIC
     const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
         const file = e.target.files?.[0]
         if (!file) return
-
         setUploadedFile(file.name)
         setIsUploading(true)
 
-        // Simulate real extraction
         setTimeout(() => {
             setIsUploading(false)
-            setHasFinished(true)
-            setProcessedContent(`Extracted from ${file.name}: Summary of prior research into HCI. Key focus: Human-in-the-loop AI systems and multimodal feedback loops.`)
-            toast.success('File content extracted!')
-        }, 2000)
-    }
-
-    const handleFinalSubmit = (type: 'audio' | 'file') => {
-        onSubmit({ type, content: processedContent })
-        onClose()
+            const extractedText = `Extracted profile from ${file.name}: Expert-level knowledge in AI Agents.`
+            setProcessedContent(extractedText)
+            startAnalysisFlow('file', extractedText)
+        }, 1500)
     }
 
     const formatTime = (seconds: number) => {
@@ -117,275 +130,238 @@ export default function ReflectionIntake({ isOpen, onClose, onSubmit, onReset, r
         return `${mins}:${secs.toString().padStart(2, '0')}`
     }
 
+    const addSuggestion = (text: string) => {
+        setTextContent(prev => prev ? `${prev} ${text}` : text)
+    }
+
     return (
-        <AnimatePresence>
+        <AnimatePresence mode="wait">
             {isOpen && (
-                <div className="fixed inset-0 z-[200] flex items-center justify-center p-6 sm:p-12">
-                    {/* Backdrop */}
-                    <motion.div
-                        initial={{ opacity: 0 }}
-                        animate={{ opacity: 1 }}
-                        exit={{ opacity: 0 }}
-                        className="absolute inset-0 bg-slate-900/60 backdrop-blur-xl cursor-pointer"
-                        onClick={onClose}
-                    />
+                <div className="fixed inset-0 z-[200] flex items-center justify-center p-4 sm:p-6 font-sans">
 
-                    {/* Modal Container */}
+                    {/* SCIM BACKDROP */}
+                    <div className="absolute inset-0 bg-[#0F172A]/40 backdrop-blur-sm transition-opacity" onClick={onClose} />
+
+                    {/* MAIN SURFACE CARD */}
                     <motion.div
-                        initial={{ scale: 0.9, opacity: 0, y: 40 }}
+                        layout
+                        initial={{ scale: 0.95, opacity: 0, y: 30 }}
                         animate={{ scale: 1, opacity: 1, y: 0 }}
-                        exit={{ scale: 0.9, opacity: 0, y: 40 }}
-                        className="relative w-full max-w-2xl bg-white/90 dark:bg-slate-900/90 rounded-[32px] shadow-2xl overflow-hidden border border-white/20"
+                        exit={{ scale: 0.95, opacity: 0, y: 30 }}
+                        transition={SPRING_TRANSITION}
+                        className="relative w-full max-w-2xl bg-[#FCFCFC] rounded-[32px] shadow-2xl overflow-hidden flex flex-col max-h-[90vh] border border-[#E2E8F0]/80"
                     >
-                        {/* Close Button */}
-                        <button
-                            onClick={onClose}
-                            className="absolute top-6 right-6 p-2 rounded-full bg-slate-100 hover:bg-rose-100 text-slate-400 hover:text-rose-600 transition-colors z-20"
-                        >
-                            <X className="w-5 h-5" />
-                        </button>
+                        {/* DECORATIVE HEADER */}
+                        <div className="absolute top-0 left-0 right-0 h-40 bg-gradient-to-b from-blue-50/80 to-transparent pointer-events-none" />
 
-                        {/* Header Area */}
-                        <div className="p-8 pb-4 text-center">
-                            <div className="inline-flex items-center justify-center w-16 h-16 rounded-2xl bg-indigo-600 text-white shadow-lg shadow-indigo-200 mb-6 font-bold text-2xl">
-                                <Brain className="w-8 h-8" />
-                            </div>
-                            <h2 className="text-3xl font-black text-slate-800 dark:text-white tracking-tight mb-2">
-                                {reflectionSubmitted ? 'Your Cognitive Profile' : 'Phase 1: Initial Reflection'}
-                            </h2>
-                            <p className="text-slate-500 font-medium max-w-md mx-auto italic leading-relaxed text-sm">
-                                {reflectionSubmitted
-                                    ? "Based on your initial input, Agent 1 is now interpreting your reading gaps. You can update this at any time."
-                                    : '"What do you already know about this topic, and what are your goals for this reading?"'}
-                            </p>
-                        </div>
+                        {/* CLOSE BUTTON */}
+                        {!isAnalyzing && (
+                            <button
+                                onClick={onClose}
+                                className="absolute top-5 right-5 p-2 rounded-full hover:bg-slate-100 text-slate-500 transition-colors z-20"
+                            >
+                                <X className="w-6 h-6" />
+                            </button>
+                        )}
 
-                        {/* Selection Area / Review Area */}
-                        {reflectionSubmitted && !reflectionType ? (
-                            <div className="p-8 pt-4 flex flex-col items-center">
-                                <div className="w-full bg-indigo-50 border border-indigo-100 rounded-3xl p-6 mb-6">
-                                    <div className="flex items-center gap-3 mb-4">
-                                        <div className="p-2 bg-indigo-600 text-white rounded-lg">
-                                            {currentReflection?.type === 'text' ? <FileText className="w-5 h-5" /> : currentReflection?.type === 'audio' ? <Mic className="w-5 h-5" /> : <Upload className="w-5 h-5" />}
-                                        </div>
-                                        <div>
-                                            <p className="text-xs font-black text-indigo-400 uppercase tracking-widest">Active Baseline</p>
-                                            <p className="text-sm font-bold text-indigo-900">
-                                                {currentReflection?.type === 'text' ? 'Detailed Goals Text' : currentReflection?.type === 'audio' ? 'Recorded Voice Reflection' : 'Uploaded Study Report'}
-                                            </p>
+                        {/* CONTENT CONTAINER */}
+                        <div className="relative z-10 flex flex-col h-full overflow-hidden">
+
+                            {/* === ANALYSIS MODE (THE "SYSTEM LOGIC" VISUALIZATION) === */}
+                            {isAnalyzing ? (
+                                <div className="flex-1 flex flex-col items-center justify-center p-12 text-center space-y-8">
+                                    <div className="relative">
+                                        {/* Animated Rings */}
+                                        <div className="absolute inset-0 bg-blue-500 rounded-full animate-ping opacity-20" />
+                                        <div className="relative w-24 h-24 bg-white rounded-[32px] shadow-xl flex items-center justify-center border border-blue-100">
+                                            {analysisStep === 1 && <Sparkles className="w-10 h-10 text-blue-600 animate-pulse" />}
+                                            {analysisStep === 2 && <ScanSearch className="w-10 h-10 text-purple-600 animate-bounce" />}
+                                            {analysisStep === 3 && <CheckCircle2 className="w-12 h-12 text-green-500" />}
                                         </div>
                                     </div>
-                                    <div className="bg-white/60 p-4 rounded-xl text-slate-700 text-sm font-medium leading-relaxed shadow-inner">
-                                        {currentReflection?.content || "No baseline content extracted yet."}
+
+                                    <div className="space-y-2 max-w-sm">
+                                        <h3 className="text-xl font-semibold text-slate-900">
+                                            {analysisStep === 1 && "Analyzing Familiarity..."}
+                                            {analysisStep === 2 && "Calculating Section Scores..."}
+                                            {analysisStep === 3 && "Profile Aligned"}
+                                        </h3>
+                                        <p className="text-slate-500 text-sm h-10">
+                                            {analysisStep === 1 && "Identifying expertise signals & user goals."}
+                                            {analysisStep === 2 && "Matching your profile to document sections (Introduction, Methodology, Results)."}
+                                            {analysisStep === 3 && "Optimization complete. System ready."}
+                                        </p>
                                     </div>
-                                </div>
 
-                                <div className="grid grid-cols-2 gap-4 w-full">
-                                    <Button
-                                        variant="outline"
-                                        onClick={() => {
-                                            onReset?.();
-                                            setReflectionType(null);
-                                            setHasFinished(false);
-                                            setTextContent('');
-                                            setUploadedFile(null);
-                                        }}
-                                        className="h-12 rounded-xl border-slate-200 text-slate-600 font-bold hover:bg-slate-50 uppercase text-[10px] tracking-widest"
-                                    >
-                                        Reset Profile
-                                    </Button>
-                                    <Button
-                                        onClick={() => setReflectionType('text')}
-                                        className="h-12 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white font-bold uppercase text-[10px] tracking-widest shadow-lg shadow-indigo-100"
-                                    >
-                                        Update Content
-                                    </Button>
-                                </div>
-                            </div>
-                        ) : !reflectionType ? (
-                            <div className="p-8 pt-4 grid grid-cols-1 sm:grid-cols-3 gap-4">
-                                <ReflectionOption
-                                    icon={<FileText className="w-6 h-6" />}
-                                    title="Think & Type"
-                                    description="Write your goals or questions"
-                                    onClick={() => setReflectionType('text')}
-                                    color="indigo"
-                                />
-                                <ReflectionOption
-                                    icon={<Mic className="w-6 h-6" />}
-                                    title="Speak Thoughts"
-                                    description="Record a brief audio reflection"
-                                    onClick={() => setReflectionType('audio')}
-                                    color="rose"
-                                />
-                                <ReflectionOption
-                                    icon={<Upload className="w-6 h-6" />}
-                                    title="Upload Report"
-                                    description="Share an existing study report"
-                                    onClick={() => setReflectionType('file')}
-                                    color="amber"
-                                />
-                            </div>
-                        ) : (
-                            <div className="p-8 pt-4 min-h-[350px] flex flex-col">
-                                <button
-                                    onClick={() => {
-                                        setReflectionType(null)
-                                        setHasFinished(false)
-                                        if (isRecording) stopRecording()
-                                    }}
-                                    className="mb-4 text-xs font-bold text-slate-400 hover:text-slate-600 flex items-center gap-1 uppercase tracking-widest transition-colors"
-                                >
-                                    <X className="w-3 h-3" /> Back to options
-                                </button>
-
-                                {reflectionType === 'text' && (
-                                    <motion.div initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} className="flex-1 flex flex-col">
-                                        <div className="mb-2 text-xs font-bold text-indigo-500 uppercase tracking-widest flex items-center gap-2">
-                                            <div className="h-1.5 w-1.5 rounded-full bg-indigo-500"></div>
-                                            Detailed Reflection
-                                        </div>
-                                        <textarea
-                                            className="flex-1 w-full bg-slate-50 dark:bg-slate-800 rounded-2xl p-6 text-sm border-none focus:ring-2 focus:ring-indigo-500 transition-all font-medium min-h-[180px] shadow-inner"
-                                            placeholder="e.g., I have some experience with Gaze tracking but haven't seen how it applies to collaborative reading before..."
-                                            value={textContent}
-                                            onChange={(e) => setTextContent(e.target.value)}
+                                    {/* Progress Bar */}
+                                    <div className="w-64 h-2 bg-slate-100 rounded-full overflow-hidden">
+                                        <motion.div
+                                            className="h-full bg-gradient-to-r from-blue-500 to-purple-600"
+                                            initial={{ width: "0%" }}
+                                            animate={{ width: analysisStep === 1 ? "30%" : analysisStep === 2 ? "70%" : "100%" }}
+                                            transition={{ duration: 0.5 }}
                                         />
-                                        <Button onClick={handleTextSubmit} className="mt-4 bg-indigo-600 hover:bg-indigo-700 h-12 rounded-xl text-md font-bold shadow-lg shadow-indigo-100">
-                                            Sync Initial Reflection <Sparkles className="w-4 h-4 ml-2" />
-                                        </Button>
-                                    </motion.div>
-                                )}
-
-                                {reflectionType === 'audio' && (
-                                    <motion.div initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} className="flex-1 flex flex-col items-center justify-center space-y-8">
-                                        <div className="relative">
-                                            {(isRecording || isTranscribing) && (
-                                                <motion.div
-                                                    initial={{ scale: 0 }}
-                                                    animate={{ scale: 1.5, opacity: 0 }}
-                                                    transition={{ repeat: Infinity, duration: 1.5 }}
-                                                    className={`absolute inset-0 rounded-full ${isTranscribing ? 'bg-indigo-400' : 'bg-rose-400'}`}
-                                                />
-                                            )}
-                                            <div className={`w-36 h-36 rounded-full flex flex-col items-center justify-center transition-all shadow-xl relative z-10 
-                         ${isRecording ? 'bg-rose-500 text-white' : isTranscribing ? 'bg-indigo-600 text-white' : hasFinished ? 'bg-green-100 text-green-600' : 'bg-slate-50 text-slate-300 border-2 border-slate-100'}`}>
-                                                {isRecording ? (
-                                                    <>
-                                                        <AudioLines className="w-14 h-14" />
-                                                        <span className="text-xs font-mono font-bold mt-2">{formatTime(recordingDuration)}</span>
-                                                    </>
-                                                ) : isTranscribing ? (
-                                                    <Loader2 className="w-14 h-14 animate-spin text-white" />
-                                                ) : hasFinished ? (
-                                                    <CheckCircle2 className="w-16 h-16" />
-                                                ) : (
-                                                    <Mic className="w-16 h-16" />
-                                                )}
+                                    </div>
+                                </div>
+                            ) : (
+                                <>
+                                    {/* STANDARD HEADER */}
+                                    <div className="px-8 pt-8 pb-2 text-center/left shrink-0">
+                                        <div className="flex items-center justify-center">
+                                            <div className="inline-flex items-center gap-2 px-4 py-1.5 rounded-full bg-blue-50 border border-blue-100 text-blue-700 text-xs font-bold uppercase tracking-wider mb-4">
+                                                <Target className="w-3.5 h-3.5" /> Session Calibration
                                             </div>
                                         </div>
 
-                                        <div className="text-center px-12">
-                                            <p className="text-lg font-black text-slate-800 mb-2">
-                                                {isRecording ? "Listening to your thoughts..." : isTranscribing ? "AI Transcribing..." : hasFinished ? "Reflection Transcribed" : "Speak to the System"}
-                                            </p>
-                                            {hasFinished ? (
-                                                <div className="bg-slate-50 border border-slate-100 p-4 rounded-2xl text-xs text-slate-600 font-medium italic leading-relaxed text-left max-h-24 overflow-y-auto">
-                                                    "{processedContent}"
+                                        <h2 className="text-2xl font-semibold text-slate-900 mb-2 tracking-tight text-center">
+                                            {reflectionSubmitted ? 'Profile Active' : 'Align System to Your Expertise'}
+                                        </h2>
+                                        <p className="text-slate-500 text-sm max-w-md mx-auto leading-relaxed text-center hidden sm:block">
+                                            Describe your <span className="text-slate-800 font-medium">familiarity</span> and <span className="text-slate-800 font-medium">goals</span>. The system will prioritize document sections for you.
+                                        </p>
+                                    </div>
+
+                                    {/* VIEW CONTROLLER - SCROLLABLE CONTENT */}
+                                    <div className="px-8 py-4 flex-1 overflow-y-auto">
+                                        {reflectionSubmitted && !reflectionType ? (
+                                            // === SUBMITTED STATE ===
+                                            <div className="flex flex-col items-center gap-6">
+                                                <div className="bg-white p-6 rounded-[24px] border border-slate-200 shadow-sm w-full text-left">
+                                                    <div className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-2">My Calibration Signal</div>
+                                                    <p className="text-slate-700 text-lg leading-relaxed font-medium">"{currentReflection?.content}"</p>
                                                 </div>
-                                            ) : (
-                                                <p className="text-sm text-slate-500 leading-relaxed">
-                                                    {isRecording ? "Your voice is being processed in real-time." : isTranscribing ? "Calibrating Agent 1 with your linguistics..." : "Describe your current knowledge level and specific learning objectives."}
-                                                </p>
+                                                <Button
+                                                    onClick={() => setReflectionType('text')}
+                                                    className="h-14 rounded-full px-8 bg-slate-900 text-white font-medium hover:bg-slate-800 shadow-lg shadow-slate-200 w-full sm:w-auto"
+                                                >
+                                                    Recalibrate
+                                                </Button>
+                                            </div>
+                                        ) : !reflectionType ? (
+                                            // === SELECTION MODE ===
+                                            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 h-full content-center">
+                                                <SelectionCard
+                                                    icon={<FileText className="w-7 h-7" />}
+                                                    title="Text Input"
+                                                    label="Write goals"
+                                                    onClick={() => setReflectionType('text')}
+                                                />
+                                                <SelectionCard
+                                                    icon={<Mic className="w-7 h-7" />}
+                                                    title="Voice Note"
+                                                    label="Speak naturally"
+                                                    onClick={() => setReflectionType('audio')}
+                                                />
+                                                <SelectionCard
+                                                    icon={<Upload className="w-7 h-7" />}
+                                                    title="Upload"
+                                                    label="Use existing file"
+                                                    onClick={() => setReflectionType('file')}
+                                                />
+                                            </div>
+                                        ) : (
+                                            // === INPUT MODE ===
+                                            <motion.div
+                                                initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }}
+                                                className="flex flex-col h-full"
+                                            >
+                                                {/* Back Button */}
+                                                <button
+                                                    onClick={() => { setReflectionType(null); stopRecording(); }}
+                                                    className="self-start mb-4 text-sm font-bold text-slate-400 hover:text-slate-600 flex items-center gap-2 transition-colors px-2 py-1 rounded-lg hover:bg-slate-100"
+                                                >
+                                                    <ArrowLeft className="w-4 h-4" /> Cancel
+                                                </button>
+
+                                                {/* Text Mode Content */}
+                                                {reflectionType === 'text' && (
+                                                    <div className="flex flex-col gap-4">
+                                                        {/* Smart Chips */}
+                                                        <div className="flex flex-wrap gap-2">
+                                                            {suggestions.map((s, i) => (
+                                                                <button
+                                                                    key={i}
+                                                                    onClick={() => addSuggestion(s)}
+                                                                    className="px-3 py-1.5 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 text-xs font-bold rounded-full transition-colors border border-indigo-100"
+                                                                >
+                                                                    + {s}
+                                                                </button>
+                                                            ))}
+                                                        </div>
+
+                                                        {/* Input Area */}
+                                                        <textarea
+                                                            className="w-full h-40 bg-slate-50 border border-slate-200 rounded-[24px] p-5 text-base text-slate-800 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all resize-none shadow-inner leading-relaxed"
+                                                            placeholder="e.g. I am familiar with the basics, but I want to understand the experimental setup deeply..."
+                                                            value={textContent}
+                                                            onChange={(e) => setTextContent(e.target.value)}
+                                                            autoFocus
+                                                        />
+                                                    </div>
+                                                )}
+
+                                                {/* Audio Mode Content */}
+                                                {reflectionType === 'audio' && (
+                                                    <div className="flex flex-col items-center justify-center flex-1 gap-6 min-h-[200px]">
+                                                        <div className={`w-32 h-32 rounded-full flex items-center justify-center transition-all duration-500 ${isRecording ? 'bg-red-50 text-red-500 scale-110 shadow-xl' : 'bg-slate-50 text-slate-400'}`}>
+                                                            {isRecording ? <AudioLines className="w-12 h-12" /> : <Mic className="w-12 h-12" />}
+                                                        </div>
+
+                                                        <div className="text-center">
+                                                            <h3 className="text-xl font-bold text-slate-900">
+                                                                {isRecording ? formatTime(recordingDuration) : "Describe your expertise"}
+                                                            </h3>
+                                                            <p className="text-slate-500 text-sm mt-1">
+                                                                We'll extract your goals to rank the document.
+                                                            </p>
+                                                        </div>
+                                                    </div>
+                                                )}
+
+                                                {/* File Mode Content */}
+                                                {reflectionType === 'file' && (
+                                                    <div className="flex flex-col items-center justify-center flex-1 gap-6 min-h-[200px]">
+                                                        <input type="file" ref={fileInputRef} className="hidden" onChange={handleFileChange} />
+                                                        <div onClick={() => !isUploading && fileInputRef.current?.click()}
+                                                            className="w-full h-40 rounded-[24px] border-2 border-dashed border-slate-200 hover:border-blue-400 bg-slate-50 hover:bg-blue-50 flex flex-col items-center justify-center gap-2 cursor-pointer transition-all">
+                                                            <Upload className="w-8 h-8 text-slate-400" />
+                                                            <span className="font-bold text-slate-600">{isUploading ? "Analyzing..." : "Upload Profile / CV"}</span>
+                                                        </div>
+                                                    </div>
+                                                )}
+                                            </motion.div>
+                                        )}
+                                    </div>
+
+                                    {/* === FOOTER ACTION AREA (ALWAYS VISIBLE) === */}
+                                    {!!reflectionType && !reflectionSubmitted && (
+                                        <div className="p-6 pt-4 bg-white border-t border-slate-100 z-20 shrink-0">
+                                            {reflectionType === 'text' && (
+                                                <Button onClick={handleTextSubmit} className="h-14 rounded-full bg-blue-600 hover:bg-blue-700 text-white font-semibold text-lg w-full shadow-lg shadow-blue-200">
+                                                    Analyze & Calibrate
+                                                </Button>
+                                            )}
+                                            {reflectionType === 'audio' && (
+                                                <Button onClick={isRecording ? stopRecording : startRecording}
+                                                    className={`w-full h-14 rounded-full text-lg font-bold transition-colors ${isRecording ? 'bg-slate-900 text-white' : 'bg-blue-600 text-white'}`}>
+                                                    {isRecording ? "Finish Recording" : "Start Speaking"}
+                                                </Button>
+                                            )}
+                                            {reflectionType === 'file' && hasFinished && (
+                                                <Button onClick={() => handleTextSubmit()} className="w-full h-14 rounded-full bg-green-600 hover:bg-green-700 text-white font-semibold text-lg shadow-lg shadow-green-200">
+                                                    Confirm
+                                                </Button>
+                                            )}
+                                            {/* Show placeholder button when file is not selected yet to maintain layout consistency? Or just hide it. */}
+                                            {reflectionType === 'file' && !hasFinished && (
+                                                <Button disabled className="w-full h-14 rounded-full bg-slate-100 text-slate-400 font-semibold text-lg cursor-not-allowed">
+                                                    Waiting for upload...
+                                                </Button>
                                             )}
                                         </div>
-
-                                        <div className="w-full">
-                                            {!hasFinished && !isTranscribing ? (
-                                                <Button
-                                                    onClick={isRecording ? stopRecording : startRecording}
-                                                    className={`w-full h-14 rounded-2xl text-lg font-black shadow-lg transition-all 
-                            ${isRecording ? 'bg-slate-800 hover:bg-slate-900 border-b-4 border-slate-950' : 'bg-rose-600 hover:bg-rose-700 shadow-rose-100 border-b-4 border-rose-800'}`}
-                                                >
-                                                    {isRecording ? "Stop Recording" : "Start Recording"}
-                                                </Button>
-                                            ) : !isTranscribing && (
-                                                <Button
-                                                    onClick={() => handleFinalSubmit('audio')}
-                                                    className="w-full h-14 rounded-2xl text-lg font-black bg-green-600 hover:bg-green-700 shadow-lg shadow-green-100 border-b-4 border-green-800"
-                                                >
-                                                    Lock Reflection & Continue <ChevronRight className="w-5 h-5 ml-2" />
-                                                </Button>
-                                            )}
-                                        </div>
-                                    </motion.div>
-                                )}
-
-                                {reflectionType === 'file' && (
-                                    <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="flex-1 flex flex-col items-center justify-center space-y-8">
-                                        <input
-                                            type="file"
-                                            ref={fileInputRef}
-                                            className="hidden"
-                                            onChange={handleFileChange}
-                                            accept=".pdf,.docx,.txt,.md"
-                                        />
-
-                                        <div
-                                            onClick={() => !hasFinished && !isUploading && fileInputRef.current?.click()}
-                                            className={`w-32 h-32 rounded-[40px] flex items-center justify-center transition-all cursor-pointer shadow-lg
-                        ${isUploading ? 'bg-amber-100 text-amber-600' : hasFinished ? 'bg-green-100 text-green-600' : 'bg-slate-50 text-slate-300 border-4 border-dashed border-slate-200 hover:border-amber-300 hover:bg-white'}`}
-                                        >
-                                            {isUploading ? <Loader2 className="w-12 h-12 animate-spin" /> : hasFinished ? <CheckCircle2 className="w-16 h-16" /> : <Upload className="w-16 h-16" />}
-                                        </div>
-
-                                        <div className="text-center px-12">
-                                            <p className="text-lg font-black text-slate-800 mb-2">
-                                                {isUploading ? "Reading Report..." : hasFinished ? "Report Successfully Synced" : "Upload Knowledge Report"}
-                                            </p>
-                                            {hasFinished ? (
-                                                <div className="bg-slate-50 border border-slate-100 p-4 rounded-2xl text-xs text-slate-600 font-medium italic leading-relaxed text-left max-h-24 overflow-y-auto">
-                                                    "{processedContent}"
-                                                </div>
-                                            ) : (
-                                                <p className="text-sm text-slate-500 leading-relaxed font-medium">
-                                                    {isUploading ? "Extracting knowledge tokens..." : "Select an existing study log or summary report to bootstrap your collaborative session."}
-                                                </p>
-                                            )}
-                                        </div>
-
-                                        <div className="w-full">
-                                            {!hasFinished ? (
-                                                <Button
-                                                    onClick={() => fileInputRef.current?.click()}
-                                                    disabled={isUploading}
-                                                    className={`w-full h-14 rounded-2xl text-lg font-black transition-all border-b-4
-                            ${isUploading ? 'bg-slate-100 text-slate-400 border-slate-200' : 'bg-amber-500 hover:bg-amber-600 border-amber-800 text-white shadow-lg shadow-amber-100'}`}
-                                                >
-                                                    {isUploading ? "Ingesting..." : "Choose File"}
-                                                </Button>
-                                            ) : (
-                                                <Button
-                                                    onClick={() => handleFinalSubmit('file')}
-                                                    className="w-full h-14 rounded-2xl text-lg font-black bg-green-600 hover:bg-green-700 shadow-lg shadow-green-100 border-b-4 border-green-800 text-white"
-                                                >
-                                                    Proceed to Session <ChevronRight className="w-5 h-5 ml-2" />
-                                                </Button>
-                                            )}
-                                        </div>
-                                    </motion.div>
-                                )}
-                            </div>
-                        )}
-
-                        {/* Footer */}
-                        <div className="p-6 bg-slate-50/50 dark:bg-slate-800/50 flex items-center justify-center gap-2 border-t border-slate-100 dark:border-slate-800">
-                            <div className="flex -space-x-2">
-                                {[1, 2, 3].map(i => (
-                                    <div key={i} className="w-6 h-6 rounded-full border-2 border-white bg-slate-200" />
-                                ))}
-                            </div>
-                            <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest ml-2">Established Profile: {reflectionSubmitted ? "LOCKED" : "PENDING"}</span>
+                                    )}
+                                </>
+                            )}
                         </div>
                     </motion.div>
                 </div>
@@ -394,51 +370,17 @@ export default function ReflectionIntake({ isOpen, onClose, onSubmit, onReset, r
     )
 }
 
-function ReflectionOption({ icon, title, description, onClick, color }: any) {
-    const colorMap: any = {
-        indigo: "hover:border-indigo-500 text-indigo-600 bg-indigo-50",
-        rose: "hover:border-rose-500 text-rose-600 bg-rose-50",
-        amber: "hover:border-amber-500 text-amber-600 bg-amber-50"
-    }
-
+function SelectionCard({ icon, title, label, onClick }: any) {
     return (
         <button
             onClick={onClick}
-            className={`group p-6 rounded-[32px] border-2 border-slate-100 transition-all text-left flex flex-col gap-3 h-full hover:shadow-xl hover:scale-[1.02] active:scale-[0.98] ${colorMap[color] || ""}`}
+            className="group flex flex-col items-center justify-center p-4 bg-white hover:bg-slate-50 border border-slate-100 hover:border-blue-200 rounded-[24px] transition-all hover:-translate-y-1 hover:shadow-lg hover:shadow-blue-500/5 min-h-[140px]"
         >
-            <div className="w-14 h-14 rounded-[20px] bg-white flex items-center justify-center shadow-sm group-hover:shadow-md transition-all group-hover:rotate-3">
+            <div className="w-12 h-12 rounded-[18px] bg-slate-50 text-slate-600 group-hover:bg-blue-600 group-hover:text-white flex items-center justify-center mb-3 transition-colors duration-300">
                 {icon}
             </div>
-            <div>
-                <h3 className="font-black text-slate-800 text-sm tracking-tight">{title}</h3>
-                <p className="text-[10px] text-slate-400 font-bold uppercase tracking-wider mt-1 opacity-70 leading-tight">{description}</p>
-            </div>
+            <div className="text-base font-bold text-slate-800">{title}</div>
+            <div className="text-xs font-medium text-slate-400 uppercase tracking-wide mt-1">{label}</div>
         </button>
-    )
-}
-
-function Loader2(props: any) {
-    return (
-        <svg
-            {...props}
-            xmlns="http://www.w3.org/2000/svg"
-            width="24"
-            height="24"
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-            strokeWidth="2"
-            strokeLinecap="round"
-            strokeLinejoin="round"
-        >
-            <path d="M12 2v4" />
-            <path d="m16.2 7.8 2.9-2.9" />
-            <path d="M18 12h4" />
-            <path d="m16.2 16.2 2.9 2.9" />
-            <path d="M12 18v4" />
-            <path d="m4.9 19.1 2.9-2.9" />
-            <path d="M2 12h4" />
-            <path d="m4.9 4.9 2.9 2.9" />
-        </svg>
     )
 }

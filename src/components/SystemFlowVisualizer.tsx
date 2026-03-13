@@ -402,7 +402,7 @@ export function SystemFlowVisualizer({
                         initial={{ opacity: 0, y: 10 }}
                         animate={{ opacity: 1, y: 0 }}
                         exit={{ opacity: 0, y: 10 }}
-                        className="absolute bottom-14 right-4 z-[45] pointer-events-auto"
+                        className="absolute bottom-24 right-4 z-[45] pointer-events-auto"
                     >
                         <button
                             onClick={() => (window as any).startSession()}

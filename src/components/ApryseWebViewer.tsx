@@ -6369,7 +6369,7 @@ ${documentContent}
         !showWikiPanel && (
           <button
             onClick={() => setShowWikiPanel(true)}
-            className="fixed right-6 bottom-6 z-[60] bg-indigo-600 text-white p-3.5 rounded-full shadow-xl hover:bg-indigo-700 transition-all hover:scale-105 group flex flex-row-reverse items-center gap-0 overflow-hidden"
+            className="fixed right-6 bottom-20 z-[60] bg-indigo-600 text-white p-3.5 rounded-full shadow-xl hover:bg-indigo-700 transition-all hover:scale-105 group flex flex-row-reverse items-center gap-0 overflow-hidden"
             title="Open Collective Memory"
           >
             <Book className="w-5 h-5 flex-shrink-0" />

@@ -1,567 +1,190 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import Link from 'next/link'
 import { Button } from '@/components/ui/button'
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
-import { 
-  FileText, 
-  Users, 
-  MessageSquare, 
-  BookOpen,
-  Search,
-  PenTool,
-  Share2,
-  Brain,
-  Library,
-  ArrowRight,
-  CheckCircle,
-  Star,
-  ChevronRight,
-  Sparkles,
-  Award,
-  Globe2,
-  Twitter,
-  Linkedin,
-  Github,
-  MailIcon,
-  Upload,
-  Calculator
+import {
+  FileText, Users, MessageSquare, PenTool, Brain, ArrowRight, CheckCircle,
+  Sparkles, Upload, Calculator, Twitter, Linkedin, Github
 } from 'lucide-react'
-import Image from 'next/image'
 
 export default function HomePage() {
-  const [hoveredFeature, setHoveredFeature] = useState<string | null>(null)
+  const [scrolled, setScrolled] = useState(false)
 
-  const coreFeatures = [
+  useEffect(() => {
+    const handleScroll = () => setScrolled(window.scrollY > 20)
+    window.addEventListener('scroll', handleScroll)
+    return () => window.removeEventListener('scroll', handleScroll)
+  }, [])
+
+  const features = [
     {
       icon: PenTool,
-      title: "Collaborative Annotation",
-      description: "Annotate documents together in real-time with advanced markup tools and shared insights.",
-      details: "Add highlights, comments, and drawings that sync instantly across your research team."
-    },
-    {
-      icon: MessageSquare,
-      title: "Discussion Threads",
-      description: "Start contextual discussions directly on document sections with threaded conversations.",
-      details: "Keep conversations organized and linked to specific paragraphs or research findings."
+      title: "Collaborate",
+      description: "Mark up documents together in real-time.",
+      color: "bg-blue-100 text-blue-700"
     },
     {
       icon: Brain,
-      title: "AI Research Assistant",
-      description: "Get intelligent insights, summaries, and research suggestions powered by advanced AI.",
-      details: "Ask questions about your documents and receive contextual answers and citations."
+      title: "AI Analysis",
+      description: "Summarize and question concepts instantly.",
+      color: "bg-purple-100 text-purple-700"
     },
     {
-      icon: Share2,
-      title: "Knowledge Sharing",
-      description: "Share research findings, create reading lists, and collaborate across research groups.",
-      details: "Build a shared knowledge base with version control and access management."
-    }
-  ]
-
-  const advancedFeatures = [
-    "Real-time collaborative editing",
-    "Advanced search across all documents", 
-    "Citation management and bibliography",
-    "Export annotations and summaries",
-    "Integration with reference managers",
-    "Secure sharing with granular permissions"
-  ]
-
-  const testimonials = [
-    {
-      quote: "LitSense has transformed how our research team collaborates. The AI insights are remarkably accurate.",
-      author: "Dr. Sarah Chen",
-      role: "Lead Researcher",
-      institution: "Stanford University",
-      rating: 5
-    },
-    {
-      quote: "The annotation tools and real-time collaboration features have streamlined our literature review process.",
-      author: "Prof. Michael Torres",
-      role: "Department Head",
-      institution: "MIT",
-      rating: 5
+      icon: MessageSquare,
+      title: "Discuss",
+      description: "Chat directly on the document context.",
+      color: "bg-green-100 text-green-700"
     }
   ]
 
   return (
-    <div className="min-h-screen bg-white">
-      {/* Header */}
-      <header className="border-b border-gray-200 bg-white/95 backdrop-blur-sm sticky top-0 z-50">
-        <div className="max-w-7xl mx-auto px-6">
-          <div className="flex h-16 items-center justify-between">
-            <div className="flex items-center space-x-8">
-              <Link href="/" className="flex items-center space-x-3 group">
-                <div className="w-8 h-8 bg-blue-600 rounded-xl flex items-center justify-center shadow-lg hover:bg-blue-700 transition-colors duration-300">
-                  <FileText className="w-4 h-4 text-white" />
-                </div>
-                <span className="text-xl font-semibold text-gray-900">LitSense</span>
-              </Link>
-              
-              <nav className="hidden md:flex items-center space-x-8">
-                <Link href="#features" className="text-sm font-medium text-gray-600 hover:text-blue-600 transition-colors duration-200 relative group">
-                  Features
-                  <span className="absolute -bottom-1 left-0 w-0 h-0.5 bg-blue-600 transition-all duration-300 group-hover:w-full"></span>
-                </Link>
-                <Link href="#pricing" className="text-sm font-medium text-gray-600 hover:text-blue-600 transition-colors duration-200 relative group">
-                  Pricing
-                  <span className="absolute -bottom-1 left-0 w-0 h-0.5 bg-blue-600 transition-all duration-300 group-hover:w-full"></span>
-                </Link>
-                <Link href="#about" className="text-sm font-medium text-gray-600 hover:text-blue-600 transition-colors duration-200 relative group">
-                  About
-                  <span className="absolute -bottom-1 left-0 w-0 h-0.5 bg-blue-600 transition-all duration-300 group-hover:w-full"></span>
-                </Link>
-              </nav>
-            </div>
-            
-            <div className="flex items-center space-x-3">
+    <div className="min-h-screen bg-[hsl(var(--color-background))] text-[hsl(var(--color-foreground))] font-sans selection:bg-blue-100 selection:text-blue-900">
+
+      {/* Floating Navbar - Compact */}
+      <header className={`fixed top-4 left-0 right-0 z-50 transition-all duration-300 pointer-events-none`}>
+        <div className="max-w-4xl mx-auto px-4 pointer-events-auto">
+          <nav className={`flex items-center justify-between px-6 py-2.5 rounded-full transition-all duration-300 ${scrolled ? 'bg-white/90 backdrop-blur-xl shadow-sm border border-gray-200/50' : 'bg-transparent'}`}>
+            <Link href="/" className="flex items-center gap-2 group">
+              <div className="w-7 h-7 bg-blue-600 rounded-lg flex items-center justify-center text-white shadow-sm">
+                <FileText size={16} fill="currentColor" className="text-white/90" />
+              </div>
+              <span className="text-lg font-bold tracking-tight text-gray-900">LitSense</span>
+            </Link>
+
+            <div className="flex items-center gap-2">
               <Link href="/auth/login">
-                <Button variant="ghost" className="text-sm font-medium hover:bg-gray-50">
-                  Sign In
+                <Button variant="ghost" size="sm" className="rounded-full hover:bg-gray-100 text-gray-700 font-semibold">
+                  Log in
                 </Button>
               </Link>
               <Link href="/auth/signup">
-                <Button className="text-sm font-medium bg-blue-600 hover:bg-blue-700 text-white shadow-lg">
-                  Get Started
-                  <ArrowRight className="w-4 h-4 ml-1.5" />
+                <Button size="sm" className="rounded-full px-5 bg-gray-900 hover:bg-black text-white shadow-md transition-all font-semibold">
+                  Sign up
                 </Button>
               </Link>
             </div>
-          </div>
+          </nav>
         </div>
       </header>
 
-      {/* Hero Section */}
-      <section className="relative py-20 bg-gradient-to-b from-blue-50/50 to-white overflow-hidden">
-        <div className="absolute inset-0 bg-gradient-to-br from-blue-600/5 via-transparent to-purple-600/5"></div>
-        <div className="max-w-7xl mx-auto px-6 relative">
-          <div className="max-w-4xl mx-auto text-center">
-            <div className="inline-flex items-center space-x-2 bg-white/80 backdrop-blur-sm border border-blue-200 rounded-full px-4 py-2 mb-8 shadow-sm">
-              <Sparkles className="w-4 h-4 text-blue-600" />
-              <span className="text-sm font-medium text-gray-600">AI-Powered Research Collaboration</span>
+      <main>
+        {/* Compact Hero Section */}
+        <section className="relative pt-32 pb-12 overflow-hidden">
+          <div className="absolute inset-0 -z-10">
+            <div className="absolute top-0 left-1/2 -translate-x-1/2 w-[800px] h-[500px] bg-blue-50/80 rounded-full blur-[80px] opacity-60"></div>
+          </div>
+
+          <div className="max-w-4xl mx-auto px-6 text-center">
+            <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-blue-50 text-blue-800 text-xs font-bold mb-6 border border-blue-200">
+              <Sparkles size={12} />
+              <span>Collaboration 2.0 is live</span>
             </div>
-            
-            <h1 className="text-5xl md:text-6xl font-bold text-gray-900 mb-6 leading-tight">
-              Collaborative Research
-              <span className="block text-blue-600">Made Elegant</span>
+
+            <h1 className="text-5xl md:text-6xl font-extrabold tracking-tight text-gray-950 mb-6 leading-tight">
+              Research is better <span className="text-transparent bg-clip-text bg-gradient-to-r from-blue-700 to-purple-700">together.</span>
             </h1>
-            
-            <p className="text-xl text-gray-600 max-w-2xl mx-auto mb-10 leading-relaxed">
-              Read, annotate, and discuss research papers with your team. 
-              Powered by AI to enhance your academic workflow and accelerate discovery.
+
+            <p className="text-lg text-gray-600 max-w-xl mx-auto mb-8 leading-relaxed font-medium">
+              The modern workspace for academic collaboration. Annotate PDFs, discuss findings, and streamline your literature review with AI.
             </p>
-            
-            <div className="flex flex-col sm:flex-row gap-4 justify-center items-center mb-16">
+
+            <div className="flex flex-col sm:flex-row items-center justify-center gap-3">
               <Link href="/auth/signup">
-                <Button size="lg" className="text-base px-8 py-4 bg-blue-600 hover:bg-blue-700 text-white shadow-xl hover:shadow-2xl hover:-translate-y-1 transition-all duration-300">
-                  Start Research
-                  <ArrowRight className="w-4 h-4 ml-2" />
-                </Button>
-              </Link>
-              <Link href="/demo">
-                <Button variant="outline" size="lg" className="text-base px-8 py-4 border-gray-300 hover:border-blue-300 hover:text-blue-600 hover:scale-105 transition-all duration-300">
-                  View Demo
+                <Button size="lg" className="h-12 px-8 rounded-full bg-blue-600 hover:bg-blue-700 text-white shadow-lg transition-all transform hover:-translate-y-0.5 font-bold">
+                  Start for free <ArrowRight className="ml-2 w-4 h-4" />
                 </Button>
               </Link>
             </div>
 
-            {/* Trust Indicators */}
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-8 max-w-2xl mx-auto">
-              <div className="flex flex-col items-center space-y-2 text-center">
-                <div className="w-12 h-12 bg-green-100 rounded-2xl flex items-center justify-center mb-2">
-                  <CheckCircle className="w-5 h-5 text-green-600" />
-                </div>
-                <span className="text-sm font-semibold text-gray-900">50+ Universities</span>
-                <span className="text-xs text-gray-500">Trusted globally</span>
-              </div>
-              <div className="flex flex-col items-center space-y-2 text-center">
-                <div className="w-12 h-12 bg-yellow-100 rounded-2xl flex items-center justify-center mb-2">
-                  <Star className="w-5 h-5 text-yellow-600" />
-                </div>
-                <span className="text-sm font-semibold text-gray-900">4.9/5 Rating</span>
-                <span className="text-xs text-gray-500">Researcher favorite</span>
-              </div>
-              <div className="flex flex-col items-center space-y-2 text-center">
-                <div className="w-12 h-12 bg-blue-100 rounded-2xl flex items-center justify-center mb-2">
-                  <Library className="w-5 h-5 text-blue-600" />
-                </div>
-                <span className="text-sm font-semibold text-gray-900">1M+ Papers</span>
-                <span className="text-xs text-gray-500">Successfully annotated</span>
-              </div>
+            {/* Quick Stats Strip */}
+            <div className="mt-10 flex justify-center gap-6 text-xs font-bold text-gray-500 uppercase tracking-wide">
+              <span>50+ Universities</span>
+              <span>•</span>
+              <span>1M+ Papers</span>
+              <span>•</span>
+              <span>4.9/5 Rating</span>
             </div>
           </div>
-        </div>
-      </section>
+        </section>
 
-      {/* Trusted By Logo Bar */}
-      <section className="py-8 bg-white border-b border-gray-100">
-        <div className="max-w-5xl mx-auto px-6 flex flex-col sm:flex-row items-center justify-center gap-8">
-          <span className="text-gray-500 text-sm font-semibold mb-2 sm:mb-0">Trusted by:</span>
-          <div className="flex flex-wrap gap-6 items-center justify-center">
-            <Image src="/vercel.svg" alt="Vercel Logo" width={80} height={24} className="opacity-80 grayscale hover:grayscale-0 transition-all duration-300" />
-            <Image src="/next.svg" alt="Next.js Logo" width={80} height={24} className="opacity-80 grayscale hover:grayscale-0 transition-all duration-300" />
-            <Image src="/globe.svg" alt="Global Research Logo" width={32} height={32} className="opacity-80 grayscale hover:grayscale-0 transition-all duration-300" />
-            <Image src="/file.svg" alt="File Collaboration Logo" width={32} height={32} className="opacity-80 grayscale hover:grayscale-0 transition-all duration-300" />
-          </div>
-        </div>
-      </section>
+        {/* Combined Features & Spotlight - Dark Mode */}
+        <section className="py-16 bg-slate-950 text-white rounded-[2rem] mx-4 md:mx-6 relative shadow-2xl overflow-hidden">
 
-      {/* Core Features */}
-      <section id="features" className="py-20 bg-white">
-        <div className="max-w-7xl mx-auto px-6">
-          <div className="max-w-3xl mx-auto text-center mb-16">
-            <h2 className="text-3xl font-bold text-gray-900 mb-6">
-              Everything You Need for Academic Collaboration
-            </h2>
-            <p className="text-lg text-gray-600">
-              From individual research to team projects, LitSense provides the tools 
-              that modern academics need to work together effectively.
-            </p>
-          </div>
+          {/* Background Elements */}
+          <div className="absolute top-0 right-0 w-[400px] h-[400px] bg-blue-600/20 rounded-full blur-[80px] pointer-events-none"></div>
 
-          <div className="grid md:grid-cols-2 gap-8 max-w-6xl mx-auto">
-            {coreFeatures.map((feature, index) => (
-              <Card 
-                key={feature.title}
-                className="border border-gray-200 hover:border-blue-300 hover:shadow-lg hover:-translate-y-1 transition-all duration-300 group"
-                onMouseEnter={() => setHoveredFeature(feature.title)}
-                onMouseLeave={() => setHoveredFeature(null)}
-              >
-                <CardHeader className="pb-4">
-                  <div className="flex items-start space-x-4 mb-4">
-                    <div className="w-12 h-12 bg-blue-100 rounded-2xl flex items-center justify-center group-hover:bg-blue-600 group-hover:scale-110 transition-all duration-300">
-                      <feature.icon className="w-5 h-5 text-blue-600 group-hover:text-white" />
+          <div className="max-w-5xl mx-auto px-6 relative z-10">
+
+            <div className="grid md:grid-cols-2 gap-12 items-center mb-16">
+              <div>
+                <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-blue-500/20 text-blue-100 text-xs font-bold mb-4 border border-blue-500/30">
+                  <Brain size={12} className="text-blue-300" />
+                  <span>AI-Powered Insights</span>
+                </div>
+                <h2 className="text-3xl md:text-4xl font-bold mb-4 !text-white leading-tight">
+                  Understand complex papers in seconds.
+                </h2>
+                <p className="text-lg !text-gray-300 mb-6 leading-relaxed">
+                  LitSense AI reads with you. Highlight text to get instant explanations and methodology critiques.
+                </p>
+                <Button variant="secondary" className="rounded-full font-bold">Try AI Assistant</Button>
+              </div>
+
+              {/* Simplified Feature Cards */}
+              <div className="grid gap-4">
+                {features.map((feature, i) => (
+                  <div key={i} className="bg-slate-900/50 border border-slate-800 p-4 rounded-xl flex items-start gap-4 hover:bg-slate-800 transition-colors">
+                    <div className={`w-10 h-10 rounded-lg flex items-center justify-center shrink-0 ${feature.color}`}>
+                      <feature.icon size={20} />
                     </div>
-                    <div className="flex-1">
-                      <CardTitle className="text-lg font-semibold mb-2 text-gray-900 group-hover:text-blue-600 transition-colors duration-300">
-                        {feature.title}
-                      </CardTitle>
-                      <CardDescription className="text-base leading-relaxed text-gray-600">
-                        {feature.description}
-                      </CardDescription>
+                    <div>
+                      <h3 className="font-bold !text-white text-base">{feature.title}</h3>
+                      <p className="text-sm !text-slate-300 leading-snug">{feature.description}</p>
                     </div>
-                  </div>
-                </CardHeader>
-                <CardContent>
-                  <div className={`text-sm text-gray-500 transition-all duration-500 overflow-hidden ${
-                    hoveredFeature === feature.title ? 'opacity-100 max-h-20 mt-2' : 'opacity-0 max-h-0'
-                  }`}>
-                    {feature.details}
-                  </div>
-                </CardContent>
-              </Card>
-            ))}
-          </div>
-        </div>
-      </section>
-
-      {/* Advanced Features */}
-      <section className="py-20 bg-gradient-to-br from-gray-50 to-blue-50/30">
-        <div className="max-w-7xl mx-auto px-6">
-          <div className="grid lg:grid-cols-2 gap-16 items-center max-w-6xl mx-auto">
-            <div>
-              <h2 className="text-3xl font-bold text-gray-900 mb-6">
-                Advanced Research Tools
-              </h2>
-              <p className="text-lg text-gray-600 mb-10">
-                Go beyond basic annotation with professional-grade features designed 
-                for serious academic work and research collaboration.
-              </p>
-              
-              <div className="space-y-4 mb-10">
-                {advancedFeatures.map((feature, index) => (
-                  <div key={index} className="flex items-start space-x-3 group">
-                    <div className="w-6 h-6 bg-green-100 rounded-lg flex items-center justify-center mt-0.5 group-hover:bg-green-600 group-hover:scale-110 transition-all duration-300">
-                      <CheckCircle className="w-4 h-4 text-green-600 group-hover:text-white" />
-                    </div>
-                    <span className="text-gray-900 font-medium">{feature}</span>
                   </div>
                 ))}
               </div>
-
-              <Link href="/auth/signup">
-                <Button className="bg-blue-600 hover:bg-blue-700 text-white shadow-lg hover:shadow-xl hover:-translate-y-1 transition-all duration-300">
-                  Explore All Features
-                  <ChevronRight className="w-4 h-4 ml-2" />
-                </Button>
-              </Link>
             </div>
 
-            <div className="relative">
-              <div className="bg-white rounded-2xl shadow-2xl border border-gray-200 p-8 hover:-translate-y-2 transition-transform duration-300">
-                <div className="space-y-6">
-                  <div className="flex items-center space-x-3">
-                    <div className="w-10 h-10 bg-blue-600 rounded-xl flex items-center justify-center">
-                      <Search className="w-5 h-5 text-white" />
-                    </div>
-                    <div className="flex-1">
-                      <div className="h-3 bg-gray-100 rounded-lg w-3/4 mb-2"></div>
-                      <div className="h-2 bg-gray-50 rounded-lg w-1/2"></div>
-                    </div>
-                  </div>
-                  
-                  <div className="space-y-3">
-                    <div className="h-2 bg-gray-100 rounded-lg w-full"></div>
-                    <div className="h-2 bg-blue-200 rounded-lg w-5/6"></div>
-                    <div className="h-2 bg-gray-100 rounded-lg w-4/5"></div>
-                    <div className="h-2 bg-gray-100 rounded-lg w-3/4"></div>
-                  </div>
 
-                  <div className="flex items-center space-x-3 pt-4 border-t border-gray-100">
-                    <div className="w-8 h-8 bg-gray-200 rounded-full"></div>
-                    <div className="flex-1">
-                      <div className="h-2 bg-gray-100 rounded-lg w-2/3"></div>
-                    </div>
-                  </div>
-                </div>
-              </div>
-            </div>
           </div>
-        </div>
-      </section>
+        </section>
 
-      {/* Test Pages Section */}
-      <section className="py-16 bg-gray-50">
-        <div className="max-w-7xl mx-auto px-6">
-          <div className="text-center mb-12">
-            <h2 className="text-3xl font-bold text-gray-900 mb-4">
-              Test Our Features
-            </h2>
-            <p className="text-lg text-gray-600 max-w-2xl mx-auto">
-              Try out our AI-powered features with sample documents and test uploads
-            </p>
-          </div>
-          
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-6 max-w-4xl mx-auto">
-            <Link href="/test-upload" className="group">
-              <div className="bg-white p-6 rounded-xl shadow-lg hover:shadow-xl transition-all duration-300 hover:-translate-y-1 border border-gray-200">
-                <div className="w-12 h-12 bg-blue-600 rounded-xl flex items-center justify-center shadow-lg group-hover:bg-blue-700 transition-colors duration-300 mb-4">
-                  <Upload className="w-6 h-6 text-white" />
-                </div>
-                <h3 className="font-semibold text-gray-900 mb-2">Test Upload</h3>
-                <p className="text-sm text-gray-600">Test PDF upload and basic metadata extraction</p>
-              </div>
-            </Link>
-            
-            <Link href="/test-enhanced-metadata" className="group">
-              <div className="bg-white p-6 rounded-xl shadow-lg hover:shadow-xl transition-all duration-300 hover:-translate-y-1 border border-gray-200">
-                <div className="w-12 h-12 bg-purple-600 rounded-xl flex items-center justify-center shadow-lg group-hover:bg-purple-700 transition-colors duration-300 mb-4">
-                  <Brain className="w-6 h-6 text-white" />
-                </div>
-                <h3 className="font-semibold text-gray-900 mb-2">Enhanced Metadata</h3>
-                <p className="text-sm text-gray-600">AI-powered metadata extraction with Crossref & Semantic Scholar</p>
-              </div>
-            </Link>
-            
-            <Link href="/test-math-explainer" className="group">
-              <div className="bg-white p-6 rounded-xl shadow-lg hover:shadow-xl transition-all duration-300 hover:-translate-y-1 border border-gray-200">
-                <div className="w-12 h-12 bg-green-600 rounded-xl flex items-center justify-center shadow-lg group-hover:bg-green-700 transition-colors duration-300 mb-4">
-                  <Calculator className="w-6 h-6 text-white" />
-                </div>
-                <h3 className="font-semibold text-gray-900 mb-2">Math Explainer</h3>
-                <p className="text-sm text-gray-600">AI-powered mathematical concept explanation</p>
-              </div>
-            </Link>
-          </div>
-        </div>
-      </section>
+        {/* Compact CTA */}
+        <section className="py-16 text-center">
+          <h2 className="text-2xl font-bold mb-6 text-gray-900">Ready to upgrade your workflow?</h2>
+          <Link href="/auth/signup">
+            <Button size="lg" className="h-12 px-8 rounded-full bg-blue-600 hover:bg-blue-700 text-white shadow-md font-bold text-base">
+              Get Started Now
+            </Button>
+          </Link>
+        </section>
 
-      {/* How It Works Section */}
-      <section className="py-20 bg-white" id="how-it-works">
-        <div className="max-w-7xl mx-auto px-6">
-          <div className="max-w-3xl mx-auto text-center mb-16">
-            <h2 className="text-3xl font-bold text-gray-900 mb-6">How It Works</h2>
-            <p className="text-lg text-gray-600">Get started in just a few steps and experience seamless research collaboration.</p>
-          </div>
-          <div className="grid md:grid-cols-4 gap-8 max-w-4xl mx-auto">
-            <div className="flex flex-col items-center text-center fade-in-up">
-              <div className="w-12 h-12 bg-blue-100 rounded-2xl flex items-center justify-center mb-4"><FileText className="w-6 h-6 text-blue-600" /></div>
-              <span className="font-semibold text-gray-900 mb-2">Sign Up</span>
-              <span className="text-gray-500 text-sm">Create your free account to access all features.</span>
-            </div>
-            <div className="flex flex-col items-center text-center fade-in-up" style={{ animationDelay: '0.1s' }}>
-              <div className="w-12 h-12 bg-green-100 rounded-2xl flex items-center justify-center mb-4"><BookOpen className="w-6 h-6 text-green-600" /></div>
-              <span className="font-semibold text-gray-900 mb-2">Upload Papers</span>
-              <span className="text-gray-500 text-sm">Import your research documents and organize your library.</span>
-            </div>
-            <div className="flex flex-col items-center text-center fade-in-up" style={{ animationDelay: '0.2s' }}>
-              <div className="w-12 h-12 bg-yellow-100 rounded-2xl flex items-center justify-center mb-4"><PenTool className="w-6 h-6 text-yellow-600" /></div>
-              <span className="font-semibold text-gray-900 mb-2">Collaborate</span>
-              <span className="text-gray-500 text-sm">Annotate, discuss, and share insights with your team in real-time.</span>
-            </div>
-            <div className="flex flex-col items-center text-center fade-in-up" style={{ animationDelay: '0.3s' }}>
-              <div className="w-12 h-12 bg-purple-100 rounded-2xl flex items-center justify-center mb-4"><Brain className="w-6 h-6 text-purple-600" /></div>
-              <span className="font-semibold text-gray-900 mb-2">Leverage AI</span>
-              <span className="text-gray-500 text-sm">Get summaries, answers, and research suggestions from AI.</span>
-            </div>
-          </div>
-        </div>
-      </section>
+      </main>
 
-      {/* Testimonials */}
-      <section className="py-20 bg-white">
-        <div className="max-w-7xl mx-auto px-6">
-          <div className="max-w-3xl mx-auto text-center mb-16">
-            <h2 className="text-3xl font-bold text-gray-900 mb-6">
-              Trusted by Leading Researchers
-            </h2>
-            <p className="text-lg text-gray-600">
-              See what academics and research teams are saying about LitSense.
-            </p>
+      {/* Minimal Footer */}
+      <footer className="bg-white py-8 border-t border-gray-100">
+        <div className="max-w-4xl mx-auto px-6 flex flex-col md:flex-row items-center justify-between gap-4 text-sm text-gray-500">
+          <div className="flex items-center gap-2">
+            <div className="w-6 h-6 bg-gray-900 rounded-md flex items-center justify-center text-white">
+              <FileText size={12} fill="currentColor" />
+            </div>
+            <span className="font-bold text-gray-900">LitSense</span>
+            <span className="mx-2">•</span>
+            <span>© 2024</span>
           </div>
-
-          <div className="grid md:grid-cols-2 gap-8 max-w-5xl mx-auto">
-            {testimonials.map((testimonial, index) => (
-              <Card key={index} className="border border-gray-200 hover:border-blue-300 hover:shadow-lg hover:-translate-y-1 transition-all duration-300">
-                <CardHeader className="pb-4">
-                  <div className="flex items-center space-x-1 mb-4">
-                    {[...Array(testimonial.rating)].map((_, i) => (
-                      <Star key={i} className="w-4 h-4 fill-yellow-400 text-yellow-400" />
-                    ))}
-                  </div>
-                  <blockquote className="text-lg font-medium text-gray-900 leading-relaxed">
-                    "{testimonial.quote}"
-                  </blockquote>
-                </CardHeader>
-                <CardContent>
-                  <div className="flex items-center space-x-3">
-                    <div className="w-12 h-12 bg-blue-100 rounded-xl flex items-center justify-center">
-                      <Award className="w-5 h-5 text-blue-600" />
-                    </div>
-                    <div>
-                      <p className="font-semibold text-gray-900">{testimonial.author}</p>
-                      <p className="text-sm text-gray-600">{testimonial.role}</p>
-                      <p className="text-sm text-gray-600">{testimonial.institution}</p>
-                    </div>
-                  </div>
-                </CardContent>
-              </Card>
-            ))}
+          <div className="flex gap-6 font-medium">
+            <Link href="#" className="hover:text-gray-900">Privacy</Link>
+            <Link href="#" className="hover:text-gray-900">Terms</Link>
+            <Link href="#" className="hover:text-gray-900">Contact</Link>
           </div>
-        </div>
-      </section>
-
-      {/* Call to Action */}
-      <section className="py-20 bg-gradient-to-br from-blue-600 to-blue-700 text-white relative overflow-hidden">
-        <div className="absolute inset-0 bg-gradient-to-br from-blue-600/90 to-blue-700 opacity-95"></div>
-        <div className="max-w-7xl mx-auto px-6 relative">
-          <div className="max-w-3xl mx-auto text-center">
-            <h2 className="text-3xl font-bold text-white mb-6">
-              Ready to Transform Your Research Workflow?
-            </h2>
-            <p className="text-xl text-blue-100 mb-10 leading-relaxed">
-              Join thousands of researchers who are already collaborating more effectively with LitSense.
-            </p>
-            
-            <div className="flex flex-col sm:flex-row gap-4 justify-center">
-              <Link href="/auth/signup">
-                <Button size="lg" variant="secondary" className="text-base px-8 py-4 bg-white text-blue-600 hover:bg-gray-50 shadow-xl">
-                  Start Free Trial
-                  <ArrowRight className="w-4 h-4 ml-2" />
-                </Button>
-              </Link>
-              <Link href="/contact">
-                <Button size="lg" variant="outline" className="text-base px-8 py-4 border-white/20 text-white hover:bg-white/10 hover:border-white/40">
-                  Contact Sales
-                </Button>
-              </Link>
-            </div>
-          </div>
-        </div>
-      </section>
-
-      {/* Add at the top of the footer section */}
-      <section aria-hidden="true" className="-mb-1">
-        <svg viewBox="0 0 1440 100" fill="none" xmlns="http://www.w3.org/2000/svg" className="w-full h-20">
-          <path d="M0,40 C480,120 960,0 1440,80 L1440,100 L0,100 Z" fill="#1e293b" fillOpacity="0.95" />
-        </svg>
-      </section>
-      {/* Footer */}
-      <footer className="relative bg-white/80 backdrop-blur-xl text-gray-900 py-16 fade-in-up shadow-2xl border-t border-gray-200">
-        <div className="max-w-7xl mx-auto px-6">
-          <div className="grid md:grid-cols-5 gap-12 mb-12 items-center">
-            {/* Brand & Social */}
-            <div className="flex flex-col items-center md:items-start text-center md:text-left col-span-2">
-              <div className="flex items-center space-x-3 mb-6">
-                <div className="w-10 h-10 bg-blue-600 rounded-2xl flex items-center justify-center shadow-lg">
-                  <FileText className="w-6 h-6 text-white" />
-                </div>
-                <span className="text-2xl font-bold tracking-tight">LitSense</span>
-              </div>
-              <p className="text-gray-600 leading-relaxed mb-6 max-w-xs">
-                Empowering researchers worldwide with collaborative tools for academic excellence.
-              </p>
-              <div className="flex items-center space-x-2 text-sm text-gray-500 mb-4">
-                <Globe2 className="w-4 h-4" aria-label="Global" />
-                <span>Used in 50+ countries</span>
-              </div>
-              <div className="flex space-x-4 mt-2">
-                <a href="https://twitter.com/" target="_blank" rel="noopener noreferrer" aria-label="Twitter" className="hover:scale-125 hover:text-blue-500 hover:shadow-lg transition-all duration-300 focus:outline-none focus:ring-2 focus:ring-blue-400 rounded-full"><Twitter className="w-6 h-6" /></a>
-                <a href="https://linkedin.com/" target="_blank" rel="noopener noreferrer" aria-label="LinkedIn" className="hover:scale-125 hover:text-blue-700 hover:shadow-lg transition-all duration-300 focus:outline-none focus:ring-2 focus:ring-blue-400 rounded-full"><Linkedin className="w-6 h-6" /></a>
-                <a href="https://github.com/" target="_blank" rel="noopener noreferrer" aria-label="GitHub" className="hover:scale-125 hover:text-gray-800 hover:shadow-lg transition-all duration-300 focus:outline-none focus:ring-2 focus:ring-blue-400 rounded-full"><Github className="w-6 h-6" /></a>
-              </div>
-            </div>
-            {/* Links */}
-            <div>
-              <h3 className="font-semibold mb-4 text-gray-900">Product</h3>
-              <div className="space-y-3 text-sm text-gray-500">
-                <Link href="/features" className="block hover:text-blue-600 transition-colors duration-200">Features</Link>
-                <Link href="/pricing" className="block hover:text-blue-600 transition-colors duration-200">Pricing</Link>
-                <Link href="/integrations" className="block hover:text-blue-600 transition-colors duration-200">Integrations</Link>
-                <Link href="/api" className="block hover:text-blue-600 transition-colors duration-200">API</Link>
-              </div>
-            </div>
-            <div>
-              <h3 className="font-semibold mb-4 text-gray-900">Company</h3>
-              <div className="space-y-3 text-sm text-gray-500">
-                <Link href="/about" className="block hover:text-blue-600 transition-colors duration-200">About</Link>
-                <Link href="/blog" className="block hover:text-blue-600 transition-colors duration-200">Blog</Link>
-                <Link href="/careers" className="block hover:text-blue-600 transition-colors duration-200">Careers</Link>
-                <Link href="/press" className="block hover:text-blue-600 transition-colors duration-200">Press</Link>
-              </div>
-            </div>
-            {/* Newsletter */}
-            <div className="col-span-2 flex flex-col items-center md:items-end text-center md:text-right">
-              <h3 className="font-semibold mb-4 text-gray-900">Newsletter</h3>
-              <form className="flex flex-col sm:flex-row gap-3 w-full max-w-md mx-auto" onSubmit={e => { e.preventDefault(); alert('Thank you for subscribing!'); }}>
-                <div className="relative w-full">
-                  <span className="absolute left-3 top-1/2 -translate-y-1/2 text-blue-500"><MailIcon className="w-5 h-5" /></span>
-                  <input type="email" required aria-label="Email address" placeholder="Your email address" className="pl-10 pr-4 py-2 rounded-full bg-white/80 text-gray-900 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 w-full shadow-md" />
-                </div>
-                <button type="submit" className="px-6 py-2 rounded-full bg-blue-600 hover:bg-blue-700 text-white font-semibold shadow-lg transition-all duration-200 w-full sm:w-auto active:scale-95">Subscribe</button>
-              </form>
-              <p className="text-xs text-gray-500 mt-2">Get updates and research tips. No spam.</p>
-            </div>
-          </div>
-          {/* Founder Quote/Photo */}
-          <div className="flex flex-col md:flex-row items-center justify-between gap-8 py-8 border-t border-gray-200">
-            <div className="flex items-center gap-4">
-              <img src="https://randomuser.me/api/portraits/men/32.jpg" alt="Sakil Sarker, Founder" className="w-14 h-14 rounded-full border-2 border-blue-600 shadow-md object-cover" />
-              <div>
-                <p className="italic text-gray-700 max-w-xs">“Our mission is to make research collaboration effortless and inspiring for everyone.”</p>
-                <span className="block mt-1 font-semibold text-gray-900">Sakil Sarker, Founder</span>
-              </div>
-            </div>
-            {/* Mini Logo Bar */}
-            <div className="flex gap-6 items-center">
-              <Image src="/vercel.svg" alt="Vercel Logo" width={60} height={18} className="opacity-80 grayscale hover:grayscale-0 transition-all duration-300" />
-              <Image src="/next.svg" alt="Next.js Logo" width={60} height={18} className="opacity-80 grayscale hover:grayscale-0 transition-all duration-300" />
-              <Image src="/globe.svg" alt="Global Research Logo" width={28} height={28} className="opacity-80 grayscale hover:grayscale-0 transition-all duration-300" />
-              <Image src="/file.svg" alt="File Collaboration Logo" width={28} height={28} className="opacity-80 grayscale hover:grayscale-0 transition-all duration-300" />
-            </div>
-            {/* Back to Top Button */}
-            <button onClick={() => window.scrollTo({top: 0, behavior: 'smooth'})} aria-label="Back to top" className="hidden md:inline-flex items-center px-4 py-2 rounded-full bg-blue-600 hover:bg-blue-700 text-white font-semibold shadow-lg transition-all duration-200 ml-8 active:scale-95 focus:outline-none focus:ring-2 focus:ring-blue-400">
-              Back to top
-            </button>
-          </div>
-          <div className="pt-8 text-center text-gray-500 text-sm">
-            &copy; 2024 LitSense. All rights reserved. Built with <span role="img" aria-label="love">❤️</span> for researchers.
+          <div className="flex gap-4">
+            <Twitter size={16} className="hover:text-gray-900 cursor-pointer" />
+            <Github size={16} className="hover:text-gray-900 cursor-pointer" />
           </div>
         </div>
       </footer>
     </div>
   )
 }
-

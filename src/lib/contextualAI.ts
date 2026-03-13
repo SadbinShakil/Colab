@@ -279,94 +279,56 @@ class ContextualAIService {
   }
 
   // Get contextual help for a section
+  // Get contextual help for a section
   async getContextualHelp(sectionId: string, sectionText: string): Promise<ContextualHelp> {
-    // Simulate advanced AI analysis with realistic academic content
-    const isAbstract = sectionText.toLowerCase().includes('abstract') || sectionText.includes('transformer') || sectionText.includes('neural')
-    const isMethodology = sectionText.toLowerCase().includes('method') || sectionText.includes('approach')
-    const isResults = sectionText.toLowerCase().includes('result') || sectionText.includes('performance')
+    try {
+      // Call the AI Help API
+      const response = await fetch('/api/ai-help', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          question: `Explain this section: ${sectionText.substring(0, 100)}...`,
+          documentContent: sectionText,
+          documentTitle: 'Research Paper',
+          userId: 'user', // You might want to pass real user ID if available
+          userName: 'User'
+        })
+      });
 
-    if (isAbstract || sectionText.includes('transformer') || sectionText.includes('attention')) {
-      return {
-        sectionId,
-        originalText: sectionText,
-        explanation: `This section introduces the Transformer architecture, a revolutionary neural network model that relies entirely on attention mechanisms. The key innovation is dispensing with recurrence and convolutions, making the model more parallelizable and efficient for sequence-to-sequence tasks like machine translation.`,
-        simplifiedVersion: `Think of the Transformer as a highly efficient translator that can process entire sentences at once, rather than word by word. It uses "attention" to focus on the most relevant parts of the input when generating each output word, similar to how you might look back at different parts of a text when writing a summary.`,
-        keyConcepts: [
-          'Attention Mechanism',
-          'Sequence Transduction',
-          'Encoder-Decoder Architecture',
-          'Parallelization',
-          'Self-Attention',
-          'Multi-Head Attention'
-        ],
-        relatedConcepts: [
-          'Recurrent Neural Networks (RNNs)',
-          'Convolutional Neural Networks (CNNs)',
-          'BERT and GPT Models',
-          'Machine Translation',
-          'Natural Language Processing'
-        ],
-        examples: [
-          'Google Translate uses Transformer-based models',
-          'BERT for search query understanding',
-          'GPT models for text generation',
-          'T5 for text-to-text transfer tasks'
-        ],
-        difficulty: 'advanced'
+      if (!response.ok) {
+        throw new Error('Failed to get AI help');
       }
-    } else if (isMethodology) {
+
+      const data = await response.json();
+      const answer = data.response.answer;
+
+      // Parse the answer to fit the ContextualHelp structure if possible
+      // For now, we'll put the whole answer in 'explanation'
+      // You could prompt the AI to return JSON to map fields better
+
       return {
         sectionId,
         originalText: sectionText,
-        explanation: `This methodology section describes the experimental setup, model architecture details, training procedures, and evaluation metrics used in the research. It provides the technical foundation for reproducing and understanding the results.`,
-        simplifiedVersion: `This part explains exactly how the researchers conducted their experiments - what data they used, how they trained their model, and how they measured success.`,
-        keyConcepts: [
-          'Experimental Design',
-          'Model Architecture',
-          'Training Protocol',
-          'Evaluation Metrics',
-          'Hyperparameters'
-        ],
-        relatedConcepts: [
-          'Statistical Significance',
-          'Baseline Comparisons',
-          'Cross-validation',
-          'Reproducibility'
-        ],
-        examples: [
-          'WMT translation datasets',
-          'BLEU score evaluation',
-          'Adam optimizer',
-          'Learning rate scheduling'
-        ],
+        explanation: answer,
+        simplifiedVersion: "See explanation above.",
+        keyConcepts: [], // You could extract these from the AI response
+        relatedConcepts: [],
+        examples: [],
         difficulty: 'intermediate'
-      }
-    } else {
+      };
+    } catch (error) {
+      console.error('Error getting contextual help:', error);
+      // Fallback
       return {
         sectionId,
         originalText: sectionText,
-        explanation: `This section presents important findings and analysis from the research study. It demonstrates the effectiveness of the proposed approach through quantitative results and qualitative analysis.`,
-        simplifiedVersion: `This part shows the results of the experiments and explains what they mean for the field of study.`,
-        keyConcepts: [
-          'Performance Metrics',
-          'Statistical Analysis',
-          'Comparative Results',
-          'Significance Testing'
-        ],
-        relatedConcepts: [
-          'Baseline Methods',
-          'State-of-the-art',
-          'Error Analysis',
-          'Ablation Studies'
-        ],
-        examples: [
-          'BLEU score improvements',
-          'Training time reduction',
-          'Model size comparison',
-          'Quality assessment'
-        ],
+        explanation: "Sorry, I couldn't generate an explanation at this time.",
+        simplifiedVersion: "",
+        keyConcepts: [],
+        relatedConcepts: [],
+        examples: [],
         difficulty: 'intermediate'
-      }
+      };
     }
   }
 

@@ -6,10 +6,10 @@ import { Card, CardContent, CardHeader, CardTitle } from './ui/card'
 import { Badge } from './ui/badge'
 import { Input } from './ui/input'
 import { Textarea } from './ui/textarea'
-import { 
-  AlertTriangle, 
-  MessageSquare, 
-  BookOpen, 
+import {
+  AlertTriangle,
+  MessageSquare,
+  BookOpen,
   Clock,
   ThumbsUp,
   Reply,
@@ -81,7 +81,7 @@ export default function StuckHelpModal({
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [showAIResponse, setShowAIResponse] = useState(false)
   const [aiResponse, setAiResponse] = useState('')
-  
+
   // Hard-coded collaborative responses for video demonstration - more realistic and diverse
   const demoResponses: StuckHelpResponse[] = [
     {
@@ -357,46 +357,45 @@ export default function StuckHelpModal({
             <div className="space-y-4">
               <h3 className="text-lg font-semibold text-gray-900">Community Responses</h3>
               {(stuckHelp.responses && stuckHelp.responses.length > 0 ? stuckHelp.responses : demoResponses).map((response) => (
-                  <Card key={response.id} className={response.type === 'ai' ? 'bg-blue-50 border-blue-200' : 'bg-gray-50 border-gray-200'}>
-                    <CardContent className="p-4">
-                      <div className="flex items-start space-x-3">
-                        {response.type === 'ai' ? (
-                          <Bot className="w-5 h-5 text-blue-600 mt-1" />
-                        ) : (
-                          <User className="w-5 h-5 text-gray-600 mt-1" />
-                        )}
-                        <div className="flex-1">
-                          <div className="flex items-center space-x-2 mb-2">
-                            <span className="font-medium text-sm text-gray-900">
-                              {response.type === 'ai' ? 'AI Assistant' : response.userName}
-                            </span>
-                            <Badge variant="secondary" className="text-xs">
-                              {response.type}
+                <Card key={response.id} className={response.type === 'ai' ? 'bg-blue-50 border-blue-200' : 'bg-gray-50 border-gray-200'}>
+                  <CardContent className="p-4">
+                    <div className="flex items-start space-x-3">
+                      {response.type === 'ai' ? (
+                        <Bot className="w-5 h-5 text-blue-600 mt-1" />
+                      ) : (
+                        <User className="w-5 h-5 text-gray-600 mt-1" />
+                      )}
+                      <div className="flex-1">
+                        <div className="flex items-center space-x-2 mb-2">
+                          <span className="font-medium text-sm text-gray-900">
+                            {response.type === 'ai' ? 'AI Assistant' : response.userName}
+                          </span>
+                          <Badge variant="secondary" className="text-xs">
+                            {response.type}
+                          </Badge>
+                          <span className="text-xs text-gray-500">
+                            {new Date(response.createdAt).toLocaleDateString()}
+                          </span>
+                        </div>
+                        <p className="text-gray-800 text-sm leading-relaxed mb-3">{response.content}</p>
+                        <div className="flex items-center space-x-4 text-sm text-gray-600">
+                          <span className="flex items-center space-x-1">
+                            <ThumbsUp className="w-4 h-4" />
+                            <span>{response.likes} helpful</span>
+                          </span>
+                          {response.isHelpful && (
+                            <Badge variant="outline" className="text-xs text-green-600 border-green-200">
+                              <CheckCircle className="w-3 h-3 mr-1" />
+                              Marked as helpful
                             </Badge>
-                            <span className="text-xs text-gray-500">
-                              {new Date(response.createdAt).toLocaleDateString()}
-                            </span>
-                          </div>
-                          <p className="text-gray-800 text-sm leading-relaxed mb-3">{response.content}</p>
-                          <div className="flex items-center space-x-4 text-sm text-gray-600">
-                            <span className="flex items-center space-x-1">
-                              <ThumbsUp className="w-4 h-4" />
-                              <span>{response.likes} helpful</span>
-                            </span>
-                            {response.isHelpful && (
-                              <Badge variant="outline" className="text-xs text-green-600 border-green-200">
-                                <CheckCircle className="w-3 h-3 mr-1" />
-                                Marked as helpful
-                              </Badge>
-                            )}
-                          </div>
+                          )}
                         </div>
                       </div>
-                    </CardContent>
-                  </Card>
-                ))}
-              </div>
-            )}
+                    </div>
+                  </CardContent>
+                </Card>
+              ))}
+            </div>
 
             {/* Response Input */}
             <Card>

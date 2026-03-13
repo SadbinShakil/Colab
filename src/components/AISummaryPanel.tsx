@@ -165,7 +165,7 @@
 //     description: 'Practical applications and industry adoption',
 //     confidence: 93
 //   },
-  
+
 //   // Non-Research Document Sections
 //   contentType: {
 //     label: 'Document Type',
@@ -220,13 +220,13 @@
 // export default function AISummaryPanel({ summary, loading, open, onClose, onAskMore, onRegenerate, lastUpdated, documentContent, onGoToPage }: AISummaryPanelProps) {
 //   const [expanded, setExpanded] = useState<Record<string, boolean>>({})
 //   const [copied, setCopied] = useState<string | null>(null)
-  
+
 //   // Advanced Analysis State
 //   const [persona, setPersona] = useState<Persona>('reviewer');
 //   const [budget, setBudget] = useState<TimeBudget>('2m');
 //   const [depth, setDepth] = useState(3);
 //   const [showAdvancedAnalysis, setShowAdvancedAnalysis] = useState(true); // Always show by default
-  
+
 //   // Use web worker for heavy analysis
 //   const { 
 //     alignedClaims, 
@@ -236,29 +236,29 @@
 //     loading: workerLoading,
 //     error: workerError 
 //   } = useAnalysisEngine(documentContent, summary);
-  
+
 //   // Generate advanced summary from worker results
 //   const [advSummary, setAdvSummary] = useState<AdvancedSummary | null>(null);
-  
+
 //   // Advanced Analysis Modes & Features
 //   const [analysisMode, setAnalysisMode] = useState<'comprehensive' | 'research' | 'technical' | 'critical' | 'comparative'>('comprehensive');
 //   const [focusAreas, setFocusAreas] = useState<string[]>([]);
 //   const [analysisDepth, setAnalysisDepth] = useState<'surface' | 'moderate' | 'deep' | 'expert'>('moderate');
 //   const [visualizationType, setVisualizationType] = useState<'charts' | 'network' | 'timeline' | 'heatmap'>('charts');
-  
+
 //   // Real-time Analysis Features
 //   const [realTimeInsights, setRealTimeInsights] = useState<any[]>([]);
 //   const [confidenceScore, setConfidenceScore] = useState<number>(0);
 //   const [analysisProgress, setAnalysisProgress] = useState<number>(0);
 //   const [keyInsights, setKeyInsights] = useState<string[]>([]);
-  
+
 //   // Interactive Features
 //   const [selectedSection, setSelectedSection] = useState<string | null>(null);
 //   const [highlightMode, setHighlightMode] = useState<'none' | 'contributions' | 'limitations' | 'methods' | 'results'>('none');
 //   const [exportFormat, setExportFormat] = useState<'pdf' | 'json' | 'markdown' | 'presentation'>('pdf');
 //   const [showInsights, setShowInsights] = useState<boolean>(true);
 //   const [showMetrics, setShowMetrics] = useState<boolean>(true);
-  
+
 //   // Advanced Analysis State
 //   const [showAdvancedFeatures, setShowAdvancedFeatures] = useState<boolean>(false);
 
@@ -275,7 +275,7 @@
 //   // Advanced Analysis Functions
 //   const generateRealTimeInsights = () => {
 //     if (!documentContent) return;
-    
+
 //     const insights = [
 //       { type: 'keyword', text: 'High-frequency terms detected', confidence: 0.92 },
 //       { type: 'structure', text: 'Well-organized document structure', confidence: 0.88 },
@@ -283,7 +283,7 @@
 //       { type: 'results', text: 'Quantitative results found', confidence: 0.90 },
 //       { type: 'novelty', text: 'Novel contributions highlighted', confidence: 0.87 }
 //     ];
-    
+
 //     setRealTimeInsights(insights);
 //     setConfidenceScore(insights.reduce((acc, insight) => acc + insight.confidence, 0) / insights.length);
 //   };
@@ -297,14 +297,14 @@
 //     if (summary.results) progress += 15;
 //     if (summary.limitations) progress += 10;
 //     if (summary.keyFindings) progress += 10;
-    
+
 //     setAnalysisProgress(progress);
 //     return progress;
 //   };
 
 //   const extractKeyInsights = () => {
 //     if (!documentContent) return [];
-    
+
 //     const insights = [
 //       'Document contains comprehensive methodology section',
 //       'Multiple quantitative results and metrics identified',
@@ -312,7 +312,7 @@
 //       'Limitations and future work discussed',
 //       'Well-structured academic format detected'
 //     ];
-    
+
 //     setKeyInsights(insights);
 //     return insights;
 //   };
@@ -324,7 +324,7 @@
 //     try {
 //       // 1. Build page map from extracted text
 //       const pages = splitByPages(documentContent);
-      
+
 //       // 2. Build claims from summary fields
 //       const claims = buildClaims({
 //         title: summary.title,
@@ -336,39 +336,39 @@
 //         intro: documentContent,
 //         conclusion: documentContent
 //       });
-      
+
 //       // 3. Align evidence and apply hallucination guard
 //       const aligned = hallucinationGuard(
 //         alignEvidence({ claims, pages, onGoToPage }),
 //         0.33
 //       );
-      
+
 //       // 4. Score integrity
 //       const integrity = scoreIntegrity({
 //         claims,
 //         aligned,
 //         fullText: documentContent
 //       });
-      
+
 //       // 5. Normalize metrics
 //       const metrics = normalizeMetrics(pages, aligned);
-      
+
 //       // 6. Generate reviewer rubric
 //       const rubric = exportMinimalReview({
 //         integrity,
 //         alignedClaims: aligned,
 //         metrics
 //       });
-      
+
 //       // State will be updated by web worker
-      
+
 //       console.log('Advanced analysis complete:', {
 //         claims: claims.length,
 //         aligned: aligned.length,
 //         metrics: metrics.length,
 //         integrity: integrity.overall
 //       });
-      
+
 //     } catch (error) {
 //       console.error('Advanced analysis failed:', error);
 //     }
@@ -418,7 +418,7 @@
 //     try {
 //       // Split document into pages for evidence mapping
 //       const pagesMap = splitByPages(documentContent);
-      
+
 //       // Build claims and align evidence using the advanced pack
 //       const claims = buildClaims({
 //         title: summary.title,
@@ -430,9 +430,9 @@
 //         results: summary.results,
 //         limitations: summary.limitations
 //       });
-      
+
 //       const aligned = hallucinationGuard(alignEvidence({ claims, pages: pagesMap }), 0.33);
-      
+
 //       // Helper to extract evidence from aligned claims
 //       const withEvidence = (q: string) => {
 //         const matchingClaim = aligned.find(a => 
@@ -446,16 +446,16 @@
 //       const extractMethodPipeline = () => {
 //         const methodSections = ['methodology', 'approach', 'technique', 'algorithm', 'model', 'framework', 'system', 'proposed', 'novel'];
 //         const pipeline: string[] = [];
-        
+
 //         // Look for method-related content in the document
 //         for (const [pageNum, content] of Object.entries(pagesMap)) {
 //           const sentences = content.split(/[.!?]+/).filter((s: string) => s.trim().length > 30);
-          
+
 //           for (const sentence of sentences) {
 //             const lowerSentence = sentence.toLowerCase();
 //             const hasMethodKeyword = methodSections.some(keyword => lowerSentence.includes(keyword));
 //             const hasActionWord = /\b(propose|introduce|develop|design|implement|present|suggest|create|build)\b/.test(lowerSentence);
-            
+
 //             if (hasMethodKeyword && hasActionWord && sentence.length > 40 && sentence.length < 300) {
 //               const cleaned = sentence.trim().replace(/^\d+\.?\s*/, '').replace(/^[A-Z]\s*/, '');
 //               if (!pipeline.some(p => p.includes(cleaned.slice(0, 20)))) {
@@ -466,7 +466,7 @@
 //           }
 //           if (pipeline.length >= 6) break;
 //         }
-        
+
 //         // If no methods found, extract any meaningful sentences
 //         if (pipeline.length === 0) {
 //           for (const [pageNum, content] of Object.entries(pagesMap)) {
@@ -481,7 +481,7 @@
 //             if (pipeline.length >= 5) break;
 //           }
 //         }
-        
+
 //         return pipeline.length > 0 ? pipeline.slice(0, 5) : [
 //           'Document Content Analysis',
 //           'Information Extraction Process',
@@ -495,7 +495,7 @@
 //       const extractContributions = () => {
 //         const contributions: { point: string; evidence: EvidenceLink[] }[] = [];
 //         const contributionKeywords = ['contribution', 'novel', 'new', 'propose', 'introduce', 'develop', 'present', 'achieve', 'improve', 'main', 'primary', 'key', 'important'];
-        
+
 //         // Check summary first
 //         if (summary.keyFindings && summary.keyFindings.length > 50) {
 //           const sentences = summary.keyFindings.split(/[.!?]+/).filter(s => s.trim().length > 30);
@@ -504,16 +504,16 @@
 //             evidence: withEvidence(sentence)
 //           })));
 //         }
-        
+
 //         // Extract from document content if needed
 //         if (contributions.length < 2) {
 //           for (const [pageNum, content] of Object.entries(pagesMap)) {
 //             const sentences = content.split(/[.!?]+/).filter((s: string) => s.trim().length > 30);
-            
+
 //             for (const sentence of sentences) {
 //               const lowerSentence = sentence.toLowerCase();
 //               const hasContributionKeyword = contributionKeywords.some(keyword => lowerSentence.includes(keyword));
-              
+
 //               if (hasContributionKeyword && sentence.length > 40 && sentence.length < 400) {
 //                 const cleaned = sentence.trim().replace(/^\d+\.?\s*/, '');
 //                 if (!contributions.some(c => c.point.includes(cleaned.slice(0, 20)))) {
@@ -528,7 +528,7 @@
 //             if (contributions.length >= 4) break;
 //           }
 //         }
-        
+
 //         // If still no contributions found, extract meaningful sentences
 //         if (contributions.length === 0) {
 //           for (const [pageNum, content] of Object.entries(pagesMap)) {
@@ -546,7 +546,7 @@
 //             if (contributions.length >= 3) break;
 //           }
 //         }
-        
+
 //         return contributions.length > 0 ? contributions.slice(0, 3) : [{
 //           point: 'Document analysis reveals key insights and findings from the content',
 //           evidence: withEvidence('key findings')
@@ -557,7 +557,7 @@
 //       const extractLimitations = () => {
 //         const limitations: { item: string; evidence: EvidenceLink[] }[] = [];
 //         const limitationKeywords = ['limitation', 'constraint', 'challenge', 'difficulty', 'issue', 'problem', 'weakness', 'restriction', 'future', 'improve', 'better'];
-        
+
 //         // Check summary first
 //         if (summary.limitations && summary.limitations.length > 30) {
 //           const sentences = summary.limitations.split(/[.!?]+/).filter(s => s.trim().length > 20);
@@ -566,16 +566,16 @@
 //             evidence: withEvidence(sentence)
 //           })));
 //         }
-        
+
 //         // Extract from document content
 //         if (limitations.length < 2) {
 //           for (const [pageNum, content] of Object.entries(pagesMap)) {
 //             const sentences = content.split(/[.!?]+/).filter((s: string) => s.trim().length > 30);
-            
+
 //             for (const sentence of sentences) {
 //               const lowerSentence = sentence.toLowerCase();
 //               const hasLimitationKeyword = limitationKeywords.some(keyword => lowerSentence.includes(keyword));
-              
+
 //               if (hasLimitationKeyword && sentence.length > 40 && sentence.length < 300) {
 //                 const cleaned = sentence.trim().replace(/^\d+\.?\s*/, '');
 //                 if (!limitations.some(l => l.item.includes(cleaned.slice(0, 20)))) {
@@ -590,7 +590,7 @@
 //             if (limitations.length >= 3) break;
 //           }
 //         }
-        
+
 //         // If still no limitations found, extract any meaningful sentences about challenges
 //         if (limitations.length === 0) {
 //           for (const [pageNum, content] of Object.entries(pagesMap)) {
@@ -608,7 +608,7 @@
 //             if (limitations.length >= 2) break;
 //           }
 //         }
-        
+
 //         return limitations.length > 0 ? limitations.slice(0, 2) : [{
 //           item: 'Analysis limitations and scope constraints identified in the document',
 //           evidence: withEvidence('limitation')
@@ -619,24 +619,24 @@
 //       const extractPerformanceMetrics = () => {
 //         const metrics: ResultRow[] = [];
 //         const performanceKeywords = ['accuracy', 'precision', 'recall', 'f1', 'performance', 'result', 'metric', 'score', 'rate', '%', 'error', 'loss', 'auc', 'rmse', 'mae'];
-        
+
 //         for (const [pageNum, content] of Object.entries(pagesMap)) {
 //           const lines = content.split('\n');
-          
+
 //           for (const line of lines) {
 //             const lowerLine = line.toLowerCase();
 //             const hasPerformanceKeyword = performanceKeywords.some(keyword => lowerLine.includes(keyword));
 //             const hasNumber = /\d+\.?\d*%?/.test(line);
-            
+
 //             if (hasPerformanceKeyword && hasNumber && line.length > 20 && line.length < 300) {
 //               // Extract numbers and context
 //               const numbers = line.match(/\d+\.?\d*%?/g) || [];
 //               const context = line.trim();
-              
+
 //               if (numbers.length > 0) {
 //                 // Try to extract the actual metric name from the line
 //                 const metricName = extractMetricName(line);
-                
+
 //                 metrics.push({
 //                   metric: metricName,
 //                   dataset: `Page ${pageNum}`,
@@ -648,21 +648,21 @@
 //                     ((parseFloat(numbers[0]?.replace('%', '') || '0') - parseFloat(numbers[1].replace('%', ''))) / parseFloat(numbers[1].replace('%', ''))) * 100 : 0,
 //                   evidence: withEvidence(line)
 //                 });
-                
+
 //                 if (metrics.length >= 8) break;
 //               }
 //             }
 //           }
 //           if (metrics.length >= 8) break;
 //         }
-        
+
 //         return metrics.slice(0, 8);
 //       };
 
 //       // Helper function to extract metric name from a line
 //       const extractMetricName = (line: string) => {
 //         const lowerLine = line.toLowerCase();
-        
+
 //         if (lowerLine.includes('accuracy')) return 'Accuracy';
 //         if (lowerLine.includes('precision')) return 'Precision';
 //         if (lowerLine.includes('recall')) return 'Recall';
@@ -673,7 +673,7 @@
 //         if (lowerLine.includes('error')) return 'Error Rate';
 //         if (lowerLine.includes('loss')) return 'Loss';
 //         if (lowerLine.includes('performance')) return 'Performance';
-        
+
 //         // Try to extract from the beginning of the line
 //         const words = line.split(/\s+/).slice(0, 3);
 //         const capitalized = words.map(w => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase()).join(' ');
@@ -688,13 +688,13 @@
 //         const hasResults = summary.resultsMatrix && summary.resultsMatrix.length > 0;
 //         const hasLimitations = summary.limitations && summary.limitations.length > 30;
 //         const hasReferences = documentContent.toLowerCase().includes('reference') || documentContent.toLowerCase().includes('bibliography');
-        
+
 //         // Calculate scores based on content quality indicators
 //         const significance = hasResults ? Math.min(5, Math.max(3, 4 + Math.floor(contentLength / 10000))) : 3;
 //         const originality = hasMethods ? Math.min(5, Math.max(2, 3 + Math.floor(contentLength / 15000))) : 3;
 //         const technical = hasMethods && hasResults ? Math.min(5, Math.max(3, 4 + Math.floor(contentLength / 12000))) : 3;
 //         const clarity = hasAbstract ? Math.min(5, Math.max(3, 3 + Math.floor(contentLength / 20000))) : 3;
-        
+
 //         return { significance, originality, technical, clarity };
 //       };
 
@@ -702,14 +702,14 @@
 //       const extractApplications = () => {
 //         const applications: string[] = [];
 //         const appKeywords = ['application', 'use', 'utilize', 'implement', 'deploy', 'practical', 'real-world'];
-        
+
 //         for (const [pageNum, content] of Object.entries(pagesMap)) {
 //           const sentences = content.split(/[.!?]+/).filter((s: string) => s.trim().length > 30);
-          
+
 //           for (const sentence of sentences) {
 //             const lowerSentence = sentence.toLowerCase();
 //             const hasAppKeyword = appKeywords.some(keyword => lowerSentence.includes(keyword));
-            
+
 //             if (hasAppKeyword && sentence.length > 40 && sentence.length < 300) {
 //               const cleaned = sentence.trim().replace(/^\d+\.?\s*/, '');
 //               if (!applications.some(a => a.includes(cleaned.slice(0, 20)))) {
@@ -720,7 +720,7 @@
 //           }
 //           if (applications.length >= 3) break;
 //         }
-        
+
 //         return applications.length > 0 ? applications.slice(0, 2) : ['Real-world applications identified in document analysis'];
 //       };
 
@@ -751,7 +751,7 @@
 
 //       setAdvSummary(realSummary);
 //       setShowAdvancedAnalysis(true);
-      
+
 //       console.log('Generated advanced summary:', {
 //         contributions: realSummary.contributions.length,
 //         limitations: realSummary.limitations.length,
@@ -759,7 +759,7 @@
 //         resultsMatrix: realSummary.resultsMatrix.length,
 //         tldr: realSummary.tldr.substring(0, 100) + '...'
 //       });
-      
+
 //     } catch (err) {
 //       console.error('Advanced analysis failed:', err);
 //       // Fallback with document-specific data
@@ -855,7 +855,7 @@
 //   const VisualAnalysisPanel = ({ advSummary }: { advSummary: AdvancedSummary }) => {
 //     // Type guard - return early if no summary
 //     if (!advSummary) return null;
-    
+
 //     // Radar data with type guards
 //     const radarData = [
 //       { axis: 'Significance', score: advSummary.reviewerScores?.significance ?? 0 },
@@ -921,7 +921,7 @@
 //                   </>
 //                 )}
 //               </ButtonComponent>
-              
+
 //               <ButtonComponent 
 //                 onClick={() => setShowAdvancedFeatures(!showAdvancedFeatures)}
 //                 variant="outline"
@@ -961,7 +961,7 @@
 //               </div>
 //               <h4 className="text-lg font-semibold text-gray-900">Smart Summary</h4>
 //             </div>
-            
+
 //             <div className="bg-gray-50 rounded-xl p-4 mb-4">
 //               <p className="text-gray-800 leading-relaxed">{advSummary.tldr}</p>
 //             </div>
@@ -996,7 +996,7 @@
 //         {/* Clean Analysis Results */}
 //         {advSummary && (
 //           <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-            
+
 //             {/* Document Structure */}
 //             <div className="bg-white rounded-2xl p-6 shadow-lg border border-gray-200">
 //               <h4 className="text-lg font-semibold text-gray-900 mb-4 flex items-center gap-2">
@@ -1251,7 +1251,7 @@
 //             </button>
 //           </div>
 //         </div>
-        
+
 //         {/* Enhanced Status */}
 //         <div className="flex items-center justify-between mt-3">
 //           <div className="flex items-center gap-3">
@@ -1285,7 +1285,7 @@
 //             </div>
 //             <div className="absolute -inset-4 bg-gradient-to-r from-blue-400/20 to-purple-400/20 rounded-3xl blur-xl animate-pulse"></div>
 //           </div>
-          
+
 //           <div className="text-center mb-8">
 //             <h3 className="text-xl font-bold text-gray-900 mb-2">AI Analysis in Progress</h3>
 //             <p className="text-gray-600 text-sm">Processing document with advanced algorithms...</p>
@@ -1359,11 +1359,11 @@
 //           {/* Render appropriate sections based on content type */}
 //           {(!!summary.isResearchPaper ? sectionOrder : nonResearchSectionOrder).map((key, idx) => {
 //             const meta = sectionMeta[key]
-            
+
 //             // Special handling for documentInfo section
 //             let value = get(key as keyof SummaryShape, 'Analysis pending...')
 //             let isExpandable = value.length > 120 || meta.askMore
-            
+
 //             if (key === 'documentInfo' && summary.isResearchPaper) {
 //               // Combine all basic document information
 //               value = [
@@ -1375,11 +1375,11 @@
 //               ].join('\n\n');
 //               isExpandable = true // Always expandable since it contains multiple pieces of info
 //             }
-            
+
 //             const isOpen = expanded[key] || !isExpandable
 //             return (
 //               <div key={key} className={`bg-white rounded-xl border-2 border-gray-200 shadow-lg transition-all duration-300 hover:shadow-xl hover:scale-[1.02] ${isOpen ? 'ring-2 ring-blue-300 shadow-blue-100 border-blue-200' : 'hover:border-gray-300'}`}>
-                
+
 //                 {/* Enhanced Section Header */}
 //                 <div className="p-4 cursor-pointer group" onClick={() => isExpandable && handleToggle(key)}>
 //                   <div className="flex items-center justify-between">
@@ -1392,7 +1392,7 @@
 //                         <p className="text-gray-600 text-sm">{meta.description}</p>
 //                       </div>
 //                     </div>
-                    
+
 //                     <div className="flex items-center space-x-3">
 //                       {/* Enhanced Confidence Badge */}
 //                       {meta.confidence && (
@@ -1400,7 +1400,7 @@
 //                           {meta.confidence}%
 //                         </Badge>
 //                       )}
-                      
+
 //                       {/* Enhanced Action Buttons */}
 //                       <button
 //                         className="p-2 rounded-lg hover:bg-gray-100 transition-all duration-200 relative group shadow-sm border border-gray-200"
@@ -1412,7 +1412,7 @@
 //                           <span className="absolute -top-8 left-1/2 -translate-x-1/2 bg-green-600 text-white text-xs rounded-lg px-2 py-1 shadow-lg">Copied!</span>
 //                         )}
 //                       </button>
-                      
+
 //                       {meta.askMore && onAskMore && (
 //                         <button
 //                           className="px-4 py-2 rounded-lg bg-gradient-to-r from-blue-600 to-purple-600 text-white text-sm font-medium hover:from-blue-700 hover:to-purple-700 transition-all duration-200 shadow-md hover:shadow-lg"
@@ -1423,7 +1423,7 @@
 //                           More
 //                         </button>
 //                       )}
-                      
+
 //                       {isExpandable && (
 //                         <button className="p-2 rounded-lg hover:bg-gray-100 transition-all duration-200 shadow-sm border border-gray-200">
 //                           {isOpen ? 
@@ -1480,7 +1480,7 @@
 //                 </div>
 //               </div>
 //             </div>
-            
+
 //             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
 //               {/* Normal Analysis */}
 //               <div className={`p-4 rounded-xl border-2 transition-all duration-300 cursor-pointer ${
@@ -1535,7 +1535,7 @@
 //                 <h3 className="text-xl font-bold text-gray-900 mb-2">Normal Analysis</h3>
 //                 <p className="text-gray-600">Standard document insights and key findings</p>
 //               </div>
-              
+
 //               {/* Summary Cards Grid */}
 //               <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
 //                 {/* Document Overview */}
@@ -1703,7 +1703,7 @@
 //                 <h3 className="text-xl font-bold text-gray-900 mb-2">Advanced Analysis</h3>
 //                 <p className="text-gray-600">Interactive charts, performance metrics, and deep insights</p>
 //               </div>
-              
+
 //               <VisualAnalysisPanel 
 //                 advSummary={advSummary || {
 //                   tldr: workerLoading ? 'AI analysis in progress...' : 'Analysis ready - click Advanced for detailed insights',
@@ -1805,7 +1805,7 @@ type SummaryShape = {
   limitations?: string; futureWork?: string; applications?: string;
   contentType?: string; summary?: string; keyPoints?: string; structure?: string; audience?: string;
   confidence?: number;
-  resultsMatrix?: Array<{ metric:string; dataset:string; model:string; value:number; baseline?:string; baselineValue?:number; ciLow?:number; ciHigh?:number; n?:number; pValue?:number; }>;
+  resultsMatrix?: Array<{ metric: string; dataset: string; model: string; value: number; baseline?: string; baselineValue?: number; ciLow?: number; ciHigh?: number; n?: number; pValue?: number; }>;
 } & Record<string, any>;
 
 interface AISummaryPanelProps {
@@ -1865,8 +1865,8 @@ const sectionMeta: Record<string, { label: string; icon: React.ReactNode; askMor
   audience: { label: 'Target Audience', icon: <Users className="w-5 h-5" />, color: 'bg-cyan-100', gradient: 'from-cyan-500 to-cyan-600', description: 'Intended readership and purpose', confidence: 87 }
 }
 
-const sectionOrder = ['documentInfo','motivation','keyFindings','methods','results','limitations','futureWork','applications']
-const nonResearchSectionOrder = ['contentType','summary','keyPoints','structure','audience']
+const sectionOrder = ['documentInfo', 'motivation', 'keyFindings', 'methods', 'results', 'limitations', 'futureWork', 'applications']
+const nonResearchSectionOrder = ['contentType', 'summary', 'keyPoints', 'structure', 'audience']
 
 export default function AISummaryPanel({
   summary, loading, open, onClose, onAskMore, onRegenerate, lastUpdated, documentContent, onGoToPage
@@ -1890,23 +1890,23 @@ export default function AISummaryPanel({
   const get = (k: keyof SummaryShape, fallback = '') => (summary?.[k] ?? fallback) as string
   const mdLite = (s: string) => DOMPurify.sanitize(s.replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>').replace(/\n/g, '<br/>'))
   const goToPage = (p: number) => { if (onGoToPage) onGoToPage(p) }
-  const handleCopy = (key: string, value: string) => { navigator.clipboard.writeText(value); setCopied(key); setTimeout(()=>setCopied(null), 1200) }
+  const handleCopy = (key: string, value: string) => { navigator.clipboard.writeText(value); setCopied(key); setTimeout(() => setCopied(null), 1200) }
 
   // ===== NEW: PURE COMPUTATIONS (no demo text, only from your data) =====
   // Coverage of claims with evidence
   const evidenceStats = useMemo(() => {
     if (!alignedClaims || alignedClaims.length === 0) return null
-      const supported = alignedClaims.filter(c => !c.abstained && (c as any).hits?.length > 0).length
-      const contradicted = alignedClaims.filter(c => (c as any).status === 'contradicted').length
-      const weak = alignedClaims.filter(c => (c as any).status === 'weak' || (((c as any).hits?.length) || 0) < 1).length
+    const supported = alignedClaims.filter(c => !c.abstained && (c as any).hits?.length > 0).length
+    const contradicted = alignedClaims.filter(c => (c as any).status === 'contradicted').length
+    const weak = alignedClaims.filter(c => (c as any).status === 'weak' || (((c as any).hits?.length) || 0) < 1).length
     const pages = documentContent ? Object.keys(splitByPages(documentContent)).length : 0
     // evidence density per page
-    const density: { page:number; count:number }[] = []
+    const density: { page: number; count: number }[] = []
     if (documentContent) {
       const pagesMap = splitByPages(documentContent)
       const totals: Record<number, number> = {}
-      alignedClaims.forEach(c => (c.hits||[]).forEach(h => { totals[h.page] = (totals[h.page]||0)+1 }))
-      Object.entries(pagesMap).forEach(([p]) => density.push({ page: Number(p), count: totals[Number(p)]||0 }))
+      alignedClaims.forEach(c => (c.hits || []).forEach(h => { totals[h.page] = (totals[h.page] || 0) + 1 }))
+      Object.entries(pagesMap).forEach(([p]) => density.push({ page: Number(p), count: totals[Number(p)] || 0 }))
     }
     return { coverage: supported / alignedClaims.length, contradicted, weak, total: alignedClaims.length, density }
   }, [alignedClaims, documentContent])
@@ -1914,23 +1914,23 @@ export default function AISummaryPanel({
   // Results with deltas computed strictly from your summary.resultsMatrix
   const resultsWithDeltas: ResultRow[] = useMemo(() => {
     const rows: ResultRow[] = []
-    ;(summary.resultsMatrix||[]).forEach(r => {
-      const deltaPct = (typeof r.baselineValue==='number' && r.baselineValue!==0)
-        ? ((r.value - r.baselineValue)/r.baselineValue)*100
-        : undefined
-      rows.push({ metric:r.metric, dataset:r.dataset, model:r.model, value:r.value, baseline:r.baseline, baselineValue:r.baselineValue, deltaPct, ciLow:r.ciLow, ciHigh:r.ciHigh, n:r.n, pValue:r.pValue })
-    })
+      ; (summary.resultsMatrix || []).forEach(r => {
+        const deltaPct = (typeof r.baselineValue === 'number' && r.baselineValue !== 0)
+          ? ((r.value - r.baselineValue) / r.baselineValue) * 100
+          : undefined
+        rows.push({ metric: r.metric, dataset: r.dataset, model: r.model, value: r.value, baseline: r.baseline, baselineValue: r.baselineValue, deltaPct, ciLow: r.ciLow, ciHigh: r.ciHigh, n: r.n, pValue: r.pValue })
+      })
     return rows
   }, [summary.resultsMatrix])
 
   // Simple ablation matrix from normalizedMetrics if components present
   const ablation = useMemo(() => {
-    if (!normalizedMetrics || normalizedMetrics.length===0) return null
+    if (!normalizedMetrics || normalizedMetrics.length === 0) return null
     // Create a mock ablation matrix using available data
     const components = ['Data Augmentation', 'Model Architecture', 'Training Strategy']
-    const metrics = Array.from(new Set(normalizedMetrics.map(m=>m.name)))
+    const metrics = Array.from(new Set(normalizedMetrics.map(m => m.name)))
     const table = metrics.map(metric => {
-      const row: Record<string, string|number|undefined> = { metric } // metric name as string
+      const row: Record<string, string | number | undefined> = { metric } // metric name as string
       components.forEach(comp => {
         // Mock delta values based on metric name and component
         const mockDelta = Math.random() * 20 - 10 // Random between -10 and +10
@@ -1943,24 +1943,24 @@ export default function AISummaryPanel({
 
   // Limitations → risk points (attempt to parse (impact|likelihood):x patterns, else default)
   const parsedLimitations = useMemo(() => {
-    const list: { item:string; impact:number; likelihood:number }[] = []
+    const list: { item: string; impact: number; likelihood: number }[] = []
     const raw = advSummary?.limitations || []
     raw.forEach(l => {
-      const mI = /impact\s*[:=]\s*(\d)/i.exec(l.item||'')
-      const mL = /likelihood\s*[:=]\s*(\d)/i.exec(l.item||'')
-      list.push({ item: l.item, impact: mI ? Number(mI[1]) : (l.impact||3), likelihood: mL ? Number(mL[1]) : (l.likelihood||3) })
+      const mI = /impact\s*[:=]\s*(\d)/i.exec(l.item || '')
+      const mL = /likelihood\s*[:=]\s*(\d)/i.exec(l.item || '')
+      list.push({ item: l.item, impact: mI ? Number(mI[1]) : (l.impact || 3), likelihood: mL ? Number(mL[1]) : (l.likelihood || 3) })
     })
-    return list.length>0 ? list : null
+    return list.length > 0 ? list : null
   }, [advSummary])
 
   // Calibration inputs — look for metrics named “probability”, “auc”, or confusion stats
   const calibrationSeries = useMemo(() => {
     // Expect your pipeline to optionally drop bins: [{bin:0.05, pred:0.05, actual:0.03, n:120}, ...]
     // We try to fish them from normalizedMetrics extras.
-    const mm = (normalizedMetrics||[]).find(m => /calibration|prob/i.test(m.name))
-    const bins = (mm as any)?.bins as Array<{bin:number; pred:number; actual:number; n:number}>|undefined
-    if (!bins || bins.length===0) return null
-    const brier = bins.reduce((s,b)=> s + (b.pred - b.actual)**2, 0)/bins.length
+    const mm = (normalizedMetrics || []).find(m => /calibration|prob/i.test(m.name))
+    const bins = (mm as any)?.bins as Array<{ bin: number; pred: number; actual: number; n: number }> | undefined
+    if (!bins || bins.length === 0) return null
+    const brier = bins.reduce((s, b) => s + (b.pred - b.actual) ** 2, 0) / bins.length
     return { bins, brier }
   }, [normalizedMetrics])
 
@@ -1988,33 +1988,33 @@ export default function AISummaryPanel({
       }
 
       // extract minimal, only from the real fields
-      const contributions = (summary.keyFindings||'')
+      const contributions = (summary.keyFindings || '')
         .split(/[.!?]+/)
-        .map(s=>s.trim())
-        .filter(s=>s.length>30)
-        .slice(0,3)
+        .map(s => s.trim())
+        .filter(s => s.length > 30)
+        .slice(0, 3)
         .map(point => ({ point, evidence: withEvidence(point) }))
 
-      const methodPipeline = (summary.methods||'')
+      const methodPipeline = (summary.methods || '')
         .split(/[.;]+/)
-        .map(s=>s.trim())
-        .filter(s=>s.length>20)
-        .slice(0,5)
+        .map(s => s.trim())
+        .filter(s => s.length > 20)
+        .slice(0, 5)
 
-      const limitations = (summary.limitations||'')
+      const limitations = (summary.limitations || '')
         .split(/[.!?]+/)
-        .map(s=>s.trim())
-        .filter(s=>s.length>20)
-        .slice(0,3)
+        .map(s => s.trim())
+        .filter(s => s.length > 20)
+        .slice(0, 3)
         .map(item => ({ item, evidence: withEvidence(item) }))
 
       const tldr = summary.abstract || summary.summary || ''
 
       const reviewerScores = {
         significance: reviewerRubric?.significance ?? 3,
-        originality:  reviewerRubric?.originality  ?? 3,
-        technical:    reviewerRubric?.technical    ?? 3,
-        clarity:      reviewerRubric?.clarity      ?? 3,
+        originality: reviewerRubric?.originality ?? 3,
+        technical: reviewerRubric?.technical ?? 3,
+        clarity: reviewerRubric?.clarity ?? 3,
       }
 
       setAdvSummary({
@@ -2022,23 +2022,23 @@ export default function AISummaryPanel({
         contributions,
         noveltyDelta: contributions.length ? [{ claim: contributions[0].point, prior: 'baseline', evidence: contributions[0].evidence }] : [],
         methodPipeline,
-        datasetsAndMetrics: Array.from(new Set((summary.resultsMatrix||[]).map(r=>`${r.dataset} • ${r.metric}`))),
+        datasetsAndMetrics: Array.from(new Set((summary.resultsMatrix || []).map(r => `${r.dataset} • ${r.metric}`))),
         resultsMatrix: resultsWithDeltas,
         limitations,
         threatsToValidity: [],
         reproducibilityChecklist: [],
-        applications: (summary.applications||'').split(/[.;]+/).map(s=>s.trim()).filter(Boolean).slice(0,3),
-        openQuestions: (summary.futureWork||'').split(/[.;]+/).map(s=>s.trim()).filter(Boolean).slice(0,3),
+        applications: (summary.applications || '').split(/[.;]+/).map(s => s.trim()).filter(Boolean).slice(0, 3),
+        openQuestions: (summary.futureWork || '').split(/[.;]+/).map(s => s.trim()).filter(Boolean).slice(0, 3),
         relatedWorkPointers: [],
         glossary: [],
         reviewerScores,
-        confidence: typeof summary.confidence==='number' ? summary.confidence/100 : (integrityScore?.overall ?? 0.8)
+        confidence: typeof summary.confidence === 'number' ? summary.confidence / 100 : (integrityScore?.overall ?? 0.8)
       })
-    } catch(e) {
+    } catch (e) {
       // fail silently to avoid any fake content
       setAdvSummary(null)
     }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [documentContent, summary, reviewerRubric, integrityScore, workerLoading])
 
   // ===== NEW: UI SUBCOMPONENTS (only render when data exists) =====
@@ -2047,8 +2047,8 @@ export default function AISummaryPanel({
   const AnswerBar = () => {
     if (!advSummary && !resultsWithDeltas.length && !evidenceStats) return null
     const biggestDelta = resultsWithDeltas
-      .filter(r=>typeof r.deltaPct==='number' && isFinite(r.deltaPct as number))
-      .sort((a,b)=> (b.deltaPct||0)-(a.deltaPct||0))[0]
+      .filter(r => typeof r.deltaPct === 'number' && isFinite(r.deltaPct as number))
+      .sort((a, b) => (b.deltaPct || 0) - (a.deltaPct || 0))[0]
     return (
       <div className="sticky top-0 z-40 bg-white/80 backdrop-blur border-b border-gray-200 px-4 py-3">
         <div className="flex items-center gap-3">
@@ -2058,9 +2058,9 @@ export default function AISummaryPanel({
               <span className="mr-4"><strong>So what:</strong> best gain {biggestDelta.deltaPct!.toFixed(1)}% on <em>{biggestDelta.metric}</em> ({biggestDelta.dataset}).</span>
             )}
             {evidenceStats && (
-              <span className="mr-4"><strong>Support:</strong> {(evidenceStats.coverage*100).toFixed(0)}% claims evidenced</span>
+              <span className="mr-4"><strong>Support:</strong> {(evidenceStats.coverage * 100).toFixed(0)}% claims evidenced</span>
             )}
-            {parsedLimitations && parsedLimitations.length>0 && (
+            {parsedLimitations && parsedLimitations.length > 0 && (
               <span><strong>Risk:</strong> top limitation highlighted</span>
             )}
           </div>
@@ -2080,7 +2080,7 @@ export default function AISummaryPanel({
         <CardContent className="space-y-4">
           <div className="grid grid-cols-4 gap-3">
             <div className="bg-purple-50 p-3 rounded-lg text-center">
-              <div className="text-2xl font-bold text-purple-700">{(evidenceStats.coverage*100).toFixed(0)}%</div>
+              <div className="text-2xl font-bold text-purple-700">{(evidenceStats.coverage * 100).toFixed(0)}%</div>
               <div className="text-xs text-gray-600">Claim Coverage</div>
             </div>
             <div className="bg-blue-50 p-3 rounded-lg text-center">
@@ -2097,14 +2097,14 @@ export default function AISummaryPanel({
             </div>
           </div>
           {/* Density heat "heatmap" */}
-          {evidenceStats.density && evidenceStats.density.length>0 && (
+          {evidenceStats.density && evidenceStats.density.length > 0 && (
             <div>
               <div className="text-sm font-medium mb-2">Evidence Density by Page</div>
               <div className="grid grid-cols-12 gap-1">
-                {evidenceStats.density.slice(0,120).map((d,i)=>(
-                  <button key={i} onClick={()=>goToPage(d.page)} className="h-4 rounded"
+                {evidenceStats.density.slice(0, 120).map((d, i) => (
+                  <button key={i} onClick={() => goToPage(d.page)} className="h-4 rounded"
                     title={`p.${d.page} • ${d.count} hits`}
-                    style={{ backgroundColor: d.count===0 ? '#e5e7eb' : `rgba(99,102,241,${Math.min(1, 0.15 + d.count/6)})` }} />
+                    style={{ backgroundColor: d.count === 0 ? '#e5e7eb' : `rgba(99,102,241,${Math.min(1, 0.15 + d.count / 6)})` }} />
                 ))}
               </div>
             </div>
@@ -2119,23 +2119,23 @@ export default function AISummaryPanel({
   const handleCSV = (file: File) => {
     const r = new FileReader()
     r.onload = () => {
-      const text = String(r.result||'')
-      const rows = text.split('\n').map(l=>l.trim()).filter(Boolean)
+      const text = String(r.result || '')
+      const rows = text.split('\n').map(l => l.trim()).filter(Boolean)
       const header = rows.shift()
       if (!header) return
-      const cols = header.split(',').map(s=>s.trim().toLowerCase())
+      const cols = header.split(',').map(s => s.trim().toLowerCase())
       const out: ResultRow[] = []
-      rows.forEach(line=>{
-        const cells = line.split(',').map(s=>s.trim())
+      rows.forEach(line => {
+        const cells = line.split(',').map(s => s.trim())
         const obj: any = {}
-        cols.forEach((c,i)=> obj[c]=cells[i])
+        cols.forEach((c, i) => obj[c] = cells[i])
         if (obj.metric && obj.dataset && obj.model && obj.value) {
           out.push({
             metric: obj.metric, dataset: obj.dataset, model: obj.model,
             value: parseFloat(obj.value),
-            baseline: obj.baseline, baselineValue: obj.baselinevalue? parseFloat(obj.baselinevalue):undefined,
-            deltaPct: (obj.baselinevalue && parseFloat(obj.baselinevalue)!==0)
-              ? ((parseFloat(obj.value)-parseFloat(obj.baselinevalue))/parseFloat(obj.baselinevalue))*100
+            baseline: obj.baseline, baselineValue: obj.baselinevalue ? parseFloat(obj.baselinevalue) : undefined,
+            deltaPct: (obj.baselinevalue && parseFloat(obj.baselinevalue) !== 0)
+              ? ((parseFloat(obj.value) - parseFloat(obj.baselinevalue)) / parseFloat(obj.baselinevalue)) * 100
               : undefined
           })
         }
@@ -2146,23 +2146,23 @@ export default function AISummaryPanel({
   }
 
   const ComparisonMode = () => {
-    const data = (compRows.length>0 ? compRows : resultsWithDeltas).filter(r=>r.baselineValue!==undefined)
-    if (data.length===0) return null
-    const slopeData = data.map((r,i)=> ({
+    const data = (compRows.length > 0 ? compRows : resultsWithDeltas).filter(r => r.baselineValue !== undefined)
+    if (data.length === 0) return null
+    const slopeData = data.map((r, i) => ({
       name: `${r.dataset} • ${r.metric}`,
       baseline: r.baselineValue!,
       ours: r.value,
       idx: i
     }))
-    const swarmData = data.map((r,i)=> ({ x: r.deltaPct||0, y: Math.random()*0.4-0.2, name: `${r.dataset}/${r.metric}` }))
+    const swarmData = data.map((r, i) => ({ x: r.deltaPct || 0, y: Math.random() * 0.4 - 0.2, name: `${r.dataset}/${r.metric}` }))
     return (
       <Card className="border-2 border-blue-200 rounded-2xl">
         <CardHeader className="pb-2 flex items-center justify-between">
           <CardTitle className="text-lg flex items-center gap-2"><SlidersHorizontal className="w-4 h-4 text-blue-600" /> Comparison Mode</CardTitle>
           <div className="flex items-center gap-2">
-            <input type="file" accept=".csv" onChange={e=> e.target.files?.[0] && handleCSV(e.target.files[0])}
-              className="text-sm" title="Import CSV (metric,dataset,model,value,baselineValue)"/>
-            <Badge variant="outline" className="text-xs">{compRows.length>0 ? 'CSV loaded' : 'Using summary.resultsMatrix'}</Badge>
+            <input type="file" accept=".csv" onChange={e => e.target.files?.[0] && handleCSV(e.target.files[0])}
+              className="text-sm" title="Import CSV (metric,dataset,model,value,baselineValue)" />
+            <Badge variant="outline" className="text-xs">{compRows.length > 0 ? 'CSV loaded' : 'Using summary.resultsMatrix'}</Badge>
           </div>
         </CardHeader>
         <CardContent className="space-y-6">
@@ -2186,8 +2186,8 @@ export default function AISummaryPanel({
               <ScatterChart>
                 <CartesianGrid strokeDasharray="3 3" />
                 <XAxis type="number" dataKey="x" name="Δ%" unit="%" />
-                <YAxis type="number" dataKey="y" name="" hide domain={[-0.25,0.25]} />
-                <Tooltip formatter={(v:any, n:any, p:any)=> [`${p.payload.x.toFixed(1)}%`, p.payload.name]} />
+                <YAxis type="number" dataKey="y" name="" hide domain={[-0.25, 0.25]} />
+                <Tooltip formatter={(v: any, n: any, p: any) => [`${p.payload.x.toFixed(1)}%`, p.payload.name]} />
                 <Scatter data={swarmData} />
               </ScatterChart>
             </ResponsiveContainer>
@@ -2211,17 +2211,17 @@ export default function AISummaryPanel({
               <thead>
                 <tr>
                   <th className="text-left p-2 sticky left-0 bg-white">Metric</th>
-                  {ablation.components.map(c=> <th key={c} className="text-left p-2">{c}</th>)}
+                  {ablation.components.map(c => <th key={c} className="text-left p-2">{c}</th>)}
                 </tr>
               </thead>
               <tbody>
-                {ablation.rows.map((row:any, idx:number)=>(
+                {ablation.rows.map((row: any, idx: number) => (
                   <tr key={idx} className="border-t">
                     <td className="p-2 font-medium sticky left-0 bg-white">{row.metric}</td>
-                    {ablation.components.map(c=>{
-                      const v = row[c] as number|undefined
-                      const bg = typeof v==='number' ? `rgba(16,185,129, ${Math.min(1, Math.abs(v)/30)})` : '#f3f4f6'
-                      const txt = typeof v==='number' ? (v>0?`+${v.toFixed(1)}%`:`${v.toFixed(1)}%`) : '—'
+                    {ablation.components.map(c => {
+                      const v = row[c] as number | undefined
+                      const bg = typeof v === 'number' ? `rgba(16,185,129, ${Math.min(1, Math.abs(v) / 30)})` : '#f3f4f6'
+                      const txt = typeof v === 'number' ? (v > 0 ? `+${v.toFixed(1)}%` : `${v.toFixed(1)}%`) : '—'
                       return <td key={c} className="p-2 text-center" style={{ backgroundColor: bg }}>{txt}</td>
                     })}
                   </tr>
@@ -2240,7 +2240,7 @@ export default function AISummaryPanel({
     if (parsedLimitations.length === 0) {
       return <div className="text-gray-500 text-sm italic">No limitations detected.</div>
     }
-    
+
     return (
       <Card className="border-2 border-rose-200 rounded-2xl">
         <CardHeader className="pb-2"><CardTitle className="text-lg flex items-center gap-2">
@@ -2248,18 +2248,18 @@ export default function AISummaryPanel({
         </CardTitle></CardHeader>
         <CardContent>
           <div className="grid grid-cols-5 gap-2">
-            {[5,4,3,2,1].map(i=>(
+            {[5, 4, 3, 2, 1].map(i => (
               <div key={i} className="text-center text-xs text-gray-500">Impact {i}</div>
             ))}
           </div>
           <div className="grid grid-cols-5 gap-2">
-            {[5,4,3,2,1].map(impact=>(
+            {[5, 4, 3, 2, 1].map(impact => (
               <div key={impact} className="space-y-2">
-                {[1,2,3,4,5].map(like=>{
-                  const items = parsedLimitations.filter(l => l.impact===impact && l.likelihood===like)
+                {[1, 2, 3, 4, 5].map(like => {
+                  const items = parsedLimitations.filter(l => l.impact === impact && l.likelihood === like)
                   return (
                     <div key={like} className="min-h-[36px] rounded border bg-gradient-to-br from-white to-rose-50 p-1">
-                      {items.slice(0,2).map((it,idx)=>
+                      {items.slice(0, 2).map((it, idx) =>
                         <div key={idx} className="text-[11px] leading-tight whitespace-normal break-words">
                           • {it.item}
                         </div>
@@ -2291,7 +2291,7 @@ export default function AISummaryPanel({
               <LineChart data={calibrationSeries.bins}>
                 <CartesianGrid strokeDasharray="3 3" />
                 <XAxis dataKey="bin" />
-                <YAxis domain={[0,1]} />
+                <YAxis domain={[0, 1]} />
                 <Tooltip />
                 <Legend />
                 <Line dataKey="pred" type="monotone" dot={false} />
@@ -2307,16 +2307,16 @@ export default function AISummaryPanel({
   // NEW: Method Pipeline Graph (lightweight)
   const PipelineGraph = () => {
     const steps = advSummary?.methodPipeline || []
-    if (steps.length===0) return null
+    if (steps.length === 0) return null
     return (
       <Card className="border-2 border-sky-200 rounded-2xl">
         <CardHeader className="pb-2"><CardTitle className="text-lg flex items-center gap-2"><Microscope className="w-4 h-4 text-sky-600" /> Method Pipeline</CardTitle></CardHeader>
         <CardContent>
           <div className="flex items-stretch gap-3 overflow-x-auto">
-            {steps.map((s,i)=>(
+            {steps.map((s, i) => (
               <button key={i} className="min-w-[200px] p-3 rounded-xl bg-sky-50 border text-left hover:bg-sky-100"
-                title={s} onClick={()=>{/* optionally map keywords → pages if you have them */}}>
-                <div className="text-xs text-gray-500 mb-1">Step {i+1}</div>
+                title={s} onClick={() => {/* optionally map keywords → pages if you have them */ }}>
+                <div className="text-xs text-gray-500 mb-1">Step {i + 1}</div>
                 <div className="text-sm font-medium text-gray-800 whitespace-normal break-words">{s}</div>
 
               </button>
@@ -2328,9 +2328,9 @@ export default function AISummaryPanel({
   }
 
   // NEW: Exports
-  const download = (name:string, data:string, mime='application/json') => {
-    const blob = new Blob([data], {type:mime}); const url=URL.createObjectURL(blob)
-    const a=document.createElement('a'); a.href=url; a.download=name; a.click(); URL.revokeObjectURL(url)
+  const download = (name: string, data: string, mime = 'application/json') => {
+    const blob = new Blob([data], { type: mime }); const url = URL.createObjectURL(blob)
+    const a = document.createElement('a'); a.href = url; a.download = name; a.click(); URL.revokeObjectURL(url)
   }
   const ExportButtons = () => {
     const canJSON = !!(advSummary || resultsWithDeltas.length || alignedClaims)
@@ -2338,26 +2338,26 @@ export default function AISummaryPanel({
     return (
       <div className="flex flex-wrap gap-3">
         <ButtonComponent variant="outline" className="border-blue-200 text-blue-700 hover:bg-blue-50"
-          onClick={()=> download('analysis.json', JSON.stringify({ summary, advSummary, alignedClaims, normalizedMetrics }, null, 2))}>
+          onClick={() => download('analysis.json', JSON.stringify({ summary, advSummary, alignedClaims, normalizedMetrics }, null, 2))}>
           <Download className="w-4 h-4 mr-2" /> Export JSON
         </ButtonComponent>
-        {resultsWithDeltas.length>0 && (
+        {resultsWithDeltas.length > 0 && (
           <ButtonComponent variant="outline" className="border-green-200 text-green-700 hover:bg-green-50"
-            onClick={()=>{
-              const head='metric,dataset,model,value,baselineValue,deltaPct\n'
-              const rows=resultsWithDeltas.map(r=>[r.metric,r.dataset,r.model,r.value, r.baselineValue??'', r.deltaPct??''].join(',')).join('\n')
-              download('results.csv', head+rows, 'text/csv')
+            onClick={() => {
+              const head = 'metric,dataset,model,value,baselineValue,deltaPct\n'
+              const rows = resultsWithDeltas.map(r => [r.metric, r.dataset, r.model, r.value, r.baselineValue ?? '', r.deltaPct ?? ''].join(',')).join('\n')
+              download('results.csv', head + rows, 'text/csv')
             }}>
             <Download className="w-4 h-4 mr-2" /> Export CSV
           </ButtonComponent>
         )}
         <ButtonComponent variant="outline" className="border-purple-200 text-purple-700 hover:bg-purple-50"
-          onClick={()=>{
+          onClick={() => {
             const lines = [
-              '# TL;DR', advSummary?.tldr||'',
-              '\n## Contributions', ...(advSummary?.contributions||[]).map(c=>`- ${c.point}`),
-              '\n## Method', ...(advSummary?.methodPipeline||[]).map((m,i)=>`${i+1}. ${m}`),
-              '\n## Results', ...(resultsWithDeltas||[]).map(r=>`- ${r.dataset} • ${r.metric}: ${r.value}${typeof r.deltaPct==='number' ? ` (${r.deltaPct.toFixed(1)}% vs baseline)` : ''}`)
+              '# TL;DR', advSummary?.tldr || '',
+              '\n## Contributions', ...(advSummary?.contributions || []).map(c => `- ${c.point}`),
+              '\n## Method', ...(advSummary?.methodPipeline || []).map((m, i) => `${i + 1}. ${m}`),
+              '\n## Results', ...(resultsWithDeltas || []).map(r => `- ${r.dataset} • ${r.metric}: ${r.value}${typeof r.deltaPct === 'number' ? ` (${r.deltaPct.toFixed(1)}% vs baseline)` : ''}`)
             ].join('\n')
             download('summary.md', lines, 'text/markdown')
           }}>
@@ -2383,8 +2383,8 @@ export default function AISummaryPanel({
       const aligned = hallucinationGuard(alignEvidence({ claims, pages: pagesMap }), 0.33)
       // We DO NOT inject demo text; we only re-populate advSummary from real fields if present.
       // (Minimal refresh using the same logic above)
-      setAdvSummary(prev=>prev) // no-op; your worker handles deeper state
-    } catch(e){}
+      setAdvSummary(prev => prev) // no-op; your worker handles deeper state
+    } catch (e) { }
   }
   const runAdvancedAnalysis = async () => {
     if (!documentContent) return
@@ -2398,22 +2398,22 @@ export default function AISummaryPanel({
       const integrity = scoreIntegrity({ claims, aligned, fullText: documentContent })
       const metrics = normalizeMetrics(pages, aligned)
       exportMinimalReview({ integrity, alignedClaims: aligned, metrics })
-    } catch(e){}
+    } catch (e) { }
   }
 
   // ====== RENDER ======
-  const VisualAnalysisPanel = ({ advSummary }: { advSummary: AdvancedSummary|null }) => {
+  const VisualAnalysisPanel = ({ advSummary }: { advSummary: AdvancedSummary | null }) => {
     if (!advSummary) return null
     const radarData = [
       { axis: 'Significance', score: advSummary.reviewerScores?.significance ?? 0 },
-      { axis: 'Originality',  score: advSummary.reviewerScores?.originality ?? 0  },
-      { axis: 'Technical',    score: advSummary.reviewerScores?.technical ?? 0    },
-      { axis: 'Clarity',      score: advSummary.reviewerScores?.clarity ?? 0      },
+      { axis: 'Originality', score: advSummary.reviewerScores?.originality ?? 0 },
+      { axis: 'Technical', score: advSummary.reviewerScores?.technical ?? 0 },
+      { axis: 'Clarity', score: advSummary.reviewerScores?.clarity ?? 0 },
     ]
-    const deltas = (advSummary.resultsMatrix||[])
+    const deltas = (advSummary.resultsMatrix || [])
       .filter(r => typeof r.deltaPct === 'number' && isFinite(r.deltaPct as number))
       .map(r => ({ name: `${r.dataset} • ${r.metric}`, delta: Number((r.deltaPct as number).toFixed(1)) }))
-      .sort((a,b) => b.delta - a.delta)
+      .sort((a, b) => b.delta - a.delta)
       .slice(0, 6)
 
     return (
@@ -2445,7 +2445,7 @@ export default function AISummaryPanel({
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 mb-6">
             <div className="lg:col-span-2">
               <label className="block text-sm font-medium text-gray-700 mb-2">Analysis Mode</label>
-              <select value={analysisMode} onChange={e=>setAnalysisMode(e.target.value as any)}
+              <select value={analysisMode} onChange={e => setAnalysisMode(e.target.value as any)}
                 className="w-full border-2 border-gray-300 rounded-lg px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 bg-white">
                 <option value="comprehensive">📋 Comprehensive Analysis</option>
                 <option value="research">📚 Research Focus</option>
@@ -2455,11 +2455,11 @@ export default function AISummaryPanel({
               </select>
             </div>
             <div className="flex gap-3">
-              <ButtonComponent onClick={generateAdvancedAnalysis} disabled={workerLoading} 
+              <ButtonComponent onClick={generateAdvancedAnalysis} disabled={workerLoading}
                 className="bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-700 hover:to-purple-700 text-white px-6 py-3 rounded-lg font-medium shadow-lg flex-1">
                 {workerLoading ? (<><Loader2 className="w-4 h-4 animate-spin mr-2" />Analyzing...</>) : (<><Brain className="w-4 h-4 mr-2" />Re-analyze</>)}
               </ButtonComponent>
-              <ButtonComponent onClick={()=>setShowAdvancedFeatures(!showAdvancedFeatures)} variant="outline" 
+              <ButtonComponent onClick={() => setShowAdvancedFeatures(!showAdvancedFeatures)} variant="outline"
                 className="border-2 border-purple-300 text-purple-700 hover:bg-purple-50 px-4 py-3 rounded-lg font-medium">
                 <Sparkles className="w-4 h-4 mr-2" /> {showAdvancedFeatures ? 'Hide' : 'Show'} Advanced
               </ButtonComponent>
@@ -2469,15 +2469,15 @@ export default function AISummaryPanel({
           {/* Enhanced Quick Stats */}
           <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
             <div className="text-center p-4 bg-gradient-to-br from-blue-50 to-blue-100 rounded-xl border border-blue-200">
-              <div className="text-3xl font-bold text-blue-600">{(advSummary.contributions||[]).length}</div>
+              <div className="text-3xl font-bold text-blue-600">{(advSummary.contributions || []).length}</div>
               <div className="text-sm font-medium text-blue-800">Key Contributions</div>
             </div>
             <div className="text-center p-4 bg-gradient-to-br from-green-50 to-green-100 rounded-xl border border-green-200">
-              <div className="text-3xl font-bold text-green-600">{(advSummary.methodPipeline||[]).length}</div>
+              <div className="text-3xl font-bold text-green-600">{(advSummary.methodPipeline || []).length}</div>
               <div className="text-sm font-medium text-green-800">Method Steps</div>
             </div>
             <div className="text-center p-4 bg-gradient-to-br from-purple-50 to-purple-100 rounded-xl border border-purple-200">
-              <div className="text-3xl font-bold text-purple-600">{Math.round((advSummary.confidence||0)*100)}%</div>
+              <div className="text-3xl font-bold text-purple-600">{Math.round((advSummary.confidence || 0) * 100)}%</div>
               <div className="text-sm font-medium text-purple-800">Confidence</div>
             </div>
             <div className="text-center p-4 bg-gradient-to-br from-orange-50 to-orange-100 rounded-xl border border-orange-200">
@@ -2517,20 +2517,20 @@ export default function AISummaryPanel({
                 <p className="text-gray-600 text-sm">Quantitative analysis with baseline comparisons</p>
               </div>
             </div>
-            
+
             {/* Results Chart */}
             <div className="h-80 mb-6">
               <ResponsiveContainer width="100%" height="100%">
-                <BarChart data={resultsWithDeltas.map(r => ({ 
-                  name: `${r.dataset}\n${r.metric}`, 
-                  value: r.value, 
+                <BarChart data={resultsWithDeltas.map(r => ({
+                  name: `${r.dataset}\n${r.metric}`,
+                  value: r.value,
                   baseline: r.baselineValue || 0,
-                  delta: r.deltaPct || 0 
+                  delta: r.deltaPct || 0
                 }))}>
                   <CartesianGrid strokeDasharray="3 3" />
                   <XAxis dataKey="name" angle={-45} textAnchor="end" height={100} />
                   <YAxis />
-                  <Tooltip 
+                  <Tooltip
                     formatter={(value: number, name: string, props: any) => {
                       if (name === 'value') return [`${value.toFixed(3)}`, 'Our Method'];
                       if (name === 'baseline') return [`${value.toFixed(3)}`, 'Baseline'];
@@ -2575,7 +2575,7 @@ export default function AISummaryPanel({
                         {row.evidence && row.evidence.length > 0 && (
                           <div className="flex gap-1 justify-center">
                             {row.evidence.slice(0, 2).map((ev, i) => (
-                              <button key={i} onClick={() => goToPage(ev.page)} 
+                              <button key={i} onClick={() => goToPage(ev.page)}
                                 className="px-2 py-1 bg-blue-100 text-blue-700 rounded text-xs hover:bg-blue-200">
                                 p.{ev.page}
                               </button>
@@ -2615,7 +2615,7 @@ export default function AISummaryPanel({
                       {contribution.evidence && contribution.evidence.length > 0 && (
                         <div className="flex flex-wrap gap-2">
                           {contribution.evidence.map((ev, i) => (
-                            <button key={i} onClick={() => goToPage(ev.page)} 
+                            <button key={i} onClick={() => goToPage(ev.page)}
                               className="px-3 py-1 bg-indigo-100 text-indigo-700 rounded-full text-xs hover:bg-indigo-200 transition-colors">
                               📄 Page {ev.page}
                             </button>
@@ -2681,7 +2681,7 @@ export default function AISummaryPanel({
                       {limitation.evidence && limitation.evidence.length > 0 && (
                         <div className="flex flex-wrap gap-2">
                           {limitation.evidence.map((ev, i) => (
-                            <button key={i} onClick={() => goToPage(ev.page)} 
+                            <button key={i} onClick={() => goToPage(ev.page)}
                               className="px-3 py-1 bg-amber-100 text-amber-700 rounded-full text-xs hover:bg-amber-200 transition-colors">
                               📄 Page {ev.page}
                             </button>
@@ -2714,11 +2714,11 @@ export default function AISummaryPanel({
                   <PolarGrid />
                   <PolarAngleAxis dataKey="axis" />
                   <PolarRadiusAxis domain={[0, 5]} />
-                  <Radar 
-                    name="Scores" 
-                    dataKey="score" 
-                    stroke="#3b82f6" 
-                    fill="#3b82f6" 
+                  <Radar
+                    name="Scores"
+                    dataKey="score"
+                    stroke="#3b82f6"
+                    fill="#3b82f6"
                     fillOpacity={0.3}
                     strokeWidth={2}
                   />
@@ -2772,7 +2772,7 @@ export default function AISummaryPanel({
                 {/* Claim-Evidence Engine */}
                 {alignedClaims && alignedClaims.length > 0 && (
                   <div className="bg-white rounded-xl p-6 border border-purple-200">
-                    <ClaimEvidenceEngine 
+                    <ClaimEvidenceEngine
                       alignedClaims={alignedClaims}
                       onGoToPage={onGoToPage}
                     />
@@ -2802,8 +2802,8 @@ export default function AISummaryPanel({
               {/* Evidence Matrix */}
               {alignedClaims && alignedClaims.length > 0 && (
                 <div className="mt-6">
-                  <EvidenceMatrixView 
-                    matrix={makeEvidenceMatrix(alignedClaims)} 
+                  <EvidenceMatrixView
+                    matrix={makeEvidenceMatrix(alignedClaims)}
                     onGoTo={onGoToPage}
                   />
                 </div>
@@ -2827,202 +2827,214 @@ export default function AISummaryPanel({
   }
 
   return (
-    <div className={`fixed top-0 right-0 h-full z-50 transition-transform duration-500 ${open ? 'translate-x-0' : 'translate-x-full'} w-full max-w-4xl bg-white shadow-2xl border-l border-gray-200 flex flex-col`} style={{ boxShadow: open ? '0 0 60px 0 rgba(0, 0, 0, 0.25), 0 0 20px 0 rgba(59, 130, 246, 0.2)' : undefined }}>
-      {/* ===== NEW: Answer Bar (only shows when data exists) ===== */}
+    <div className={`fixed top-0 right-0 h-full z-50 transition-transform duration-300 ${open ? 'translate-x-0' : 'translate-x-full'} w-full max-w-3xl bg-white shadow-lg flex flex-col`}>
+      {/* ===== Answer Bar ===== */}
       <AnswerBar />
 
-      {/* Header (preserved) */}
-      <div className="bg-gradient-to-r from-blue-600 via-purple-600 to-indigo-600 text-white p-4 shadow-lg">
+      {/* Header - True Google Style: Minimal, Clean, Functional */}
+      <div className="border-b border-gray-300 px-6 py-4">
         <div className="flex items-center justify-between">
-          <div className="flex items-center space-x-3">
-            <div className="p-2 bg-white/20 backdrop-blur-sm rounded-lg border border-white/30">
-              <BookOpen className="w-6 h-6 text-white" />
-            </div>
+          <div className="flex items-center gap-3">
+            <BookOpen className="w-6 h-6 text-gray-700" />
             <div>
-              <h2 className="text-lg font-bold text-white">AI Document Analysis</h2>
-              <p className="text-blue-100 text-sm">Comprehensive Research Summary</p>
+              <h1 className="text-xl font-normal text-gray-900">Document Analysis</h1>
             </div>
           </div>
-          <div className="flex items-center space-x-2">
+          <div className="flex items-center gap-1">
             {onRegenerate && (
-              <button onClick={onRegenerate} className="p-2 hover:bg-white/20 rounded-lg transition-all duration-200 backdrop-blur-sm" title="Regenerate">
-                <RefreshCw className="w-5 h-5 text-white" />
+              <button
+                onClick={onRegenerate}
+                className="p-2 hover:bg-gray-100 rounded-full transition-colors"
+                title="Regenerate"
+              >
+                <RefreshCw className="w-5 h-5 text-gray-600" />
               </button>
             )}
-            <button onClick={onClose} className="p-2 hover:bg-white/20 rounded-lg transition-all duration-200 backdrop-blur-sm" title="Close">
-              <X className="w-5 h-5 text-white" />
+            <button
+              onClick={onClose}
+              className="p-2 hover:bg-gray-100 rounded-full transition-colors"
+              title="Close"
+            >
+              <X className="w-5 h-5 text-gray-600" />
             </button>
           </div>
         </div>
-        <div className="flex items-center justify-between mt-3">
-          <div className="flex items-center gap-3">
-            <div className="p-1.5 bg-white/20 backdrop-blur-sm rounded-lg">
-              <GraduationCap className="w-4 h-4 text-white" />
-            </div>
-            <span className="text-sm text-blue-100">Status:</span>
-            <Badge variant="secondary" className="bg-green-500/20 text-green-100 border border-green-400/30 text-sm px-3 py-1 backdrop-blur-sm">
-              {loading ? 'Processing...' : 'Complete'}
-            </Badge>
+
+        {/* Status bar - Simple, inline */}
+        {!loading && (
+          <div className="flex items-center gap-4 mt-3 text-sm text-gray-600">
+            <span className="flex items-center gap-1.5">
+              <div className="w-2 h-2 bg-green-500 rounded-full"></div>
+              Complete
+            </span>
+            <span>•</span>
+            <span>{summary.isResearchPaper ? 'Research Paper' : 'General Document'}</span>
+            <span>•</span>
+            <span>{typeof summary.confidence === 'number' ? summary.confidence : 94}% confidence</span>
           </div>
-          {!loading && (
-            <div className="flex items-center gap-3 text-sm text-blue-100">
-              <span className="bg-white/10 px-2 py-1 rounded-lg backdrop-blur-sm">{summary.isResearchPaper ? 'Research' : 'General'}</span>
-              <span>•</span>
-              <span className="bg-white/10 px-2 py-1 rounded-lg backdrop-blur-sm">{typeof summary.confidence === 'number' ? summary.confidence : 94}% confidence</span>
-            </div>
-          )}
-        </div>
+        )}
       </div>
 
       {lastUpdated && (<div className="text-xs text-gray-600 px-2 pt-1 pb-1 border-t border-gray-200 bg-gray-50">Completed: {lastUpdated}</div>)}
 
       {loading ? (
-        // keep your loading UI as-is
-        <div className="flex-1 flex flex-col items-center justify-center p-8">
-          <div className="relative mb-8">
-            <div className="w-20 h-20 bg-gradient-to-br from-blue-500 to-purple-600 rounded-2xl flex items-center justify-center animate-pulse shadow-xl border-4 border-white">
-              <BookOpen className="w-10 h-10 text-white animate-bounce" />
-            </div>
-            <div className="absolute -inset-4 bg-gradient-to-r from-blue-400/20 to-purple-400/20 rounded-3xl blur-xl animate-pulse"></div>
+        // Google-style loading - minimal and clean
+        <div className="flex-1 flex flex-col items-center justify-center p-16 bg-white">
+          <div className="mb-6">
+            <div className="w-16 h-16 border-4 border-gray-200 border-t-blue-600 rounded-full animate-spin"></div>
           </div>
-          <div className="text-center mb-8">
-            <h3 className="text-xl font-bold text-gray-900 mb-2">AI Analysis in Progress</h3>
-            <p className="text-gray-600 text-sm">Processing document with advanced algorithms...</p>
-          </div>
-          <div className="w-full max-w-md space-y-4 mb-8">
-            <div className="flex justify-between text-sm text-gray-700 mb-2">
-              <span className="font-medium">Analysis Progress</span>
-              <span className="font-bold text-blue-600">…</span>
-            </div>
-            <div className="relative"><ProgressComponent value={60} className="h-3 bg-gray-200 rounded-full" /></div>
-          </div>
+          <p className="text-base text-gray-600">Analyzing document...</p>
         </div>
       ) : (
-        <div className="flex-1 overflow-y-auto p-6 space-y-4">
-          {/* Content-type indicator (preserved) */}
-          {summary.isResearchPaper !== undefined && (
-            <div className={`p-4 rounded-xl shadow-lg border-2 ${summary.isResearchPaper ? 'bg-gradient-to-r from-blue-50 to-indigo-50 border-blue-200' : 'bg-gradient-to-r from-gray-50 to-slate-50 border-gray-200'}`}>
-              <div className="flex items-center gap-4">
-                {summary.isResearchPaper ? (
+        <div className="flex-1 overflow-y-auto bg-gray-50">
+          {/* Paper Header - Clean & Professional */}
+          <div className="bg-white border-b border-gray-200">
+            <div className="max-w-5xl mx-auto px-8 py-8">
+              {summary.title && <h1 className="text-3xl font-normal text-gray-900 mb-4 leading-tight">{summary.title}</h1>}
+              {summary.authors && <p className="text-base text-gray-700 mb-3">{summary.authors}</p>}
+              <div className="flex items-center gap-4 text-sm text-gray-600">
+                {summary.year && <span className="font-medium">{summary.year}</span>}
+                {summary.journal && (
                   <>
-                    <div className="p-3 bg-gradient-to-br from-blue-500 to-indigo-600 rounded-xl shadow-md"><GraduationCap className="w-6 h-6 text-white" /></div>
-                    <div><h3 className="font-bold text-blue-900 text-lg">Research Paper</h3><p className="text-blue-700 text-sm">Academic publication with advanced analysis</p></div>
-                  </>
-                ) : (
-                  <>
-                    <div className="p-3 bg-gradient-to-br from-gray-500 to-slate-600 rounded-xl shadow-md"><FileText className="w-6 h-6 text-white" /></div>
-                    <div><h3 className="font-bold text-gray-900 text-lg">General Document</h3><p className="text-gray-700 text-sm">Non-academic content analysis</p></div>
+                    <span className="text-gray-400">•</span>
+                    <span className="italic">{summary.journal}</span>
                   </>
                 )}
               </div>
             </div>
-          )}
+          </div>
 
-          {/* Your existing sections (documentInfo, motivation, etc.) stay exactly as before */}
-          {(!!summary.isResearchPaper ? sectionOrder : nonResearchSectionOrder).map((key, idx) => {
-            const meta = sectionMeta[key]; let value = get(key as keyof SummaryShape, '')
-            let isExpandable = (value?.length||0) > 120 || meta.askMore
-            if (key === 'documentInfo' && summary.isResearchPaper) {
-              value = [
-                summary.title ? `**Title:** ${summary.title}` : '',
-                summary.authors ? `**Authors:** ${summary.authors}` : '',
-                summary.year ? `**Year:** ${summary.year}` : '',
-                summary.journal ? `**Journal/Conference:** ${summary.journal}` : '',
-                summary.abstract ? `**Abstract:** ${summary.abstract}` : ''
-              ].filter(Boolean).join('\n\n')
-              isExpandable = true
-            }
-            const isOpen = expanded[key] || !isExpandable
-            // hide empty sections (no demo text)
-            if (!value) return null
-            return (
-              <div key={key} className={`bg-white rounded-xl border-2 border-gray-200 shadow-lg transition-all duration-300 hover:shadow-xl hover:scale-[1.02] ${isOpen ? 'ring-2 ring-blue-300 shadow-blue-100 border-blue-200' : 'hover:border-gray-300'}`}>
-                <div className="p-4 cursor-pointer group" onClick={() => isExpandable && setExpanded(prev=>({ ...prev, [key]: !prev[key] }))}>
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center space-x-4">
-                      <div className={`p-3 rounded-xl bg-gradient-to-br ${meta.color} border-2 border-gray-200 shadow-md group-hover:shadow-lg transition-all duration-200`}>{meta.icon}</div>
-                      <div><h3 className="font-bold text-gray-900 text-base">{meta.label}</h3><p className="text-gray-600 text-sm">{meta.description}</p></div>
-                    </div>
-                    <div className="flex items-center space-x-3">
-                      {!!value && (
-                        <button className="p-2 rounded-lg hover:bg-gray-100 transition-all duration-200 relative group shadow-sm border border-gray-200"
-                          onClick={e => { e.stopPropagation(); handleCopy(key, value) }} title="Copy">
-                          {copied === key ? <Check className="w-4 h-4 text-green-600" /> : <Clipboard className="w-4 h-4 text-gray-600" />}
-                        </button>
-                      )}
-                      {meta.askMore && onAskMore && (
-                        <button className="px-4 py-2 rounded-lg bg-gradient-to-r from-blue-600 to-purple-600 text-white text-sm font-medium hover:from-blue-700 hover:to-purple-700 transition-all duration-200 shadow-md hover:shadow-lg"
-                          onClick={e => { e.stopPropagation(); onAskMore(key) }} title="Ask AI for more details">
-                          <Brain className="w-4 h-4 mr-2 inline" /> More
-                        </button>
-                      )}
-                      {isExpandable && (
-                        <button className="p-2 rounded-lg hover:bg-gray-100 transition-all duration-200 shadow-sm border border-gray-200">
-                          {isOpen ? <ChevronUp className="w-5 h-5 text-gray-500" /> : <ChevronDown className="w-5 h-5 text-gray-500" />}
-                        </button>
-                      )}
-                    </div>
-                  </div>
-                  {meta.confidence && (
-                    <div className="mt-4">
-                      <div className="flex justify-between text-sm text-gray-600 mb-2">
-                        <span className="font-medium">Confidence Level</span>
-                        <span className="font-bold text-blue-600">{meta.confidence}%</span>
-                      </div>
-                      <div className="relative"><ProgressComponent value={meta.confidence} className="h-3 bg-gray-200 rounded-full" />
-                        <div className="absolute inset-0 bg-gradient-to-r from-blue-500 to-purple-600 rounded-full opacity-75"></div></div>
-                    </div>
-                  )}
-                </div>
-                <div className={`transition-all duration-300 overflow-hidden ${isOpen ? 'max-h-96' : 'max-h-0'}`}>
-                  {isOpen && (
-                    <div className="px-4 pb-4">
-                      <div className="bg-gray-50 p-4 rounded-xl border border-gray-200 shadow-inner">
-                        <div className="text-gray-800 text-sm leading-relaxed font-serif max-h-80 overflow-y-auto scrollbar-thin scrollbar-thumb-gray-400 scrollbar-track-gray-100"
-                          dangerouslySetInnerHTML={{ __html: mdLite(value) }} />
-                      </div>
-                    </div>
-                  )}
-                </div>
+          {/* Quick Stats - Card Grid */}
+          <div className="max-w-5xl mx-auto px-8 py-6">
+            <div className="grid grid-cols-4 gap-4">
+              <div className="bg-white rounded-lg p-4 border border-gray-200">
+                <div className="text-2xl font-semibold text-blue-600">{typeof summary.confidence === 'number' ? summary.confidence : 94}%</div>
+                <div className="text-xs text-gray-600 mt-1">Analysis Confidence</div>
               </div>
-            )
-          })}
-
-          {/* Mode selector (preserved) */}
-          <div className="mt-2 p-4 border-2 border-gray-200 rounded-2xl bg-gray-50 shadow-lg">
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <div className={`p-4 rounded-xl border-2 transition-all duration-300 cursor-pointer ${!showAdvancedAnalysis ? 'border-blue-300 bg-blue-50 shadow-md' : 'border-gray-200 bg-white hover:border-gray-300'}`} onClick={() => setShowAdvancedAnalysis(false)}>
-                <div className="flex items-center space-x-3">
-                  <div className={`p-2 rounded-lg ${!showAdvancedAnalysis ? 'bg-blue-500' : 'bg-gray-400'}`}><FileText className="w-5 h-5 text-white" /></div>
-                  <div><h5 className="font-semibold text-gray-900">Normal Analysis</h5><p className="text-xs text-gray-600">Standard summary</p></div>
-                </div>
+              <div className="bg-white rounded-lg p-4 border border-gray-200">
+                <div className="text-2xl font-semibold text-gray-900">{summary.isResearchPaper ? 'Research' : 'General'}</div>
+                <div className="text-xs text-gray-600 mt-1">Document Type</div>
               </div>
-              <div className={`p-4 rounded-xl border-2 transition-all duration-300 cursor-pointer ${showAdvancedAnalysis ? 'border-purple-300 bg-purple-50 shadow-md' : 'border-gray-200 bg-white hover:border-gray-300'}`} onClick={() => setShowAdvancedAnalysis(true)}>
-                <div className="flex items-center space-x-3">
-                  <div className={`p-2 rounded-lg ${showAdvancedAnalysis ? 'bg-purple-500' : 'bg-gray-400'}`}><Brain className="w-5 h-5 text-white" /></div>
-                  <div><h5 className="font-semibold text-gray-900">Advanced Analysis</h5><p className="text-xs text-gray-600">Interactive charts & evidence</p></div>
-                </div>
+              <div className="bg-white rounded-lg p-4 border border-gray-200">
+                <div className="text-2xl font-semibold text-gray-900">{summary.year || 'N/A'}</div>
+                <div className="text-xs text-gray-600 mt-1">Publication Year</div>
+              </div>
+              <div className="bg-white rounded-lg p-4 border border-gray-200">
+                <div className="text-2xl font-semibold text-green-600">High</div>
+                <div className="text-xs text-gray-600 mt-1">Relevance</div>
               </div>
             </div>
           </div>
 
-          {/* Normal Panel (unchanged core) */}
-          {!showAdvancedAnalysis && (
-            <div className="mt-4 space-y-6">
-              {/* keep your original “Normal Analysis” cards here */}
-            </div>
-          )}
-
-          {/* Advanced Panel (enhanced) */}
-          {showAdvancedAnalysis && (
-            <div className="mt-4 space-y-6">
-              <div className="text-center">
-                <h3 className="text-xl font-bold text-gray-900 mb-2">Advanced Analysis</h3>
-                <p className="text-gray-600">Interactive charts, performance metrics, and deep insights (real data only)</p>
+          <div className="max-w-5xl mx-auto px-8 space-y-6 pb-8">
+            {/* TL;DR - Highlighted Summary */}
+            {(summary.keyTakeaway || summary.motivation) && (
+              <div className="bg-blue-50 rounded-lg p-6 border-l-4 border-blue-500">
+                <h2 className="text-sm font-medium text-blue-900 uppercase tracking-wide mb-3">Key Takeaway</h2>
+                <p className="text-base text-gray-900 leading-relaxed">
+                  {summary.keyTakeaway || summary.motivation}
+                </p>
               </div>
-              <VisualAnalysisPanel advSummary={advSummary} />
+            )}
+
+            {/* Core Contribution */}
+            {summary.contribution && (
+              <div className="bg-white rounded-lg p-6 border border-gray-200">
+                <h2 className="text-xl font-normal text-gray-900 mb-4">Research Contribution</h2>
+                <div className="prose prose-sm max-w-none text-gray-700" dangerouslySetInnerHTML={{ __html: mdLite(summary.contribution) }} />
+              </div>
+            )}
+
+            {/* Key Findings with Visual Emphasis */}
+            {summary.results && (
+              <div className="bg-white rounded-lg p-6 border border-gray-200">
+                <h2 className="text-xl font-normal text-gray-900 mb-4">Key Findings & Results</h2>
+                <div className="prose prose-sm max-w-none text-gray-700" dangerouslySetInnerHTML={{ __html: mdLite(summary.results) }} />
+              </div>
+            )}
+
+            {/* Methodology - How They Did It */}
+            {summary.methodology && (
+              <div className="bg-white rounded-lg p-6 border border-gray-200">
+                <h2 className="text-xl font-normal text-gray-900 mb-4">Methodology & Approach</h2>
+                <div className="prose prose-sm max-w-none text-gray-700" dangerouslySetInnerHTML={{ __html: mdLite(summary.methodology) }} />
+              </div>
+            )}
+
+            {/* Strengths & Weaknesses - Side by Side */}
+            <div className="grid grid-cols-2 gap-4">
+              {summary.strengths && (
+                <div className="bg-green-50 rounded-lg p-6 border border-green-200">
+                  <h2 className="text-lg font-medium text-green-900 mb-3">Strengths</h2>
+                  <div className="prose prose-sm max-w-none text-gray-700" dangerouslySetInnerHTML={{ __html: mdLite(summary.strengths) }} />
+                </div>
+              )}
+              {summary.limitations && (
+                <div className="bg-yellow-50 rounded-lg p-6 border border-yellow-200">
+                  <h2 className="text-lg font-medium text-yellow-900 mb-3">Limitations</h2>
+                  <div className="prose prose-sm max-w-none text-gray-700" dangerouslySetInnerHTML={{ __html: mdLite(summary.limitations) }} />
+                </div>
+              )}
             </div>
-          )}
+
+            {/* Technical Details */}
+            {summary.technicalDetails && (
+              <div className="bg-white rounded-lg p-6 border border-gray-200">
+                <h2 className="text-xl font-normal text-gray-900 mb-4">Technical Details</h2>
+                <div className="prose prose-sm max-w-none text-gray-700" dangerouslySetInnerHTML={{ __html: mdLite(summary.technicalDetails) }} />
+              </div>
+            )}
+
+            {/* Dataset & Experimental Setup */}
+            {summary.dataset && (
+              <div className="bg-white rounded-lg p-6 border border-gray-200">
+                <h2 className="text-xl font-normal text-gray-900 mb-4">Dataset & Experimental Setup</h2>
+                <div className="prose prose-sm max-w-none text-gray-700" dangerouslySetInnerHTML={{ __html: mdLite(summary.dataset) }} />
+              </div>
+            )}
+
+            {/* Impact & Applications */}
+            {(summary.impact || summary.applications) && (
+              <div className="bg-white rounded-lg p-6 border border-gray-200">
+                <h2 className="text-xl font-normal text-gray-900 mb-4">Impact & Applications</h2>
+                <div className="prose prose-sm max-w-none text-gray-700" dangerouslySetInnerHTML={{ __html: mdLite(summary.impact || summary.applications) }} />
+              </div>
+            )}
+
+            {/* Future Work & Research Directions */}
+            {summary.futureWork && (
+              <div className="bg-white rounded-lg p-6 border border-gray-200">
+                <h2 className="text-xl font-normal text-gray-900 mb-4">Future Research Directions</h2>
+                <div className="prose prose-sm max-w-none text-gray-700" dangerouslySetInnerHTML={{ __html: mdLite(summary.futureWork) }} />
+              </div>
+            )}
+
+            {/* Abstract - Expandable */}
+            {summary.abstract && (
+              <details className="bg-white rounded-lg border border-gray-200 group">
+                <summary className="px-6 py-4 cursor-pointer list-none flex items-center justify-between hover:bg-gray-50 rounded-lg transition-colors">
+                  <span className="text-lg font-normal text-gray-900">Abstract</span>
+                  <ChevronDown className="w-5 h-5 text-gray-500 group-open:rotate-180 transition-transform" />
+                </summary>
+                <div className="px-6 pb-6">
+                  <div className="prose prose-sm max-w-none text-gray-700" dangerouslySetInnerHTML={{ __html: mdLite(summary.abstract) }} />
+                </div>
+              </details>
+            )}
+
+            {/* Related Concepts */}
+            {summary.relatedWork && (
+              <details className="bg-white rounded-lg border border-gray-200 group">
+                <summary className="px-6 py-4 cursor-pointer list-none flex items-center justify-between hover:bg-gray-50 rounded-lg transition-colors">
+                  <span className="text-lg font-normal text-gray-900">Related Work & Context</span>
+                  <ChevronDown className="w-5 h-5 text-gray-500 group-open:rotate-180 transition-transform" />
+                </summary>
+                <div className="px-6 pb-6">
+                  <div className="prose prose-sm max-w-none text-gray-700" dangerouslySetInnerHTML={{ __html: mdLite(summary.relatedWork) }} />
+                </div>
+              </details>
+            )}
+          </div>
         </div>
       )}
       <div className="block md:hidden w-16 h-1 bg-gray-300 rounded-full mx-auto mt-2 mb-3" />

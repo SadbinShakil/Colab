@@ -7,6 +7,7 @@ import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
 import { BookOpen, Mail, Lock, Eye, EyeOff, User, GraduationCap, FileText, CheckCircle, ArrowRight, Sparkles } from "lucide-react"
+import { motion } from 'framer-motion'
 
 export default function SignUpPage() {
   const [showPassword, setShowPassword] = useState(false)
@@ -18,7 +19,6 @@ export default function SignUpPage() {
   const [redirectUrl, setRedirectUrl] = useState('/dashboard')
   const router = useRouter()
 
-  // Get redirect URL from query params
   useEffect(() => {
     const urlParams = new URLSearchParams(window.location.search)
     const redirect = urlParams.get('redirect')
@@ -26,7 +26,7 @@ export default function SignUpPage() {
       setRedirectUrl(redirect)
     }
   }, [])
-  
+
   const [formData, setFormData] = useState({
     firstName: '',
     lastName: '',
@@ -74,7 +74,7 @@ export default function SignUpPage() {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     setError('')
-    
+
     if (!agreeToTerms) {
       setError('Please agree to the terms and conditions')
       return
@@ -85,9 +85,7 @@ export default function SignUpPage() {
     try {
       const response = await fetch('/api/auth/signup', {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(formData),
       })
 
@@ -105,37 +103,38 @@ export default function SignUpPage() {
   }
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-blue-50 via-white to-purple-50 flex items-center justify-center p-4 relative overflow-hidden">
-      {/* Background Pattern */}
-      <div className="absolute inset-0 bg-gradient-to-br from-blue-600/5 via-transparent to-purple-600/5"></div>
-      <div className="absolute top-1/4 left-1/4 w-96 h-96 bg-blue-400/10 rounded-full blur-3xl"></div>
-      <div className="absolute bottom-1/4 right-1/4 w-96 h-96 bg-purple-400/10 rounded-full blur-3xl"></div>
+    <div className="min-h-screen bg-[hsl(var(--color-background))] flex items-center justify-center p-4 relative overflow-hidden text-[hsl(var(--color-foreground))]">
+      {/* Soft Background Blobs */}
+      <div className="absolute inset-0 -z-10 bg-white">
+        <div className="absolute top-[-10%] left-[-10%] w-[50%] h-[50%] bg-blue-100/50 rounded-full blur-[120px]"></div>
+        <div className="absolute bottom-[-10%] right-[-10%] w-[50%] h-[50%] bg-purple-100/50 rounded-full blur-[120px]"></div>
+      </div>
 
-      <div className="w-full max-w-6xl grid lg:grid-cols-2 gap-12 items-center relative z-10">
-        {/* Left Side - Branding */}
-        <div className="hidden lg:block space-y-8">
-          <div className="space-y-6">
-            <Link href="/" className="inline-flex items-center space-x-3 group">
-              <div className="w-12 h-12 bg-blue-600 rounded-2xl flex items-center justify-center shadow-xl group-hover:shadow-2xl group-hover:scale-110 transition-all duration-300">
-                <FileText className="w-6 h-6 text-white" />
+      <div className="w-full max-w-6xl grid lg:grid-cols-2 gap-16 items-center relative z-10">
+
+        {/* Left Side Branding */}
+        <motion.div
+          className="hidden lg:flex flex-col gap-8"
+          initial={{ opacity: 0, x: -40 }}
+          animate={{ opacity: 1, x: 0 }}
+          transition={{ duration: 0.8, ease: 'easeOut' }}
+        >
+          <div>
+            <Link href="/" className="inline-flex items-center gap-3 mb-8 group">
+              <div className="w-12 h-12 bg-blue-600 rounded-xl flex items-center justify-center text-white shadow-lg group-hover:scale-110 transition-transform">
+                <FileText size={24} fill="currentColor" />
               </div>
               <span className="text-3xl font-bold text-gray-900">LitSense</span>
             </Link>
-            
-            <div className="space-y-4">
-              <h1 className="text-4xl font-bold text-gray-900 leading-tight">
-                Join the Future of
-                <span className="block text-blue-600">Academic Collaboration</span>
-              </h1>
-              <p className="text-xl text-gray-600 leading-relaxed">
-                Connect with researchers worldwide, annotate papers together, and accelerate your research with AI-powered insights.
-              </p>
-            </div>
-          </div>
 
-          {/* Features */}
-          <div className="space-y-6">
-            <h3 className="text-lg font-semibold text-gray-900">What you'll get:</h3>
+            <h1 className="text-5xl font-bold text-gray-900 leading-[1.1] mb-6">
+              Join the future of <br />
+              <span className="text-blue-600">academic collaboration.</span>
+            </h1>
+            <p className="text-xl text-gray-700 max-w-lg leading-relaxed mb-8 font-medium">
+              Connect with researchers, annotate papers together, and accelerate discovery with AI.
+            </p>
+
             <div className="space-y-4">
               {[
                 'Real-time collaborative annotation',
@@ -144,317 +143,245 @@ export default function SignUpPage() {
                 'Advanced search capabilities'
               ].map((feature, index) => (
                 <div key={index} className="flex items-center space-x-3 group">
-                  <div className="w-6 h-6 bg-green-100 rounded-lg flex items-center justify-center group-hover:bg-green-600 transition-colors duration-300">
-                    <CheckCircle className="w-4 h-4 text-green-600 group-hover:text-white" />
+                  <div className="w-6 h-6 bg-green-100 rounded-full flex items-center justify-center group-hover:bg-green-600 transition-colors duration-300">
+                    <CheckCircle className="w-4 h-4 text-green-700 group-hover:text-white" />
                   </div>
-                  <span className="text-gray-700 font-medium">{feature}</span>
+                  <span className="text-gray-800 font-bold text-lg">{feature}</span>
                 </div>
               ))}
             </div>
           </div>
-
-          {/* Testimonial */}
-          <div className="bg-white/60 backdrop-blur-sm rounded-2xl p-6 border border-gray-200/50 shadow-lg">
-            <div className="flex items-center space-x-1 mb-3">
-              {[...Array(5)].map((_, i) => (
-                <div key={i} className="w-4 h-4 bg-yellow-400 rounded-full"></div>
-              ))}
-            </div>
-            <p className="text-gray-700 italic leading-relaxed">
-              "LitSense has revolutionized how our research team collaborates. The AI insights are incredibly accurate."
-            </p>
-            <div className="mt-4 flex items-center space-x-3">
-              <div className="w-10 h-10 bg-blue-100 rounded-full flex items-center justify-center">
-                <GraduationCap className="w-5 h-5 text-blue-600" />
-              </div>
-              <div>
-                <p className="font-semibold text-gray-900">Dr. Sarah Chen</p>
-                <p className="text-sm text-gray-600">Stanford University</p>
-              </div>
-            </div>
-          </div>
-        </div>
+        </motion.div>
 
         {/* Right Side - Form */}
-        <div className="w-full max-w-md mx-auto lg:mx-0">
-          <Card className="border-0 shadow-2xl bg-white/70 backdrop-blur-2xl rounded-3xl p-8">
-            <CardHeader className="space-y-4 pb-6">
-              <div className="text-center space-y-2">
-                <div className="inline-flex items-center space-x-2 bg-blue-100 rounded-full px-4 py-2">
-                  <Sparkles className="w-4 h-4 text-blue-600" />
-                  <span className="text-sm font-medium text-blue-600">Step {currentStep} of 2</span>
-                </div>
-                <CardTitle className="text-2xl font-bold text-gray-900">
-                  {currentStep === 1 ? 'Create Your Account' : 'Complete Your Profile'}
-                </CardTitle>
-                <CardDescription className="text-gray-600">
-                  {currentStep === 1 
-                    ? 'Enter your basic information to get started' 
-                    : 'Tell us about your research interests'
-                  }
-                </CardDescription>
+        <motion.div
+          className="w-full max-w-lg mx-auto lg:mx-0"
+          initial={{ opacity: 0, scale: 0.95 }}
+          animate={{ opacity: 1, scale: 1 }}
+          transition={{ duration: 0.6, ease: 'easeOut', delay: 0.2 }}
+        >
+          <div className="bg-white rounded-[2.5rem] p-8 md:p-10 shadow-2xl shadow-blue-900/5 border border-gray-100 relative overflow-hidden">
+
+            {/* Decorative top gradient */}
+            <div className="absolute top-0 left-0 right-0 h-2 bg-gradient-to-r from-blue-500 via-purple-500 to-blue-500"></div>
+
+            <div className="mb-8 text-center">
+              <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-blue-50 text-blue-700 text-sm font-bold mb-4 border border-blue-100">
+                <Sparkles size={14} />
+                <span>Step {currentStep} of 2</span>
               </div>
+              <h2 className="text-2xl font-bold text-gray-900">
+                {currentStep === 1 ? 'Create account' : 'Your profile'}
+              </h2>
+              <p className="text-gray-600 font-medium mt-2">
+                {currentStep === 1 ? 'Start your research journey' : 'Tell us about your interests'}
+              </p>
+            </div>
 
-              {/* Progress Bar */}
-              <div className="w-full bg-gray-200 rounded-full h-2">
-                <div 
-                  className="bg-blue-600 h-2 rounded-full transition-all duration-500 ease-out"
-                  style={{ width: `${(currentStep / 2) * 100}%` }}
-                ></div>
-              </div>
-            </CardHeader>
+            {/* Progress Bar */}
+            <div className="w-full bg-gray-100 rounded-full h-1.5 mb-8 overflow-hidden">
+              <motion.div
+                className="bg-blue-600 h-full rounded-full"
+                initial={{ width: '0%' }}
+                animate={{ width: `${(currentStep / 2) * 100}%` }}
+                transition={{ duration: 0.5 }}
+              ></motion.div>
+            </div>
 
-            <CardContent className="space-y-6">
-              <form onSubmit={currentStep === 1 ? (e) => { e.preventDefault(); nextStep(); } : handleSubmit} className="space-y-4">
-                {currentStep === 1 ? (
-                  <div className="space-y-4">
-                    {/* Name Fields */}
-                    <div className="grid grid-cols-2 gap-4">
-                      <div className="space-y-2">
-                        <label className="text-sm font-medium text-gray-700">First Name</label>
-                        <div className="relative">
-                          <Input
-                            type="text"
-                            value={formData.firstName}
-                            onChange={(e) => setFormData({...formData, firstName: e.target.value})}
-                            className="peer pl-10 pr-4 py-4 border border-gray-200 rounded-xl bg-white/80 focus:border-blue-500 focus:ring-2 focus:ring-blue-100 transition-all duration-200 shadow-sm placeholder-transparent"
-                            placeholder=" "
-                            required
-                            aria-label="First Name"
-                          />
-                          <User className="absolute left-3 top-1/2 -translate-y-1/2 text-blue-300 peer-focus:text-blue-500 transition-colors duration-200" />
-                          <label className="absolute left-10 top-1/2 -translate-y-1/2 text-gray-500 text-sm pointer-events-none transition-all duration-200 peer-placeholder-shown:top-1/2 peer-placeholder-shown:text-base peer-focus:top-2 peer-focus:text-xs peer-focus:text-blue-600">
-                            First Name
-                          </label>
-                        </div>
-                      </div>
-                      <div className="space-y-2">
-                        <label className="text-sm font-medium text-gray-700">Last Name</label>
-                        <div className="relative">
-                          <Input
-                            type="text"
-                            value={formData.lastName}
-                            onChange={(e) => setFormData({...formData, lastName: e.target.value})}
-                            className="peer pl-10 pr-4 py-4 border border-gray-200 rounded-xl bg-white/80 focus:border-blue-500 focus:ring-2 focus:ring-blue-100 transition-all duration-200 shadow-sm placeholder-transparent"
-                            placeholder=" "
-                            required
-                            aria-label="Last Name"
-                          />
-                          <User className="absolute left-3 top-1/2 -translate-y-1/2 text-blue-300 peer-focus:text-blue-500 transition-colors duration-200" />
-                          <label className="absolute left-10 top-1/2 -translate-y-1/2 text-gray-500 text-sm pointer-events-none transition-all duration-200 peer-placeholder-shown:top-1/2 peer-placeholder-shown:text-base peer-focus:top-2 peer-focus:text-xs peer-focus:text-blue-600">
-                            Last Name
-                          </label>
-                        </div>
-                      </div>
-                    </div>
+            <form onSubmit={currentStep === 1 ? (e) => { e.preventDefault(); nextStep(); } : handleSubmit} className="space-y-6">
 
-                    {/* Email */}
-                    <div className="space-y-2">
-                      <div className="relative">
-                        <Input
-                          type="email"
-                          value={formData.email}
-                          onChange={(e) => setFormData({...formData, email: e.target.value})}
-                          className="peer pl-10 pr-4 py-4 border border-gray-200 rounded-xl bg-white/80 focus:border-blue-500 focus:ring-2 focus:ring-blue-100 transition-all duration-200 shadow-sm"
-                          placeholder="john.doe@university.edu"
-                          required
-                          aria-label="Email Address"
-                        />
-                        <Mail className="absolute left-3 top-1/2 -translate-y-1/2 text-blue-300 peer-focus:text-blue-500 transition-colors duration-200" />
-                        <label className="absolute left-10 top-1/2 -translate-y-1/2 text-gray-500 text-sm pointer-events-none transition-all duration-200 peer-placeholder-shown:top-1/2 peer-placeholder-shown:text-base peer-focus:top-2 peer-focus:text-xs peer-focus:text-blue-600">
-                          Email Address
-                        </label>
-                      </div>
-                    </div>
-
-                    {/* Password */}
-                    <div className="space-y-2">
-                      <div className="relative">
-                        <Input
-                          type={showPassword ? "text" : "password"}
-                          value={formData.password}
-                          onChange={(e) => setFormData({...formData, password: e.target.value})}
-                          className="peer pl-10 pr-10 border border-gray-200 rounded-xl bg-white/80 focus:border-blue-500 focus:ring-2 focus:ring-blue-100 transition-all duration-200 shadow-sm placeholder-transparent"
-                          placeholder="Create a strong password"
-                          required
-                          aria-label="Password"
-                        />
-                        <Lock className="absolute left-3 top-1/2 -translate-y-1/2 text-blue-300 peer-focus:text-blue-500 transition-colors duration-200" />
-                        <label className="absolute left-10 top-1/2 -translate-y-1/2 text-gray-500 text-sm pointer-events-none transition-all duration-200 peer-placeholder-shown:top-1/2 peer-placeholder-shown:text-base peer-focus:top-2 peer-focus:text-xs peer-focus:text-blue-600">
-                          Password
-                        </label>
-                        <button
-                          type="button"
-                          onClick={() => setShowPassword(!showPassword)}
-                          className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
-                        >
-                          {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
-                        </button>
-                      </div>
-                    </div>
-
-                    {/* Confirm Password */}
-                    <div className="space-y-2">
-                      <div className="relative">
-                        <Input
-                          type={showConfirmPassword ? "text" : "password"}
-                          value={formData.confirmPassword}
-                          onChange={(e) => setFormData({...formData, confirmPassword: e.target.value})}
-                          className="peer pl-10 pr-10 border border-gray-200 rounded-xl bg-white/80 focus:border-blue-500 focus:ring-2 focus:ring-blue-100 transition-all duration-200 shadow-sm placeholder-transparent"
-                          placeholder="Confirm your password"
-                          required
-                          aria-label="Confirm Password"
-                        />
-                        <Lock className="absolute left-3 top-1/2 -translate-y-1/2 text-blue-300 peer-focus:text-blue-500 transition-colors duration-200" />
-                        <label className="absolute left-10 top-1/2 -translate-y-1/2 text-gray-500 text-sm pointer-events-none transition-all duration-200 peer-placeholder-shown:top-1/2 peer-placeholder-shown:text-base peer-focus:top-2 peer-focus:text-xs peer-focus:text-blue-600">
-                          Confirm Password
-                        </label>
-                        <button
-                          type="button"
-                          onClick={() => setShowConfirmPassword(!showConfirmPassword)}
-                          className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
-                        >
-                          {showConfirmPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
-                        </button>
-                      </div>
-                    </div>
-                  </div>
-                ) : (
-                  <div className="space-y-4">
-                    {/* Institution */}
-                    <div className="space-y-2">
-                      <label className="text-sm font-medium text-gray-700">Institution</label>
-                      <div className="relative">
-                        <Input
-                          type="text"
-                          value={formData.institution}
-                          onChange={(e) => setFormData({...formData, institution: e.target.value})}
-                          className="peer pl-10 pr-4 py-4 border border-gray-200 rounded-xl bg-white/80 focus:border-blue-500 focus:ring-2 focus:ring-blue-100 transition-all duration-200 shadow-sm placeholder-transparent"
-                          placeholder=" "
-                          aria-label="Institution"
-                        />
-                        <GraduationCap className="absolute left-3 top-1/2 -translate-y-1/2 text-blue-300 peer-focus:text-blue-500 transition-colors duration-200" />
-                        <label className="absolute left-10 top-1/2 -translate-y-1/2 text-gray-500 text-sm pointer-events-none transition-all duration-200 peer-placeholder-shown:top-1/2 peer-placeholder-shown:text-base peer-focus:top-2 peer-focus:text-xs peer-focus:text-blue-600">
-                          Institution
-                        </label>
-                      </div>
-                    </div>
-
-                    {/* Expertise Areas */}
-                    <div className="space-y-3">
-                      <label className="text-sm font-medium text-gray-700">
-                        Areas of expertise (select all that apply)
-                      </label>
-                      <div className="grid grid-cols-2 gap-2 max-h-32 overflow-y-auto p-2 border border-gray-200 rounded-lg bg-gray-50">
-                        {expertiseAreas.map((area) => (
-                          <label key={area} className="flex items-center space-x-2 text-sm cursor-pointer hover:bg-white p-2 rounded-md transition-colors duration-200">
-                            <input
-                              type="checkbox"
-                              checked={formData.expertise.includes(area)}
-                              onChange={() => handleExpertiseToggle(area)}
-                              className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
-                            />
-                            <span className="text-gray-700">{area}</span>
-                          </label>
-                        ))}
-                      </div>
-                    </div>
-
-                    {/* Terms and Conditions */}
-                    <div className="flex items-start space-x-2">
-                      <input
-                        type="checkbox"
-                        id="terms"
-                        checked={agreeToTerms}
-                        onChange={(e) => setAgreeToTerms(e.target.checked)}
-                        className="mt-1 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+              {currentStep === 1 ? (
+                <motion.div
+                  key="step1"
+                  initial={{ opacity: 0, x: 20 }}
+                  animate={{ opacity: 1, x: 0 }}
+                  exit={{ opacity: 0, x: -20 }}
+                  className="space-y-4"
+                >
+                  <div className="grid grid-cols-2 gap-4">
+                    <div className="relative group">
+                      <User className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400 group-focus-within:text-blue-600 transition-colors" size={18} />
+                      <Input
+                        placeholder="First Name"
+                        className="pl-12 h-14 rounded-2xl bg-gray-50 border-gray-200 focus:bg-white focus:border-blue-300 focus:ring-4 focus:ring-blue-50 transition-all font-medium placeholder:text-gray-400"
+                        value={formData.firstName}
+                        onChange={(e) => setFormData({ ...formData, firstName: e.target.value })}
                         required
                       />
-                      <label htmlFor="terms" className="text-sm text-gray-600 leading-relaxed">
-                        I agree to the{' '}
-                        <Link href="/terms" className="text-blue-600 hover:text-blue-800 font-medium">
-                          Terms of Service
-                        </Link>
-                        {' '}and{' '}
-                        <Link href="/privacy" className="text-blue-600 hover:text-blue-800 font-medium">
-                          Privacy Policy
-                        </Link>
-                      </label>
+                    </div>
+                    <div className="relative group">
+                      <User className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400 group-focus-within:text-blue-600 transition-colors" size={18} />
+                      <Input
+                        placeholder="Last Name"
+                        className="pl-12 h-14 rounded-2xl bg-gray-50 border-gray-200 focus:bg-white focus:border-blue-300 focus:ring-4 focus:ring-blue-50 transition-all font-medium placeholder:text-gray-400"
+                        value={formData.lastName}
+                        onChange={(e) => setFormData({ ...formData, lastName: e.target.value })}
+                        required
+                      />
                     </div>
                   </div>
-                )}
 
-                {error && (
-                  <div className="text-red-600 text-sm bg-red-50 border border-red-200 rounded-lg p-3">
-                    {error}
+                  <div className="relative group">
+                    <Mail className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400 group-focus-within:text-blue-600 transition-colors" size={18} />
+                    <Input
+                      type="email"
+                      placeholder="Email Address"
+                      className="pl-12 h-14 rounded-2xl bg-gray-50 border-gray-200 focus:bg-white focus:border-blue-300 focus:ring-4 focus:ring-blue-50 transition-all font-medium placeholder:text-gray-400"
+                      value={formData.email}
+                      onChange={(e) => setFormData({ ...formData, email: e.target.value })}
+                      required
+                    />
                   </div>
-                )}
 
-                <div className="flex gap-3">
-                  {currentStep === 2 && (
-                    <Button
+                  <div className="relative group">
+                    <Lock className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400 group-focus-within:text-blue-600 transition-colors" size={18} />
+                    <Input
+                      type={showPassword ? "text" : "password"}
+                      placeholder="Password"
+                      className="pl-12 pr-12 h-14 rounded-2xl bg-gray-50 border-gray-200 focus:bg-white focus:border-blue-300 focus:ring-4 focus:ring-blue-50 transition-all font-medium placeholder:text-gray-400"
+                      value={formData.password}
+                      onChange={(e) => setFormData({ ...formData, password: e.target.value })}
+                      required
+                    />
+                    <button
                       type="button"
-                      variant="outline"
-                      onClick={() => setCurrentStep(1)}
-                      className="flex-1 border-gray-300 hover:bg-gray-50 rounded-xl"
+                      onClick={() => setShowPassword(!showPassword)}
+                      className="absolute right-4 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 p-1 bg-transparent border-none cursor-pointer"
                     >
-                      Back
-                    </Button>
-                  )}
-                  <Button
-                    type="submit"
-                    disabled={isLoading}
-                    className="flex-1 bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-700 hover:to-purple-700 text-white shadow-xl rounded-xl py-3 text-lg font-semibold transition-all duration-300 active:scale-95 focus:outline-none focus:ring-2 focus:ring-blue-400"
-                  >
-                    {isLoading ? (
-                      <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
-                    ) : currentStep === 1 ? (
-                      <>
-                        Continue
-                        <ArrowRight className="w-4 h-4 ml-2" />
-                      </>
-                    ) : (
-                      'Create Account'
-                    )}
-                  </Button>
+                      {showPassword ? <EyeOff size={18} /> : <Eye size={18} />}
+                    </button>
+                  </div>
+
+                  <div className="relative group">
+                    <Lock className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400 group-focus-within:text-blue-600 transition-colors" size={18} />
+                    <Input
+                      type={showConfirmPassword ? "text" : "password"}
+                      placeholder="Confirm Password"
+                      className="pl-12 pr-12 h-14 rounded-2xl bg-gray-50 border-gray-200 focus:bg-white focus:border-blue-300 focus:ring-4 focus:ring-blue-50 transition-all font-medium placeholder:text-gray-400"
+                      value={formData.confirmPassword}
+                      onChange={(e) => setFormData({ ...formData, confirmPassword: e.target.value })}
+                      required
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setShowConfirmPassword(!showConfirmPassword)}
+                      className="absolute right-4 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 p-1 bg-transparent border-none cursor-pointer"
+                    >
+                      {showConfirmPassword ? <EyeOff size={18} /> : <Eye size={18} />}
+                    </button>
+                  </div>
+                </motion.div>
+              ) : (
+                <motion.div
+                  key="step2"
+                  initial={{ opacity: 0, x: 20 }}
+                  animate={{ opacity: 1, x: 0 }}
+                  exit={{ opacity: 0, x: -20 }}
+                  className="space-y-6"
+                >
+                  <div className="relative group">
+                    <GraduationCap className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400 group-focus-within:text-blue-600 transition-colors" size={18} />
+                    <Input
+                      placeholder="Institution / University"
+                      className="pl-12 h-14 rounded-2xl bg-gray-50 border-gray-200 focus:bg-white focus:border-blue-300 focus:ring-4 focus:ring-blue-50 transition-all font-medium placeholder:text-gray-400"
+                      value={formData.institution}
+                      onChange={(e) => setFormData({ ...formData, institution: e.target.value })}
+                    />
+                  </div>
+
+                  <div className="space-y-3">
+                    <label className="text-sm font-bold text-gray-700 block">
+                      Areas of expertise
+                    </label>
+                    <div className="flex flex-wrap gap-2 max-h-48 overflow-y-auto p-1">
+                      {expertiseAreas.map((area) => (
+                        <label
+                          key={area}
+                          className={`
+                              cursor-pointer px-4 py-2 rounded-full text-sm font-bold transition-all border
+                              ${formData.expertise.includes(area)
+                              ? 'bg-blue-600 text-white border-blue-600 shadow-md shadow-blue-200'
+                              : 'bg-white text-gray-600 border-gray-200 hover:bg-gray-50 hover:border-gray-300'}
+                            `}
+                        >
+                          <input
+                            type="checkbox"
+                            className="hidden"
+                            checked={formData.expertise.includes(area)}
+                            onChange={() => handleExpertiseToggle(area)}
+                          />
+                          {area}
+                        </label>
+                      ))}
+                    </div>
+                  </div>
+
+                  <label className="flex items-start gap-3 cursor-pointer group">
+                    <div className="relative flex items-center mt-1">
+                      <input
+                        type="checkbox"
+                        checked={agreeToTerms}
+                        onChange={(e) => setAgreeToTerms(e.target.checked)}
+                        className="peer sr-only "
+                      />
+                      <div className="w-5 h-5 border-2 border-gray-300 rounded peer-checked:bg-blue-600 peer-checked:border-blue-600 transition-all"></div>
+                      <CheckCircle className="w-3.5 h-3.5 text-white absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 opacity-0 peer-checked:opacity-100 transition-opacity" />
+                    </div>
+                    <span className="text-sm text-gray-600 font-medium leading-relaxed group-hover:text-gray-800 transition-colors">
+                      I agree to the <Link href="/terms" className="text-blue-600 hover:underline font-bold">Terms of Service</Link> and <Link href="/privacy" className="text-blue-600 hover:underline font-bold">Privacy Policy</Link>.
+                    </span>
+                  </label>
+                </motion.div>
+              )}
+
+              {error && (
+                <div className="p-4 rounded-2xl bg-red-50 text-red-700 text-sm font-bold border border-red-100 flex items-center gap-2 animate-in fade-in slide-in-from-top-2">
+                  <span className="w-1.5 h-1.5 rounded-full bg-red-600"></span>
+                  {error}
                 </div>
-              </form>
+              )}
 
-              <div className="flex items-center my-6">
-                <span className="flex-1 border-t border-gray-200"></span>
-                <span className="mx-4 text-gray-400 text-sm">or</span>
-                <span className="flex-1 border-t border-gray-200"></span>
-              </div>
-
-              <div className="grid grid-cols-2 gap-3">
-                <Button variant="outline" className="border-gray-300 hover:bg-gray-50 rounded-xl flex items-center justify-center py-3">
-                  <svg className="w-4 h-4 mr-2" viewBox="0 0 24 24">
-                    <path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"/>
-                    <path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/>
-                    <path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z"/>
-                    <path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z"/>
-                  </svg>
-                  Google
+              <div className="flex gap-4 pt-2">
+                {currentStep === 2 && (
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    onClick={() => setCurrentStep(1)}
+                    className="h-14 px-6 rounded-full text-gray-700 hover:bg-gray-100 font-bold"
+                  >
+                    Back
+                  </Button>
+                )}
+                <Button
+                  type="submit"
+                  disabled={isLoading}
+                  className="flex-1 h-14 rounded-full bg-blue-600 hover:bg-blue-700 text-white font-bold text-lg shadow-lg hover:shadow-xl hover:shadow-blue-200 transition-all transform active:scale-95"
+                >
+                  {isLoading ? (
+                    <span className="flex items-center gap-2">
+                      <div className="w-4 h-4 border-2 border-white/50 border-t-white rounded-full animate-spin" />
+                      Processing...
+                    </span>
+                  ) : currentStep === 1 ? (
+                    <span className="flex items-center gap-2">
+                      Continue <ArrowRight size={20} />
+                    </span>
+                  ) : (
+                    'Create Account'
+                  )}
                 </Button>
-                <Button variant="outline" className="border-gray-300 hover:bg-gray-50 rounded-xl flex items-center justify-center py-3">
-                  <svg className="w-4 h-4 mr-2" fill="currentColor" viewBox="0 0 24 24">
-                    <path d="M12.017 0C5.396 0 .029 5.367.029 11.987c0 5.079 3.158 9.417 7.618 11.024-.105-.949-.199-2.403.041-3.439.219-.937 1.404-5.219 1.404-5.219s-.359-.72-.359-1.781c0-1.663.967-2.911 2.168-2.911 1.024 0 1.518.769 1.518 1.688 0 1.029-.653 2.567-.992 3.992-.285 1.193.6 2.165 1.775 2.165 2.128 0 3.768-2.245 3.768-5.487 0-2.861-2.063-4.869-5.008-4.869-3.41 0-5.409 2.562-5.409 5.199 0 1.033.394 2.143.889 2.741.978.114.16.436.085.704-.09.369-.294 1.189-.334 1.357-.053.225-.172.271-.402.165-1.495-.69-2.433-2.878-2.433-4.646 0-3.776 2.748-7.252 7.92-7.252 4.158 0 7.392 2.967 7.392 6.923 0 4.135-2.607 7.462-6.233 7.462-1.214 0-2.357-.629-2.748-1.378l-.748 2.853c-.271 1.043-1.002 2.35-1.492 3.146C9.57 23.812 10.763 24.009 12.017 24.009c6.624 0 11.99-5.367 11.99-11.988C24.007 5.367 18.641.001.012.001z"/>
-                  </svg>
-                  ORCID
-                </Button>
               </div>
+            </form>
 
-              <div className="text-center">
-                <span className="text-sm text-gray-600">
-                  Already have an account?{' '}
-                  <Link href="/auth/login" className="text-blue-600 hover:text-blue-800 font-medium">
-                    Sign in
-                  </Link>
-                </span>
-              </div>
-            </CardContent>
-          </Card>
-        </div>
+            <div className="mt-8 pt-6 border-t border-gray-100 text-center">
+              <span className="text-gray-700 font-medium">Already have an account? </span>
+              <Link href="/auth/login" className="text-blue-700 font-bold hover:underline">
+                Sign in
+              </Link>
+            </div>
+
+          </div>
+        </motion.div>
       </div>
     </div>
   )

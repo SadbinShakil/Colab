@@ -1,545 +1,604 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import { Button } from "@/components/ui/button"
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
-import InfoToast from '@/components/InfoToast'
-import { 
-  BookOpen, Search, Upload, Plus, Filter, Grid3X3, List, 
-  FileText, Users, Clock, Star, MoreHorizontal, Eye,
-  MessageCircle, Brain, Lightbulb, Settings, User,
-  Bell, HelpCircle, LogOut, FolderOpen, Tags, 
-  TrendingUp, Calendar, Award, Zap, ChevronRight,
-  Activity, Target, Globe, Sparkles, Calculator
+import { toast } from "sonner"
+import {
+  Search, Upload, Plus, Filter, Grid3X3, List,
+  FileText, Users, Clock, MoreHorizontal,
+  Settings, User, Bell, LogOut, ChevronDown,
+  Sparkles, Calculator, Zap, Activity,
+  LayoutDashboard, Star, Trash2, Folder,
+  File, ChevronRight, Home, MoreVertical, RefreshCw
 } from "lucide-react"
+
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu"
+import { Checkbox } from "@/components/ui/checkbox"
+
+import { UploadModal } from "@/components/UploadModal"
+
+interface UserProfile {
+  name: string;
+  email: string;
+}
 
 export default function DashboardPage() {
   const router = useRouter()
   const [searchQuery, setSearchQuery] = useState('')
-  const [viewMode, setViewMode] = useState<'grid' | 'list'>('grid')
-  const [showInfo, setShowInfo] = useState(true)
+  const [viewMode, setViewMode] = useState<'grid' | 'list'>('list')
+  const [user, setUser] = useState<UserProfile | null>(null)
+  const [files, setFiles] = useState<any[]>([])
+  const [isLoading, setIsLoading] = useState(true)
+  const [isUploadOpen, setIsUploadOpen] = useState(false)
+
+  // Navigation State
+  const [currentTab, setCurrentTab] = useState('home')
+
+  const fetchDocs = async () => {
+    try {
+      const res = await fetch('/api/documents')
+      if (res.ok) {
+        const data = await res.json()
+        setFiles(data)
+      }
+    } catch (e) {
+      console.error("Failed to fetch documents", e)
+    } finally {
+      setIsLoading(false)
+    }
+  }
+
+  useEffect(() => {
+    fetchDocs()
+
+    const storedUser = localStorage.getItem('currentUser')
+    if (storedUser) {
+      try {
+        setUser(JSON.parse(storedUser))
+      } catch (e) { console.error(e) }
+    }
+  }, [])
 
   const handleLogout = async () => {
     try {
-      // Call logout API
       await fetch('/api/auth/logout', { method: 'POST' })
-      
-      // Clear local storage
       localStorage.removeItem('currentUser')
-      sessionStorage.removeItem('currentUser')
-      
-      // Redirect to login
       router.push('/auth/login')
+    } catch { router.push('/auth/login') }
+  }
+
+  const handleMoveToTrash = async (e: React.MouseEvent, id: string) => {
+    e.stopPropagation()
+    try {
+      // Optimistic update
+      setFiles(files.map(f => f.id === id ? { ...f, visibility: 'trash' } : f))
+
+      const res = await fetch(`/api/documents/${id}`, {
+        method: 'DELETE' // DELETE now moves to trash
+      })
+      if (!res.ok) throw new Error('Failed to move to trash')
     } catch (error) {
-      console.error('Logout error:', error)
-      // Still redirect even if API call fails
-      localStorage.removeItem('currentUser')
-      sessionStorage.removeItem('currentUser')
-      router.push('/auth/login')
+      console.error(error)
+      // Revert optimistic update if needed, but for now just log
     }
   }
 
-  // Mock data for documents
-  const documents = [
-    {
-      id: '1',
-      title: 'Attention Is All You Need',
-      authors: 'Vaswani, A., et al.',
-      uploadDate: '2024-01-15',
-      status: 'active',
-      collaborators: 3,
-      annotations: 12,
-      type: 'paper',
-      tags: ['NLP', 'Transformers', 'Deep Learning'],
-      progress: 75,
-      lastActivity: '2 hours ago'
-    },
-    {
-      id: '2',
-      title: 'BERT: Pre-training of Deep Bidirectional Transformers',
-      authors: 'Devlin, J., et al.',
-      uploadDate: '2024-01-12',
-      status: 'completed',
-      collaborators: 5,
-      annotations: 28,
-      type: 'paper',
-      tags: ['BERT', 'NLP', 'Language Models'],
-      progress: 100,
-      lastActivity: '1 day ago'
-    },
-    {
-      id: '3',
-      title: 'The Illustrated Transformer',
-      authors: 'Alammar, J.',
-      uploadDate: '2024-01-10',
-      status: 'draft',
-      collaborators: 2,
-      annotations: 8,
-      type: 'paper',
-      tags: ['Tutorial', 'Transformers'],
-      progress: 45,
-      lastActivity: '3 days ago'
-    },
-    {
-      id: '4',
-      title: 'GPT-4 Technical Report',
-      authors: 'OpenAI',
-      uploadDate: '2024-01-08',
-      status: 'active',
-      collaborators: 7,
-      annotations: 35,
-      type: 'paper',
-      tags: ['GPT', 'LLM', 'AI'],
-      progress: 60,
-      lastActivity: '5 hours ago'
-    }
-  ]
+  const handleRestore = async (e: React.MouseEvent, id: string) => {
+    e.stopPropagation()
+    try {
+      setFiles(files.map(f => f.id === id ? { ...f, visibility: 'private' } : f))
+      const res = await fetch(`/api/documents/${id}`, {
+        method: 'PATCH',
+        body: JSON.stringify({ action: 'restore' }),
+        headers: { 'Content-Type': 'application/json' }
+      })
+      if (!res.ok) throw new Error('Failed to restore')
+    } catch (error) { console.error(error) }
+  }
 
-  // Recent activity data
-  const recentActivity = [
-    { user: 'Dr. Sarah Chen', action: 'added annotation to', document: 'Attention Is All You Need', time: '2 hours ago' },
-    { user: 'Prof. Michael Ross', action: 'shared', document: 'BERT Pre-training', time: '4 hours ago' },
-    { user: 'Dr. Elena Volkov', action: 'completed review of', document: 'GPT-4 Technical Report', time: '6 hours ago' },
-    { user: 'You', action: 'uploaded', document: 'Transformer Architecture', time: '1 day ago' }
-  ]
+  const [selectedFiles, setSelectedFiles] = useState<Set<string>>(new Set())
 
-  const getStatusColor = (status: string) => {
-    switch (status) {
-      case 'active': return 'bg-blue-100 text-blue-800 border-blue-200'
-      case 'completed': return 'bg-green-100 text-green-800 border-green-200'
-      case 'draft': return 'bg-yellow-100 text-yellow-800 border-yellow-200'
-      default: return 'bg-gray-100 text-gray-800 border-gray-200'
+  // Selection Logic
+  const handleSelectFile = (id: string) => {
+    setSelectedFiles(prev => {
+      const newSet = new Set(prev)
+      if (newSet.has(id)) {
+        newSet.delete(id)
+      } else {
+        newSet.add(id)
+      }
+      return newSet
+    })
+  }
+
+  const handleSelectAll = (filesToSelect: any[]) => {
+    if (selectedFiles.size === filesToSelect.length && filesToSelect.length > 0) {
+      setSelectedFiles(new Set())
+    } else {
+      setSelectedFiles(new Set(filesToSelect.map(f => f.id)))
     }
   }
+
+  const handleBulkMoveToTrash = async () => {
+    try {
+      const selectedIds = Array.from(selectedFiles)
+      // Optimistic update
+      setFiles(files.map(f => selectedIds.includes(f.id) ? { ...f, visibility: 'trash' } : f))
+      setSelectedFiles(new Set()) // Clear selection
+
+      await Promise.all(selectedIds.map(id =>
+        fetch(`/api/documents/${id}`, { method: 'DELETE' })
+      ))
+    } catch (e) { console.error('Bulk delete failed', e) }
+  }
+
+  const handleBulkRestore = async () => {
+    try {
+      const selectedIds = Array.from(selectedFiles)
+      setFiles(files.map(f => selectedIds.includes(f.id) ? { ...f, visibility: 'private' } : f))
+      setSelectedFiles(new Set())
+
+      await Promise.all(selectedIds.map(id =>
+        fetch(`/api/documents/${id}`, {
+          method: 'PATCH',
+          body: JSON.stringify({ action: 'restore' }),
+          headers: { 'Content-Type': 'application/json' }
+        })
+      ))
+    } catch (e) { console.error('Bulk restore failed', e) }
+  }
+
+  const handleBulkDeleteForever = async () => {
+    if (!confirm('Are you sure you want to delete these files forever? This cannot be undone.')) return
+    try {
+      const selectedIds = Array.from(selectedFiles)
+      setFiles(files.filter(f => !selectedIds.includes(f.id))) // Remove from state entirely
+      setSelectedFiles(new Set())
+
+      await Promise.all(selectedIds.map(id =>
+        fetch(`/api/documents/${id}?permanent=true`, { method: 'DELETE' })
+      ))
+    } catch (e) { console.error('Bulk delete forever failed', e) }
+  }
+
+  // Filtered Files Logic
+  const getDisplayFiles = () => {
+    const activeFiles = files.filter(f => f.visibility !== 'trash')
+    const trashedFiles = files.filter(f => f.visibility === 'trash')
+
+    switch (currentTab) {
+      case 'home':
+      case 'recent':
+        return [...activeFiles].sort((a, b) => new Date(b.modified).getTime() - new Date(a.modified).getTime())
+      case 'my-files':
+        return activeFiles
+      case 'shared':
+        return [
+          { id: 's1', name: 'Project Requirements', owner: 'Alex M.', modified: '2 days ago', size: '1.2 MB', starred: false, type: 'DOC' },
+          { id: 's2', name: 'Weekly Report', owner: 'Sarah J.', modified: '5 hours ago', size: '0.8 MB', starred: true, type: 'PDF' }
+        ]
+      case 'starred':
+        return activeFiles.filter(f => f.starred)
+      case 'trash':
+        return trashedFiles
+      default:
+        return activeFiles
+    }
+  }
+
+  const allFilteredFiles = getDisplayFiles()
+  // Limit to 5 for Home/Recent view, show all for others
+  const displayedFiles = (currentTab === 'home' || currentTab === 'recent')
+    ? allFilteredFiles.slice(0, 5)
+    : allFilteredFiles
+
+  const suggestedFiles = files
+    .filter(f => f.visibility !== 'trash')
+    .sort((a, b) => new Date(b.modified).getTime() - new Date(a.modified).getTime())
+    .slice(0, 4)
+    .map(f => ({
+      title: f.name,
+      type: 'PDF',
+      date: f.modified,
+      icon: FileText,
+      color: 'text-blue-600',
+      bg: 'bg-blue-50',
+      id: f.id, // Explicitly pass ID for dropdown
+      visibility: f.visibility, // Pass visibility if needed
+      starred: f.starred // Pass starred status
+    }))
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-blue-50/50 via-white to-purple-50/50">
-      {/* Navigation Header */}
-      <header className="bg-white/80 backdrop-blur-md border-b border-gray-200/50 sticky top-0 z-40">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="flex justify-between items-center h-16">
-            {/* Logo */}
-            <div className="flex items-center space-x-4">
-              <div className="w-8 h-8 bg-blue-600 rounded-xl flex items-center justify-center">
-                <FileText className="w-4 h-4 text-white" />
-              </div>
-              <h1 className="text-xl font-bold text-gray-900">LitSense</h1>
-            </div>
+    <div className="min-h-screen bg-[#F8FAFC] text-slate-900 font-sans flex flex-col">
 
-            {/* Search */}
-            <div className="flex-1 max-w-2xl mx-8">
-              <div className="relative">
-                <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 h-4 w-4" />
-                <Input
-                  type="text"
-                  placeholder="Search papers, authors, or topics..."
-                  value={searchQuery}
-                  onChange={(e) => setSearchQuery(e.target.value)}
-                  className="pl-10 bg-gray-50 border-gray-200 focus:bg-white focus:border-blue-500 focus:ring-blue-500"
-                />
-              </div>
-            </div>
+      {/* 1. Professional Header */}
+      <header className="h-16 bg-white border-b border-gray-200 flex items-center justify-between px-4 sticky top-0 z-50">
+        <div className="flex items-center gap-3 w-64 pl-2">
+          <div className="bg-blue-600 rounded-lg p-1.5 shadow-sm">
+            <FileText className="w-5 h-5 text-white" />
+          </div>
+          <span className="text-xl font-semibold tracking-tight text-slate-800">LitSense</span>
+        </div>
 
-            {/* Actions */}
-            <div className="flex items-center space-x-4">
-              <Button size="sm" variant="outline" className="border-gray-300 hover:bg-gray-50">
-                <Bell className="w-4 h-4" />
-              </Button>
-              <Button size="sm" variant="outline" className="border-gray-300 hover:bg-gray-50">
-                <Settings className="w-4 h-4" />
-              </Button>
-              <Button 
-                size="sm" 
-                className="bg-blue-600 hover:bg-blue-700 text-white"
-                onClick={() => router.push('/upload')}
-              >
-                <Upload className="w-4 h-4 mr-2" />
-                Upload Paper
-              </Button>
-              <div className="relative group">
-                <div className="w-8 h-8 bg-blue-100 rounded-full flex items-center justify-center cursor-pointer">
-                  <User className="w-4 h-4 text-blue-600" />
-                </div>
-                {/* Dropdown Menu */}
-                <div className="absolute right-0 mt-2 w-48 bg-white rounded-md shadow-lg border border-gray-200 opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all duration-200 z-50">
-                  <div className="py-1">
-                    <button
-                      onClick={handleLogout}
-                      className="w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-100 flex items-center"
-                    >
-                      <LogOut className="w-4 h-4 mr-2" />
-                      Logout
-                    </button>
-                  </div>
-                </div>
-              </div>
+        {/* Central Search Bar - Google Style */}
+        <div className="flex-1 max-w-2xl px-4">
+          <div className="relative group transition-all">
+            <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+              <Search className="h-5 w-5 text-gray-400 group-focus-within:text-blue-500 transition-colors" />
+            </div>
+            <input
+              type="text"
+              className="block w-full pl-10 pr-3 py-2.5 border-none rounded-xl bg-gray-100 text-gray-900 placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:bg-white shadow-sm transition-all"
+              placeholder="Search in Drive..."
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+            />
+            <div className="absolute inset-y-0 right-0 pr-3 flex items-center gap-1">
+              <Button variant="ghost" size="icon" className="h-8 w-8 text-gray-400 hover:text-gray-600"><Filter className="w-4 h-4" /></Button>
+            </div>
+          </div>
+        </div>
+
+        {/* Right Actions */}
+        <div className="flex items-center gap-2 w-64 justify-end">
+          <Button variant="ghost" size="icon" className="text-gray-500 hover:bg-gray-100 rounded-full"><HelpCircleIcon className="w-5 h-5" /></Button>
+          <Button variant="ghost" size="icon" className="text-gray-500 hover:bg-gray-100 rounded-full"><Settings className="w-5 h-5" /></Button>
+          <div className="pl-2">
+            <div className="h-8 w-8 bg-blue-100 text-blue-700 rounded-full flex items-center justify-center font-bold text-sm border border-blue-200 cursor-pointer hover:ring-2 hover:ring-blue-100 transition-all select-none" onClick={handleLogout} title="Sign out">
+              {user?.name?.[0] || 'U'}
             </div>
           </div>
         </div>
       </header>
 
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-        {/* Welcome Section */}
-        <div className="mb-8">
-          <div className="flex items-center justify-between">
-            <div>
-              <h2 className="text-3xl font-bold text-gray-900 mb-2">
-                Welcome back, Dr. Smith
-              </h2>
-              <p className="text-gray-600">
-                Continue your research journey with AI-powered insights
-              </p>
-            </div>
-            <div className="flex items-center space-x-2 bg-blue-50 rounded-full px-4 py-2">
-              <Sparkles className="w-4 h-4 text-blue-600" />
-              <span className="text-sm font-medium text-blue-600">Pro Plan</span>
-            </div>
-          </div>
-        </div>
+      <div className="flex flex-1 overflow-hidden">
 
-        {/* Stats Cards */}
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
-          <Card className="border-0 shadow-sm bg-white/60 backdrop-blur-sm hover:shadow-lg transition-all duration-300">
-            <CardContent className="p-6">
-              <div className="flex items-center justify-between">
-                <div>
-                  <p className="text-sm font-medium text-gray-600">Total Papers</p>
-                  <p className="text-2xl font-bold text-gray-900">24</p>
-                  <p className="text-xs text-green-600 flex items-center mt-1">
-                    <TrendingUp className="w-3 h-3 mr-1" />
-                    +12% this month
-                  </p>
-                </div>
-                <div className="w-12 h-12 bg-blue-100 rounded-2xl flex items-center justify-center">
-                  <FileText className="w-6 h-6 text-blue-600" />
-                </div>
-              </div>
-            </CardContent>
-          </Card>
-
-          <Card className="border-0 shadow-sm bg-white/60 backdrop-blur-sm hover:shadow-lg transition-all duration-300">
-            <CardContent className="p-6">
-              <div className="flex items-center justify-between">
-                <div>
-                  <p className="text-sm font-medium text-gray-600">Collaborations</p>
-                  <p className="text-2xl font-bold text-gray-900">17</p>
-                  <p className="text-xs text-green-600 flex items-center mt-1">
-                    <Users className="w-3 h-3 mr-1" />
-                    3 new invites
-                  </p>
-                </div>
-                <div className="w-12 h-12 bg-green-100 rounded-2xl flex items-center justify-center">
-                  <Users className="w-6 h-6 text-green-600" />
-                </div>
-              </div>
-            </CardContent>
-          </Card>
-
-          <Card className="border-0 shadow-sm bg-white/60 backdrop-blur-sm hover:shadow-lg transition-all duration-300">
-            <CardContent className="p-6">
-              <div className="flex items-center justify-between">
-                <div>
-                  <p className="text-sm font-medium text-gray-600">AI Insights</p>
-                  <p className="text-2xl font-bold text-gray-900">142</p>
-                  <p className="text-xs text-purple-600 flex items-center mt-1">
-                    <Brain className="w-3 h-3 mr-1" />
-                    15 this week
-                  </p>
-                </div>
-                <div className="w-12 h-12 bg-purple-100 rounded-2xl flex items-center justify-center">
-                  <Brain className="w-6 h-6 text-purple-600" />
-                </div>
-              </div>
-            </CardContent>
-          </Card>
-
-          <Card className="border-0 shadow-sm bg-white/60 backdrop-blur-sm hover:shadow-lg transition-all duration-300">
-            <CardContent className="p-6">
-              <div className="flex items-center justify-between">
-                <div>
-                  <p className="text-sm font-medium text-gray-600">Research Score</p>
-                  <p className="text-2xl font-bold text-gray-900">94</p>
-                  <p className="text-xs text-yellow-600 flex items-center mt-1">
-                    <Award className="w-3 h-3 mr-1" />
-                    Top 5% globally
-                  </p>
-                </div>
-                <div className="w-12 h-12 bg-yellow-100 rounded-2xl flex items-center justify-center">
-                  <Award className="w-6 h-6 text-yellow-600" />
-                </div>
-              </div>
-            </CardContent>
-          </Card>
-        </div>
-
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-          {/* Main Content */}
-          <div className="lg:col-span-2 space-y-6">
-            {/* Documents Section */}
-            <Card className="border-0 shadow-lg bg-white/80 backdrop-blur-sm">
-              <CardHeader className="pb-4">
-                <div className="flex items-center justify-between">
-                  <div>
-                    <CardTitle className="text-lg font-semibold text-gray-900">Recent Papers</CardTitle>
-                    <CardDescription className="text-gray-600">
-                      Your latest research documents and collaborations
-                    </CardDescription>
-                  </div>
-                  <div className="flex items-center space-x-2">
-                    <Button size="sm" variant="outline" className="border-gray-300">
-                      <Filter className="w-4 h-4 mr-2" />
-                      Filter
-                    </Button>
-                    <div className="flex border border-gray-200 rounded-lg">
-                      <Button
-                        size="sm"
-                        variant={viewMode === 'grid' ? 'default' : 'ghost'}
-                        onClick={() => setViewMode('grid')}
-                        className="rounded-r-none border-0"
-                      >
-                        <Grid3X3 className="w-4 h-4" />
-                      </Button>
-                      <Button
-                        size="sm"
-                        variant={viewMode === 'list' ? 'default' : 'ghost'}
-                        onClick={() => setViewMode('list')}
-                        className="rounded-l-none border-0"
-                      >
-                        <List className="w-4 h-4" />
-                      </Button>
-                    </div>
-                  </div>
-                </div>
-              </CardHeader>
-              <CardContent>
-                <div className={viewMode === 'grid' ? 'grid grid-cols-1 md:grid-cols-2 gap-4' : 'space-y-4'}>
-                  {documents.map((doc) => (
-                    <Card
-                      key={doc.id}
-                      className="border border-gray-200 hover:shadow-md hover:border-blue-300 transition-all duration-300 cursor-pointer group"
-                    >
-                      <CardContent className="p-4">
-                        <div className="flex items-start justify-between mb-3">
-                          <div className="flex-1">
-                            <h3 className="font-semibold text-gray-900 group-hover:text-blue-600 transition-colors line-clamp-2">
-                              {doc.title}
-                            </h3>
-                            <p className="text-sm text-gray-600 mt-1">{doc.authors}</p>
-                          </div>
-                          <div className={`px-2 py-1 rounded-full text-xs font-medium border ${getStatusColor(doc.status)}`}>
-                            {doc.status}
-                          </div>
-                        </div>
-
-                        {/* Progress Bar */}
-                        <div className="mb-3">
-                          <div className="flex justify-between text-xs text-gray-600 mb-1">
-                            <span>Progress</span>
-                            <span>{doc.progress}%</span>
-                          </div>
-                          <div className="w-full bg-gray-200 rounded-full h-1.5">
-                            <div
-                              className="bg-blue-600 h-1.5 rounded-full transition-all duration-300"
-                              style={{ width: `${doc.progress}%` }}
-                            ></div>
-                          </div>
-                        </div>
-
-                        <div className="flex items-center justify-between text-sm text-gray-600">
-                          <div className="flex items-center space-x-4">
-                            <span className="flex items-center">
-                              <Users className="w-3 h-3 mr-1" />
-                              {doc.collaborators}
-                            </span>
-                            <span className="flex items-center">
-                              <MessageCircle className="w-3 h-3 mr-1" />
-                              {doc.annotations}
-                            </span>
-                          </div>
-                          <span className="text-xs">{doc.lastActivity}</span>
-                        </div>
-
-                        <div className="flex flex-wrap gap-1 mt-3">
-                          {doc.tags.slice(0, 3).map((tag) => (
-                            <span
-                              key={tag}
-                              className="px-2 py-1 bg-gray-100 text-gray-600 text-xs rounded-md"
-                            >
-                              {tag}
-                            </span>
-                          ))}
-                        </div>
-                      </CardContent>
-                    </Card>
-                  ))}
-                </div>
-
-                <div className="mt-6 text-center">
-                  <Button variant="outline" className="border-gray-300 hover:bg-gray-50">
-                    View All Papers
-                    <ChevronRight className="w-4 h-4 ml-2" />
-                  </Button>
-                </div>
-              </CardContent>
-            </Card>
-
-            {/* Quick Actions */}
-            <Card className="border-0 shadow-lg bg-white/80 backdrop-blur-sm">
-              <CardHeader>
-                <CardTitle className="text-lg font-semibold text-gray-900">Quick Actions</CardTitle>
-                <CardDescription className="text-gray-600">
-                  Common tasks to accelerate your research
-                </CardDescription>
-              </CardHeader>
-              <CardContent>
-                <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-                  <Button
-                    variant="outline"
-                    className="h-auto flex-col py-4 border-gray-200 hover:border-blue-300 hover:bg-blue-50 group"
-                    onClick={() => router.push('/upload')}
-                  >
-                    <Upload className="w-6 h-6 mb-2 text-gray-600 group-hover:text-blue-600" />
-                    <span className="text-sm font-medium">Upload Paper</span>
-                  </Button>
-                  <Button
-                    variant="outline"
-                    className="h-auto flex-col py-4 border-gray-200 hover:border-green-300 hover:bg-green-50 group"
-                  >
-                    <Plus className="w-6 h-6 mb-2 text-gray-600 group-hover:text-green-600" />
-                    <span className="text-sm font-medium">New Project</span>
-                  </Button>
-                  <Button
-                    variant="outline"
-                    className="h-auto flex-col py-4 border-gray-200 hover:border-purple-300 hover:bg-purple-50 group"
-                  >
-                    <Users className="w-6 h-6 mb-2 text-gray-600 group-hover:text-purple-600" />
-                    <span className="text-sm font-medium">Invite Team</span>
-                  </Button>
-                  <Button
-                    variant="outline"
-                    className="h-auto flex-col py-4 border-gray-200 hover:border-yellow-300 hover:bg-yellow-50 group"
-                  >
-                    <Brain className="w-6 h-6 mb-2 text-gray-600 group-hover:text-yellow-600" />
-                    <span className="text-sm font-medium">AI Analysis</span>
-                  </Button>
-                  <Button
-                    variant="outline"
-                    className="h-auto flex-col py-4 border-gray-200 hover:border-indigo-300 hover:bg-indigo-50 group"
-                    onClick={() => router.push('/test-math-explainer')}
-                  >
-                    <Calculator className="w-6 h-6 mb-2 text-gray-600 group-hover:text-indigo-600" />
-                    <span className="text-sm font-medium">Math Explainer</span>
-                  </Button>
-                </div>
-              </CardContent>
-            </Card>
+        {/* 2. Left Sidebar Navigation */}
+        <aside className="w-64 flex-shrink-0 bg-white border-r border-gray-200 flex flex-col pt-4 pb-4">
+          <div className="px-4 mb-6">
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button
+                  className="w-full justify-start gap-3 h-12 rounded-2xl bg-white text-slate-700 border border-gray-200 shadow-sm hover:shadow-md hover:bg-gray-50 hover:text-blue-600 font-medium transition-all"
+                >
+                  <Plus className="w-6 h-6 text-blue-600" />
+                  <span className="text-base">New</span>
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="start" className="w-56 mt-2 bg-white z-50 shadow-xl border border-gray-100 rounded-xl p-2">
+                <DropdownMenuItem
+                  className="cursor-pointer hover:bg-gray-100 rounded-lg py-2.5 px-3 focus:bg-gray-100"
+                  onClick={() => {
+                    const folderName = prompt('Enter folder name (Mock)')
+                    if (folderName) toast.success(`Folder "${folderName}" created`)
+                  }}>
+                  <Folder className="mr-3 h-5 w-5 text-gray-500" />
+                  <span className="font-medium text-gray-700">New folder</span>
+                </DropdownMenuItem>
+                <DropdownMenuItem
+                  className="cursor-pointer hover:bg-gray-100 rounded-lg py-2.5 px-3 focus:bg-gray-100"
+                  onClick={() => setIsUploadOpen(true)}
+                >
+                  <FileText className="mr-3 h-5 w-5 text-blue-600" />
+                  <span className="font-medium text-gray-700">File upload</span>
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
           </div>
 
-          {/* Sidebar */}
-          <div className="space-y-6">
-            {/* Recent Activity */}
-            <Card className="border-0 shadow-lg bg-white/80 backdrop-blur-sm">
-              <CardHeader>
-                <CardTitle className="text-lg font-semibold text-gray-900 flex items-center">
-                  <Activity className="w-5 h-5 mr-2 text-blue-600" />
-                  Recent Activity
-                </CardTitle>
-              </CardHeader>
-              <CardContent className="space-y-4">
-                {recentActivity.map((activity, index) => (
-                  <div key={index} className="flex items-start space-x-3">
-                    <div className="w-2 h-2 bg-blue-500 rounded-full mt-2 flex-shrink-0"></div>
-                    <div className="flex-1 min-w-0">
-                      <p className="text-sm text-gray-900">
-                        <span className="font-medium">{activity.user}</span>{' '}
-                        {activity.action}{' '}
-                        <span className="font-medium text-blue-600">{activity.document}</span>
-                      </p>
-                      <p className="text-xs text-gray-500 mt-1">{activity.time}</p>
+          <nav className="flex-1 px-3 space-y-1 overflow-y-auto">
+            {[
+              { id: 'home', label: 'Home', icon: Home },
+              { id: 'my-files', label: 'My Library', icon: Folder },
+              { id: 'shared', label: 'Shared with me', icon: Users },
+              { id: 'recent', label: 'Recent', icon: Clock },
+              { id: 'starred', label: 'Starred', icon: Star },
+              { id: 'trash', label: 'Trash', icon: Trash2 },
+            ].map((item) => (
+              <button
+                key={item.id}
+                onClick={() => setCurrentTab(item.id)}
+                className={`w-full flex items-center gap-3 px-4 py-2.5 rounded-l-full text-sm font-medium transition-colors
+                        ${currentTab === item.id
+                    ? 'bg-blue-50 text-blue-700'
+                    : 'text-gray-700 hover:bg-gray-100'}`}
+              >
+                <item.icon className={`w-4 h-4 ${currentTab === item.id ? 'fill-current' : ''}`} />
+                {item.label}
+              </button>
+            ))}
+          </nav>
+
+          <div className="px-6 mt-4">
+            <div className="w-full bg-gray-200 rounded-full h-1.5 mb-2">
+              <div className="bg-blue-600 h-1.5 rounded-full w-[45%]"></div>
+            </div>
+            <p className="text-xs text-gray-500">6.4 GB of 15 GB used</p>
+          </div>
+        </aside>
+
+        {/* 3. Main Content Area */}
+        <main className="flex-1 overflow-y-auto p-4 sm:p-6">
+
+          {/* Suggested Section */}
+          {suggestedFiles.length > 0 && (currentTab === 'home' || currentTab === 'recent') && (
+            <section className="mb-8">
+              <h2 className="text-sm font-medium text-gray-500 mb-3 px-1">Suggested</h2>
+              <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+                {suggestedFiles.map((suggestion, i) => (
+                  <div key={i} className="bg-white p-4 rounded-2xl border border-gray-200 shadow-sm hover:shadow-md transition-shadow cursor-pointer group">
+                    <div className="flex items-start justify-between mb-3">
+                      <div className={`p-2 rounded-lg ${suggestion.bg}`}>
+                        <suggestion.icon className={`w-5 h-5 ${suggestion.color}`} />
+                      </div>
+                      <DropdownMenu>
+                        <DropdownMenuTrigger asChild>
+                          <Button variant="ghost" size="icon" className="h-6 w-6 text-gray-400 group-hover:text-gray-600 -mr-2"><MoreHorizontal className="w-4 h-4" /></Button>
+                        </DropdownMenuTrigger>
+                        <DropdownMenuContent align="end">
+                          <DropdownMenuItem className="text-red-600" onClick={(e) => handleMoveToTrash(e, suggestion.id)}>
+                            <Trash2 className="mr-2 h-4 w-4" /> Move to Trash
+                          </DropdownMenuItem>
+                        </DropdownMenuContent>
+                      </DropdownMenu>
                     </div>
+                    <h3 className="font-medium text-gray-900 text-sm truncate mb-1">{suggestion.title}</h3>
+                    <p className="text-xs text-gray-500">Opened {suggestion.date}</p>
                   </div>
                 ))}
-                <Button variant="ghost" size="sm" className="w-full text-blue-600 hover:text-blue-700 hover:bg-blue-50">
-                  View All Activity
-                </Button>
-              </CardContent>
-            </Card>
+              </div>
+            </section>
+          )}
 
-            {/* AI Insights */}
-            <Card className="border-0 shadow-lg bg-gradient-to-br from-purple-50 to-blue-50">
-              <CardHeader>
-                <CardTitle className="text-lg font-semibold text-gray-900 flex items-center">
-                  <Zap className="w-5 h-5 mr-2 text-purple-600" />
-                  AI Insights
-                </CardTitle>
-              </CardHeader>
-              <CardContent className="space-y-4">
-                <div className="p-3 bg-white/80 rounded-lg border border-purple-200">
-                  <p className="text-sm font-medium text-gray-900 mb-1">Trending Topic</p>
-                  <p className="text-sm text-gray-600">
-                    "Multimodal Learning" is gaining traction in your research area
-                  </p>
+          {/* File Browser */}
+          <section className="bg-white rounded-2xl border border-gray-200 shadow-sm overflow-hidden min-h-[500px]">
+            {/* Toolbar */}
+            <div className="p-4 border-b border-gray-100 flex items-center justify-between">
+              {selectedFiles.size > 0 ? (
+                <div className="flex items-center gap-4 bg-blue-50 px-4 py-2 rounded-lg w-full justify-between animate-in fade-in slide-in-from-top-2">
+                  <span className="text-sm font-medium text-blue-700">{selectedFiles.size} selected</span>
+                  <div className="flex items-center gap-2">
+                    {currentTab === 'trash' ? (
+                      <>
+                        <Button size="sm" variant="ghost" className="text-blue-700 hover:bg-blue-100" onClick={handleBulkRestore}>
+                          <RefreshCw className="w-4 h-4 mr-2" /> Restore
+                        </Button>
+                        <Button size="sm" variant="ghost" className="text-red-700 hover:bg-red-100" onClick={handleBulkDeleteForever}>
+                          <Trash2 className="w-4 h-4 mr-2" /> Delete Forever
+                        </Button>
+                      </>
+                    ) : (
+                      <Button size="sm" variant="ghost" className="text-red-600 hover:bg-red-100" onClick={handleBulkMoveToTrash}>
+                        <Trash2 className="w-4 h-4 mr-2" /> Move to Trash
+                      </Button>
+                    )}
+                    <Button size="sm" variant="ghost" className="text-gray-500 hover:bg-gray-200" onClick={() => setSelectedFiles(new Set())}>
+                      Cancel
+                    </Button>
+                  </div>
                 </div>
-                <div className="p-3 bg-white/80 rounded-lg border border-blue-200">
-                  <p className="text-sm font-medium text-gray-900 mb-1">Collaboration Opportunity</p>
-                  <p className="text-sm text-gray-600">
-                    Dr. Maria Santos from MIT has similar research interests
-                  </p>
-                </div>
-                <div className="p-3 bg-white/80 rounded-lg border border-green-200">
-                  <p className="text-sm font-medium text-gray-900 mb-1">Research Gap</p>
-                  <p className="text-sm text-gray-600">
-                    Limited work on ethical implications in your focus area
-                  </p>
-                </div>
-                <Button variant="outline" size="sm" className="w-full border-purple-300 hover:bg-purple-50">
-                  Get More Insights
-                </Button>
-              </CardContent>
-            </Card>
+              ) : (
+                <>
+                  <h2 className="text-lg font-semibold text-gray-800">
+                    {currentTab === 'home' ? 'Home' :
+                      currentTab === 'my-files' ? 'My Library' :
+                        currentTab === 'shared' ? 'Shared with me' :
+                          currentTab === 'recent' ? 'Recent' :
+                            currentTab === 'starred' ? 'Starred' : 'Trash'}
+                  </h2>
+                  <div className="flex items-center gap-2">
+                    <Button variant="ghost" size="sm" onClick={() => setViewMode('list')} className={viewMode === 'list' ? 'bg-gray-100 text-blue-600' : 'text-gray-500'}><List className="w-4 h-4" /></Button>
+                    <Button variant="ghost" size="sm" onClick={() => setViewMode('grid')} className={viewMode === 'grid' ? 'bg-gray-100 text-blue-600' : 'text-gray-500'}><Grid3X3 className="w-4 h-4" /></Button>
+                  </div>
+                </>
+              )}
+            </div>
 
-            {/* Goals */}
-            <Card className="border-0 shadow-lg bg-white/80 backdrop-blur-sm">
-              <CardHeader>
-                <CardTitle className="text-lg font-semibold text-gray-900 flex items-center">
-                  <Target className="w-5 h-5 mr-2 text-green-600" />
-                  Research Goals
-                </CardTitle>
-              </CardHeader>
-              <CardContent className="space-y-3">
-                <div className="flex items-center justify-between">
-                  <span className="text-sm text-gray-700">Complete 3 paper reviews</span>
-                  <span className="text-xs text-green-600 font-medium">2/3</span>
+            {/* List View */}
+            {viewMode === 'list' ? (
+              <div className="w-full">
+                <div className="grid grid-cols-12 gap-4 px-6 py-3 border-b border-gray-100 text-xs font-medium text-gray-500 uppercase tracking-wider items-center">
+                  <div className="col-span-1">
+                    <Checkbox
+                      checked={displayedFiles.length > 0 && selectedFiles.size === displayedFiles.length}
+                      onCheckedChange={() => handleSelectAll(displayedFiles)}
+                    />
+                  </div>
+                  <div className="col-span-11 sm:col-span-5">Name</div>
+                  <div className="col-span-2 hidden sm:block">Owner</div>
+                  <div className="col-span-3 hidden sm:block">Last Modified</div>
+                  <div className="col-span-1"></div>
                 </div>
-                <div className="w-full bg-gray-200 rounded-full h-2">
-                  <div className="bg-green-500 h-2 rounded-full" style={{ width: '67%' }}></div>
+                <div className="divide-y divide-gray-50">
+                  {isLoading ? (
+                    <div className="p-8 text-center text-gray-500">Loading files...</div>
+                  ) : displayedFiles.length === 0 ? (
+                    <div className="p-8 text-center text-gray-500">No files found.</div>
+                  ) : (
+                    <>
+                      {displayedFiles.map((file) => (
+                        <div key={file.id}
+                          className={`grid grid-cols-12 gap-4 px-6 py-3.5 hover:bg-blue-50/50 transition-colors items-center group cursor-pointer ${selectedFiles.has(file.id) ? 'bg-blue-50' : ''}`}
+                          onClick={() => router.push(`/document/${file.id}`)}
+                        >
+                          <div className="col-span-1" onClick={(e) => e.stopPropagation()}>
+                            <Checkbox
+                              checked={selectedFiles.has(file.id)}
+                              onCheckedChange={() => handleSelectFile(file.id)}
+                            />
+                          </div>
+                          <div className="col-span-11 sm:col-span-5 flex items-center gap-3">
+                            <FileText className="w-5 h-5 text-gray-400 group-hover:text-blue-500" />
+                            <span className="text-sm font-medium text-gray-700 group-hover:text-gray-900">{file.name}</span>
+                            {file.starred && <Star className="w-3 h-3 text-amber-400 fill-current" />}
+                          </div>
+                          <div className="col-span-2 hidden sm:block text-sm text-gray-500">{file.owner}</div>
+                          <div className="col-span-3 hidden sm:block text-sm text-gray-500">{file.modified}</div>
+                          <div className="col-span-1 flex justify-end opacity-0 group-hover:opacity-100 transition-opacity">
+                            <DropdownMenu>
+                              <DropdownMenuTrigger asChild>
+                                <Button variant="ghost" size="icon" className="h-8 w-8 hover:bg-gray-200/50 rounded-full"><MoreHorizontal className="w-4 h-4 text-gray-500" /></Button>
+                              </DropdownMenuTrigger>
+                              <DropdownMenuContent align="end">
+                                {file.visibility === 'trash' ? (
+                                  <DropdownMenuItem onClick={(e) => handleRestore(e, file.id)}>
+                                    <RefreshCw className="mr-2 h-4 w-4" /> Restore
+                                  </DropdownMenuItem>
+                                ) : (
+                                  <DropdownMenuItem className="text-red-600" onClick={(e) => handleMoveToTrash(e, file.id)}>
+                                    <Trash2 className="mr-2 h-4 w-4" /> Move to Trash
+                                  </DropdownMenuItem>
+                                )}
+                              </DropdownMenuContent>
+                            </DropdownMenu>
+                          </div>
+                        </div>
+                      ))}
+                      {/* View All Button for Home/Recent */}
+                      {(currentTab === 'home' || currentTab === 'recent') && allFilteredFiles.length > 5 && (
+                        <div className="p-4 flex justify-center border-t border-gray-50">
+                          <Button
+                            variant="ghost"
+                            className="text-blue-600 hover:text-blue-700 hover:bg-blue-50 gap-2"
+                            onClick={() => setCurrentTab('my-files')}
+                          >
+                            View all {allFilteredFiles.length} files
+                            <ChevronRight className="w-4 h-4" />
+                          </Button>
+                        </div>
+                      )}
+                    </>
+                  )}
                 </div>
-                
-                <div className="flex items-center justify-between">
-                  <span className="text-sm text-gray-700">Publish Q1 research</span>
-                  <span className="text-xs text-blue-600 font-medium">In Progress</span>
+              </div>
+            ) : (
+              <div className="p-6">
+                <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
+                  {displayedFiles.map((file) => (
+                    <div key={file.id} className="group border border-gray-200 rounded-xl p-4 hover:shadow-md hover:border-blue-300 transition-all cursor-pointer" onClick={() => router.push(`/document/${file.id}`)}>
+                      <div className="flex justify-between items-start mb-4">
+                        <FileText className="w-8 h-8 text-blue-500" />
+                        <div className="flex items-center gap-1">
+                          {file.starred && <Star className="w-4 h-4 text-amber-400 fill-current" />}
+                          <DropdownMenu>
+                            <DropdownMenuTrigger asChild>
+                              <Button variant="ghost" size="icon" className="h-6 w-6 text-gray-400 opacity-0 group-hover:opacity-100 transition-opacity"><MoreHorizontal className="w-4 h-4" /></Button>
+                            </DropdownMenuTrigger>
+                            <DropdownMenuContent align="end">
+                              {file.visibility === 'trash' ? (
+                                <DropdownMenuItem onClick={(e) => handleRestore(e, file.id)}>
+                                  <RefreshCw className="mr-2 h-4 w-4" /> Restore
+                                </DropdownMenuItem>
+                              ) : (
+                                <DropdownMenuItem className="text-red-600" onClick={(e) => handleMoveToTrash(e, file.id)}>
+                                  <Trash2 className="mr-2 h-4 w-4" /> Move to Trash
+                                </DropdownMenuItem>
+                              )}
+                            </DropdownMenuContent>
+                          </DropdownMenu>
+                        </div>
+                      </div>
+                      <h4 className="font-medium text-gray-900 text-sm truncate mb-1">{file.name}</h4>
+                      <div className="flex items-center gap-2 text-xs text-gray-500">
+                        <Users className="w-3 h-3" />
+                        <span>{file.owner}</span>
+                      </div>
+                    </div>
+                  ))}
                 </div>
-                <div className="w-full bg-gray-200 rounded-full h-2">
-                  <div className="bg-blue-500 h-2 rounded-full" style={{ width: '45%' }}></div>
-                </div>
+                {/* View All Button for Home/Recent Grid View */}
+                {(currentTab === 'home' || currentTab === 'recent') && allFilteredFiles.length > 5 && (
+                  <div className="mt-6 flex justify-center">
+                    <Button
+                      variant="outline"
+                      className="text-blue-600 border-blue-200 hover:bg-blue-50 gap-2 rounded-full px-6"
+                      onClick={() => setCurrentTab('my-files')}
+                    >
+                      Show all files
+                      <ChevronRight className="w-4 h-4" />
+                    </Button>
+                  </div>
+                )}
+              </div>
+            )}
+          </section>
+        </main>
 
-                <Button variant="ghost" size="sm" className="w-full text-green-600 hover:text-green-700 hover:bg-green-50">
-                  View All Goals
-                </Button>
-              </CardContent>
-            </Card>
+        {/* 4. Right Activity Sidebar */}
+        <aside className="w-80 bg-white border-l border-gray-200 hidden xl:flex flex-col overflow-y-auto">
+          <div className="p-6">
+            <h3 className="font-semibold text-gray-900 mb-6 flex items-center gap-2">
+              <Activity className="w-5 h-5 text-blue-500" />
+              Activity
+            </h3>
+
+            <ol className="relative border-l border-gray-200 ml-3 space-y-8">
+              {[
+                { title: 'New version uploaded', desc: 'You updated "Thesis Draft"', time: '10 min ago', color: 'bg-green-500' },
+                { title: 'Comment added', desc: 'Sarah commented on "BERT Analysis"', time: '2 hours ago', color: 'bg-blue-500' },
+                { title: 'File shared', desc: '"Lab Results" shared with Team', time: 'Yesterday', color: 'bg-purple-500' },
+              ].map((item, i) => (
+                <li key={i} className="ml-6">
+                  <span className={`absolute flex items-center justify-center w-6 h-6 rounded-full -left-3 ring-4 ring-white ${item.color}`}>
+                    <Activity className="w-3 h-3 text-white" />
+                  </span>
+                  <h4 className="text-sm font-semibold text-gray-900">{item.title}</h4>
+                  <p className="text-sm text-gray-500 mt-1">{item.desc}</p>
+                  <time className="block mb-2 text-xs font-normal leading-none text-gray-400 mt-2">{item.time}</time>
+                </li>
+              ))}
+            </ol>
+
+            <div className="mt-10 p-4 bg-gradient-to-br from-slate-50 to-blue-50 rounded-2xl border border-blue-100">
+              <div className="flex items-center gap-2 mb-2">
+                <Sparkles className="w-4 h-4 text-blue-600" />
+                <span className="text-sm font-bold text-blue-700">Daily Insight</span>
+              </div>
+              <p className="text-xs text-slate-600 leading-relaxed">
+                You've reviewed 3 papers this week. Consider exploring "Transformer Architectures" next to deepen your expertise.
+              </p>
+              <Button variant="link" className="text-xs p-0 h-auto mt-2 text-blue-600">Explore Topic &rarr;</Button>
+            </div>
           </div>
-        </div>
+        </aside>
+
       </div>
 
-      {/* Info Toast */}
-      {showInfo && (
-        <InfoToast
-          onClose={() => setShowInfo(false)}
-        />
-      )}
+      <UploadModal
+        isOpen={isUploadOpen}
+        onClose={() => setIsUploadOpen(false)}
+        onUploadComplete={() => {
+          fetchDocs()
+        }}
+      />
     </div>
   )
-} 
+}
+
+function HelpCircleIcon(props: any) {
+  return (
+    <svg
+      {...props}
+      xmlns="http://www.w3.org/2000/svg"
+      width="24"
+      height="24"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    >
+      <circle cx="12" cy="12" r="10" />
+      <path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3" />
+      <path d="M12 17h.01" />
+    </svg>
+  )
+}

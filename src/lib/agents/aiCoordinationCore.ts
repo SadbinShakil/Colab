@@ -54,6 +54,11 @@ class AICoordinationCoreService {
   private muteUntilNotification: number | null = null
   private eventLog: Array<{ event: string; timestamp: number; agent: string }> = []
 
+  // ✅ LIVE CONTEXT CACHE: Stores the most recent page text for each section.
+  // Updated whenever the user moves to a new section (via agent1:current-section-text).
+  // This is the "what is the user actually reading right now" store.
+  private liveSectionTextCache: Map<string, { text: string; sectionName: string; timestamp: number }> = new Map()
+
   /**
    * DEMO ONLY: Inject fake peer for simulation
    */
@@ -82,6 +87,43 @@ class AICoordinationCoreService {
     agent7_implicitAssistance.activate()
     agent8_factChecking.activate()
     agent9_relatedWorkAnalysis.activate()
+
+    // ✅ Bridge: Listen for Agent 1's probabilistic struggle events
+    if (typeof window !== 'undefined') {
+      // Cache the live section text whenever user moves to a new section
+      window.addEventListener('agent1:current-section-text', ((e: CustomEvent) => {
+        const { sectionId, sectionName, text } = e.detail
+        if (sectionId && text && text.length > 20) {
+          this.liveSectionTextCache.set(sectionId, {
+            text,
+            sectionName,
+            timestamp: Date.now()
+          })
+          console.log(`📖 [AI Core] Cached text for section "${sectionName}": ${text.length} chars`)
+        }
+      }) as EventListener)
+
+      // Route struggle events — enrich with live cached text first
+      window.addEventListener('agent1:route-struggle', ((e: CustomEvent) => {
+        const data = e.detail
+        const sectionId = data.sectionId
+
+        // ✅ GOOGLE APPROACH: At the moment of firing, grab the freshest available text
+        // Priority: (1) live cache from this scroll position, (2) signal's own text, (3) section name
+        const cached = this.liveSectionTextCache.get(sectionId)
+        const liveText = (cached && cached.text.length > 50) ? cached.text : data.text
+        const liveSectionName = (cached && cached.sectionName) ? cached.sectionName : data.sectionName
+
+        console.log(`🔗 [AI Core] route-struggle → section: "${liveSectionName}", text: ${liveText?.length || 0} chars`)
+
+        this.routeAgentEvent('agent1', 'struggle-detected', {
+          ...data,
+          text: liveText,
+          sectionName: liveSectionName
+        })
+      }) as EventListener)
+    }
+
 
     this.isInitialized = true
     console.log('✅ [AI Coordination Core] System initialized')
@@ -203,8 +245,9 @@ class AICoordinationCoreService {
 
         console.log(`🔍 [AI Core] Struggle detected for user ${strugglingUserId} in section ${data.sectionId}`)
 
-        if (!this.isSystemFullyOnline) {
-          console.log('⏳ [AI Core] System not fully online yet, suppressing implicit notifications')
+        // ✅ Check if session is active (minimum requirement)
+        if (!interactionCollector.getCurrentSession()) {
+          console.log('⏳ [AI Core] No active session yet, suppressing implicit notifications')
           break
         }
 
@@ -306,25 +349,32 @@ class AICoordinationCoreService {
               // ✅ BIDIRECTIONAL NOTIFICATIONS (both users notified)
 
               // 1. Notify struggling user about available helper (NO SCORE!)
+              // ✅ Store helper data directly so "Connect" button works instantly without re-lookup
               agent7_implicitAssistance.generateNotification({
                 type: 'peer-suggestion',
-                title: `💡 ${match.helper.userName} can help`,
-                message: `${match.helper.userName} already understood this section. Want to connect?`,
+                title: `💡 Collaboration Match`,
+                message: `${match.matchReason} Connect to discuss?`,
                 priority: 'high',
                 sectionId: data.sectionId,
                 targetUserId: strugglingUserId,
-                sectionName: data.sectionName, // ✅ Pass section Name
+                sectionName: data.sectionName,
                 actionButton: {
                   label: 'Connect',
                   action: 'connect-peer'
+                },
+                invitationData: {
+                  helperUserId: match.helper.userId,
+                  helperUserName: match.helper.userName,
+                  sectionId: data.sectionId,
+                  documentId: data.documentId || ''
                 }
               })
 
               // 2. Notify helper about struggling user
               agent7_implicitAssistance.generateNotification({
                 type: 'peer-suggestion',
-                title: `🆘 ${strugglingUserName} is struggling`,
-                message: `${strugglingUserName} is having trouble with ${data.sectionName}. Want to help?`,
+                title: `🤝 Peer Request`,
+                message: `${strugglingUserName} is reviewing ${data.sectionName} and could use a second pair of eyes. Want to assist?`,
                 priority: 'medium',
                 sectionId: data.sectionId,
                 sectionName: data.sectionName, // ✅ Pass section Name

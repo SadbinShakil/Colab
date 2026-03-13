@@ -1,96 +1,106 @@
 @import "tailwindcss";
 
 :root {
-  /* Elegant Academic Color Palette */
-  --color-background: 0 0% 100%;  /* Pure white */
-  --color-foreground: 0 0% 9%;    /* Rich charcoal */
+  /* Google/Material-inspired Friendly Palette - High Contrast Optimized */
+  --color-background: 0 0% 100%;
+  /* Pure white for max clarity */
+  --color-foreground: 222.2 84% 4.9%;
+  /* Rich, deep navy/black for text */
+
   --color-card: 0 0% 100%;
-  --color-card-foreground: 0 0% 9%;
+  --color-card-foreground: 222.2 84% 4.9%;
+
   --color-popover: 0 0% 100%;
-  --color-popover-foreground: 0 0% 9%;
-  
-  /* Refined Academic Blue */
-  --color-primary: 212 100% 47%;  /* Sophisticated academic blue */
-  --color-primary-foreground: 0 0% 100%;
-  
-  /* Elegant Neutrals */
-  --color-secondary: 210 20% 98%;  /* Whisper gray */
-  --color-secondary-foreground: 210 20% 20%;
-  
-  /* Sophisticated Muted Tones */
-  --color-muted: 210 20% 97%;
-  --color-muted-foreground: 210 15% 46%;
-  --color-accent: 210 20% 95%;
-  --color-accent-foreground: 210 20% 25%;
-  
-  /* Refined Semantic Colors */
-  --color-destructive: 0 72% 51%;
-  --color-destructive-foreground: 0 0% 98%;
-  --color-success: 142 69% 38%;
-  --color-success-foreground: 0 0% 98%;
+  --color-popover-foreground: 222.2 84% 4.9%;
+
+  /* Primary: Vibrant blue, but ensuring wcag accessible on white */
+  --color-primary: 221.2 83.2% 53.3%;
+  /* #2563EB - clearer than softer blues */
+  --color-primary-foreground: 210 40% 98%;
+
+  /* Secondary: Explicitly distinct from background */
+  --color-secondary: 210 40% 96.1%;
+  --color-secondary-foreground: 222.2 47.4% 11.2%;
+
+  /* Muted: Dark enough to be readable */
+  --color-muted: 210 40% 96.1%;
+  --color-muted-foreground: 215 25% 40%;
+  /* ~Gray 600, much darker than before */
+
+  --color-accent: 210 40% 93%;
+  --color-accent-foreground: 222.2 47.4% 11.2%;
+
+  /* Semantic Colors - High visibility */
+  --color-destructive: 0 84.2% 60.2%;
+  --color-destructive-foreground: 210 40% 98%;
+  --color-success: 142 71% 45%;
+  /* Darker green for text usage */
+  --color-success-foreground: 210 40% 98%;
   --color-warning: 38 92% 50%;
-  --color-warning-foreground: 0 0% 98%;
-  --color-info: 212 100% 47%;
+  --color-warning-foreground: 210 40% 98%;
+  --color-info: 217 91% 60%;
   --color-info-foreground: 0 0% 98%;
-  
-  /* Elegant UI Framework */
-  --color-border: 210 20% 89%;
-  --color-input: 210 20% 96%;
-  --color-ring: 212 100% 47%;
-  
-  /* Professional Feature Colors */
-  --color-collaboration: 212 100% 47%;
-  --color-ai-primary: 258 90% 66%;     /* Elegant purple */
-  --color-ai-secondary: 200 100% 67%;  /* Refined cyan */
-  --color-insight: 45 93% 58%;         /* Warm gold */
-  --color-discovery: 162 63% 41%;      /* Professional teal */
-  --color-research: 142 69% 38%;       /* Academic green */
-  
-  --radius: 0.75rem;  /* Elegant rounded corners */
+
+  --color-border: 214.3 31.8% 88%;
+  /* Slightly darker border for structure */
+  --color-input: 214.3 31.8% 88%;
+  --color-ring: 221.2 83.2% 53.3%;
+
+  /* Feature Colors */
+  --color-collaboration: 217 91% 60%;
+  --color-ai-primary: 262 83% 58%;
+  --color-ai-secondary: 190 90% 50%;
+  --color-insight: 35 100% 50%;
+  --color-discovery: 170 70% 40%;
+  --color-research: 150 70% 40%;
+
+  /* Radius: Large, friendly corners */
+  --radius: 1.5rem;
+
+  /* Surfaces for Depth */
+  --color-surface-1: 210 20% 98%;
+  --color-surface-2: 210 20% 96%;
+  --color-surface-3: 210 20% 94%;
 }
 
 @media (prefers-color-scheme: dark) {
   :root {
-    /* Elegant Dark Reading Mode */
-    --color-background: 0 0% 4%;     /* Deep charcoal */
-    --color-foreground: 0 0% 95%;    /* Soft white */
-    --color-card: 0 0% 6%;
-    --color-card-foreground: 0 0% 95%;
-    --color-popover: 0 0% 6%;
-    --color-popover-foreground: 0 0% 95%;
-    
-    /* Enhanced Primary for Dark Mode */
-    --color-primary: 212 100% 60%;
-    --color-primary-foreground: 0 0% 4%;
-    
-    /* Dark Mode Elegance */
-    --color-secondary: 210 20% 8%;
-    --color-secondary-foreground: 210 20% 80%;
-    
-    /* Dark Sophistication */
-    --color-muted: 210 20% 7%;
-    --color-muted-foreground: 210 15% 65%;
-    --color-accent: 210 20% 10%;
-    --color-accent-foreground: 210 20% 85%;
-    
-    /* Dark Semantic Refinement */
-    --color-destructive: 0 72% 60%;
-    --color-success: 142 69% 50%;
-    --color-warning: 38 92% 60%;
-    --color-info: 212 100% 60%;
-    
-    /* Dark UI Excellence */
-    --color-border: 210 20% 15%;
-    --color-input: 210 20% 8%;
-    --color-ring: 212 100% 60%;
-    
-    /* Dark Professional Colors */
-    --color-collaboration: 212 100% 60%;
-    --color-ai-primary: 258 90% 70%;
-    --color-ai-secondary: 200 100% 70%;
-    --color-insight: 45 93% 65%;
-    --color-discovery: 162 63% 50%;
-    --color-research: 142 69% 50%;
+    /* Dark Mode: High Contrast & Deep Backgrounds */
+    --color-background: 222.2 84% 4.9%;
+    --color-foreground: 210 40% 98%;
+
+    --color-card: 222.2 84% 6.9%;
+    /* Slightly lighter than bg */
+    --color-card-foreground: 210 40% 98%;
+
+    --color-popover: 222.2 84% 4.9%;
+    --color-popover-foreground: 210 40% 98%;
+
+    --color-primary: 217 91% 60%;
+    --color-primary-foreground: 222.2 47.4% 11.2%;
+
+    --color-secondary: 217.2 32.6% 17.5%;
+    --color-secondary-foreground: 210 40% 98%;
+
+    --color-muted: 217.2 32.6% 17.5%;
+    --color-muted-foreground: 215 20.2% 75%;
+    /* Lighter gray for dark mode readability */
+
+    --color-accent: 217.2 32.6% 17.5%;
+    --color-accent-foreground: 210 40% 98%;
+
+    --color-destructive: 0 62.8% 30.6%;
+    --color-destructive-foreground: 210 40% 98%;
+
+    --color-border: 217.2 32.6% 24%;
+    /* Higher contrast borders */
+    --color-input: 217.2 32.6% 24%;
+    --color-ring: 224.3 76.3% 48%;
+
+    /* Surfaces */
+    --color-surface-1: 222 84% 6%;
+    --color-surface-2: 222 84% 8%;
+    --color-surface-3: 222 84% 10%;
   }
 }
 
@@ -100,7 +110,9 @@
   border-color: hsl(var(--color-border));
 }
 
-html, body, #__next {
+html,
+body,
+#__next {
   height: 100%;
   width: 100%;
   min-height: 100vh;
@@ -110,7 +122,9 @@ html, body, #__next {
   box-sizing: border-box;
 }
 
-img, video, svg {
+img,
+video,
+svg {
   max-width: 100%;
   height: auto;
   display: block;
@@ -124,7 +138,8 @@ table {
   display: block;
 }
 
-pre, code {
+pre,
+code {
   max-width: 100%;
   overflow-x: auto;
   word-break: break-word;
@@ -146,37 +161,71 @@ body {
 }
 
 /* Elegant Professional Animations */
-@keyframes fade-in { 
-  from { opacity: 0; transform: translateY(8px); } 
-  to { opacity: 1; transform: translateY(0); } 
+@keyframes fade-in {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
 }
 
-@keyframes slide-up { 
-  from { opacity: 0; transform: translateY(24px); } 
-  to { opacity: 1; transform: translateY(0); } 
+@keyframes slide-up {
+  from {
+    opacity: 0;
+    transform: translateY(24px);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
 }
 
-@keyframes slide-down { 
-  from { opacity: 0; transform: translateY(-16px); } 
-  to { opacity: 1; transform: translateY(0); } 
+@keyframes slide-down {
+  from {
+    opacity: 0;
+    transform: translateY(-16px);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
 }
 
 @keyframes gentle-pulse {
-  0%, 100% {
+
+  0%,
+  100% {
     box-shadow: 0 0 0 0 hsl(var(--color-primary) / 0.15);
   }
+
   50% {
     box-shadow: 0 0 0 8px hsl(var(--color-primary) / 0);
   }
 }
 
 @keyframes elegant-shine {
-  0% { transform: translateX(-100%) skewX(-15deg); }
-  100% { transform: translateX(200%) skewX(-15deg); }
+  0% {
+    transform: translateX(-100%) skewX(-15deg);
+  }
+
+  100% {
+    transform: translateX(200%) skewX(-15deg);
+  }
 }
 
 /* Sophisticated Typography Hierarchy */
-h1, h2, h3, h4, h5, h6 {
+h1,
+h2,
+h3,
+h4,
+h5,
+h6 {
   font-weight: 650;
   letter-spacing: -0.025em;
   line-height: 1.25;
@@ -268,7 +317,7 @@ p {
   background: hsl(var(--color-card));
   border: 1px solid hsl(var(--color-border));
   border-radius: var(--radius);
-  box-shadow: 
+  box-shadow:
     0 1px 3px hsl(var(--color-foreground) / 0.05),
     0 1px 2px hsl(var(--color-foreground) / 0.1);
   transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
@@ -276,7 +325,7 @@ p {
 
 .card-elegant:hover {
   border-color: hsl(var(--color-border));
-  box-shadow: 
+  box-shadow:
     0 4px 12px hsl(var(--color-foreground) / 0.08),
     0 2px 4px hsl(var(--color-foreground) / 0.06);
   transform: translateY(-2px);
@@ -298,12 +347,10 @@ p {
   left: -100%;
   width: 100%;
   height: 100%;
-  background: linear-gradient(
-    90deg,
-    transparent,
-    hsl(var(--color-background) / 0.2),
-    transparent
-  );
+  background: linear-gradient(90deg,
+      transparent,
+      hsl(var(--color-background) / 0.2),
+      transparent);
   transition: left 0.5s ease;
 }
 
@@ -313,11 +360,9 @@ p {
 
 /* Sophisticated Gradients */
 .gradient-elegant {
-  background: linear-gradient(
-    135deg,
-    hsl(var(--color-primary) / 0.05) 0%,
-    hsl(var(--color-ai-primary) / 0.03) 100%
-  );
+  background: linear-gradient(135deg,
+      hsl(var(--color-primary) / 0.05) 0%,
+      hsl(var(--color-ai-primary) / 0.03) 100%);
 }
 
 .gradient-border {
@@ -331,12 +376,10 @@ p {
   position: absolute;
   inset: 0;
   padding: 1px;
-  background: linear-gradient(
-    135deg,
-    hsl(var(--color-primary) / 0.2),
-    hsl(var(--color-border)),
-    hsl(var(--color-primary) / 0.1)
-  );
+  background: linear-gradient(135deg,
+      hsl(var(--color-primary) / 0.2),
+      hsl(var(--color-border)),
+      hsl(var(--color-primary) / 0.1));
   border-radius: var(--radius);
   mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
   mask-composite: xor;
@@ -375,7 +418,7 @@ p {
 
 .interactive-lift:hover {
   transform: translateY(-4px);
-  box-shadow: 
+  box-shadow:
     0 8px 25px hsl(var(--color-foreground) / 0.1),
     0 4px 12px hsl(var(--color-foreground) / 0.08);
 }
@@ -385,15 +428,15 @@ p {
   .elegant-section {
     padding: 3rem 0;
   }
-  
+
   .elegant-container {
     padding: 0 1rem;
   }
-  
+
   h1 {
     line-height: 1.15;
   }
-  
+
   .prose {
     font-size: 1rem;
     line-height: 1.65;
@@ -402,14 +445,15 @@ p {
 
 /* Reduced Motion Respect */
 @media (prefers-reduced-motion: reduce) {
+
   *,
   *::before,
   *::after {
     animation-duration: 0.01ms !important;
     animation-iteration-count: 1 !important;
     transition-duration: 0.01ms !important;
-         scroll-behavior: auto !important;
-   }
+    scroll-behavior: auto !important;
+  }
 }
 
 /* Fade-in-up animation for landing page sections and steps */
@@ -418,6 +462,7 @@ p {
   transform: translateY(20px);
   animation: fadeInUp 0.8s forwards;
 }
+
 @keyframes fadeInUp {
   to {
     opacity: 1;
@@ -516,28 +561,28 @@ p {
     border-color: #334155;
     color: #f1f5f9;
   }
-  
+
   .custom-comment-panel h3 {
     color: #f8fafc;
   }
-  
+
   .custom-comment-panel textarea {
     background: #334155;
     border-color: #475569;
     color: #f1f5f9;
   }
-  
+
   .custom-comment-panel textarea:focus {
     border-color: #60a5fa;
     box-shadow: 0 0 0 3px rgba(96, 165, 250, 0.1);
   }
-  
+
   .custom-comment-panel button.cancel {
     background: #334155;
     color: #cbd5e1;
     border-color: #475569;
   }
-  
+
   .custom-comment-panel button.cancel:hover {
     background: #475569;
     color: #e2e8f0;
@@ -575,7 +620,7 @@ p {
   align-items: center;
   justify-content: center;
   font-size: 12px;
-  box-shadow: 0 2px 4px rgba(0,0,0,0.2);
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
 }
 
 /* Math Explainer Integration */
@@ -593,6 +638,7 @@ p {
   background-color: rgba(59, 130, 246, 0.1);
   border: 1px dashed #3b82f6;
 }
+
 /* AI Implicit Assistance - Glowing Sections */
 .ai-section-glow {
   animation: ai-pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
@@ -601,9 +647,12 @@ p {
 }
 
 @keyframes ai-pulse {
-  0%, 100% {
+
+  0%,
+  100% {
     background-color: rgba(251, 191, 36, 0.05);
   }
+
   50% {
     background-color: rgba(251, 191, 36, 0.15);
     box-shadow: 0 0 20px rgba(251, 191, 36, 0.6);

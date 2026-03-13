@@ -223,15 +223,17 @@ class Agent7_ImplicitAssistance {
     sectionName?: string // ✅ ADD parameter
     text?: string // ✅ ADD specific text context
   }) {
-    // 🛡️ DE-BOUNCE: Check if a similar notification already exists and is active
+    // 🛡️ DE-BOUNCE: Prevent the exact same notification from firing twice for the same user
+    // Include targetUserId in the check so bidirectional peer notifications both fire independently
     const duplicate = this.notifications.find(n =>
       !n.dismissed &&
       n.type === config.type &&
-      (Date.now() - n.timestamp < 30000) // Prevent same type within 30s
+      n.targetUserId === config.targetUserId && // ✅ Must be for the same user to count as duplicate
+      (Date.now() - n.timestamp < 30000) // Prevent same type+user within 30s
     )
 
     if (duplicate) {
-      console.log(`🚫 [Agent 7] Suppressing duplicate notification: ${config.title}`)
+      console.log(`🚫 [Agent 7] Suppressing duplicate notification for same user: ${config.title}`)
       return
     }
 

@@ -93,6 +93,7 @@ export interface SectionInteraction {
   understandingScore: number  // 0-100, higher = better understanding
   engagementScore: number  // 0-100, higher = more engaged
   lastFixationText?: string // ✅ New field
+  lastActiveTimestamp: number // ✅ ADDED: Track recency of interaction
 }
 
 // ============================================================================
@@ -104,7 +105,9 @@ class InteractionCollectorService {
   private idleTimeout: NodeJS.Timeout | null = null
   private trackingInterval: NodeJS.Timeout | null = null
   private currentSectionId: string | null = null
-  private readonly IDLE_THRESHOLD = 60000 // 1 minute
+  // ✅ INCREASED: 5 minutes. A user staring at a hard section is NOT idle.
+  // The old 60s threshold fired during normal focused reading.
+  private readonly IDLE_THRESHOLD = 5 * 60 * 1000 // 5 minutes
   private readonly STORAGE_KEY = 'litsense_interaction_data'
 
   // ========================================================================
@@ -202,14 +205,21 @@ class InteractionCollectorService {
   private updateActiveTime() {
     if (!this.currentSession || !this.currentSectionId) return
 
-    // Don't count time if user is idle (simple check, could be more robust)
-    if (Date.now() - this.currentSession.lastActiveTime > this.IDLE_THRESHOLD) return
+    const now = Date.now()
+    const timeSinceActivity = now - this.currentSession.lastActiveTime
 
-    const section = this.currentSession.sectionInteractions.get(this.currentSectionId)
-    if (section) {
-      section.totalTimeSpent += 1000
-      // DEBUG LOG
-      // console.log(`⏱️ [Collector] Active on ${this.currentSectionId}: ${section.totalTimeSpent}ms`)
+    // ✅ READING HEARTBEAT: Even if the user's mouse isn't moving,
+    // if they were active recently (within idle threshold), keep counting time.
+    // This is critical for struggle detection — stationary "staring" = reading, not idle.
+    if (timeSinceActivity < this.IDLE_THRESHOLD) {
+      const section = this.currentSession.sectionInteractions.get(this.currentSectionId)
+      if (section) {
+        section.totalTimeSpent += 1000
+        // ✅ KEY FIX: Keep lastActiveTimestamp fresh during stationary reading
+        // Agent 1 uses this to determine if a section is "recently active"
+        // Without this update, sections appeared inactive after 15s of no mouse movement
+        section.lastActiveTimestamp = now
+      }
     }
   }
 
@@ -254,6 +264,13 @@ class InteractionCollectorService {
     // Update section interaction
     if (highlight.sectionId) {
       this.updateSectionInteraction(highlight.sectionId, 'highlight', highlight.reason)
+
+      // 🚦 EMIT SIGNAL to Agent 1's probabilistic model in real-time
+      if (typeof window !== 'undefined') {
+        window.dispatchEvent(new CustomEvent('agent1:highlight-signal', {
+          detail: { sectionId: highlight.sectionId, reason: highlight.reason }
+        }))
+      }
     }
 
     console.log('🖍️ [InteractionCollector] Highlight tracked:', highlightEvent.reason)
@@ -289,11 +306,19 @@ class InteractionCollectorService {
 
     this.currentSession.stuckMarkers.push(stuckEvent)
 
+    // 🚦 EMIT SIGNAL to Agent 1's probabilistic model immediately
+    // Stuck markers are the strongest struggle signal (+0.42 weight in Agent 1)
+    if (typeof window !== 'undefined' && this.currentSectionId) {
+      window.dispatchEvent(new CustomEvent('agent1:stuck-signal', {
+        detail: { sectionId: this.currentSectionId }
+      }))
+    }
+
     console.log('🆘 [InteractionCollector] Stuck marker tracked')
     this.saveToStorage()
   }
 
-  // ✅ ADDED: Track detailed fixation events for Agent 1
+  // Track detailed fixation events for Agent 1
   trackFixation(sectionId: string, text?: string) {
     if (!this.currentSession) return
 
@@ -302,12 +327,14 @@ class InteractionCollectorService {
 
     // Update section stats
     const section = this.updateSectionInteraction(sectionId, 'fixation')
-    if (section && text) {
-      section.lastFixationText = text
-    }
 
-    // Also log to console for debugging
-    // console.log(`👁️ [InteractionCollector] Fixation tracked on section: ${sectionId}`)
+    // ✅ CRITICAL: Only update lastFixationText if the new text is MEANINGFUL.
+    // Never overwrite good page text with an empty string or a tiny fragment.
+    // The old code called trackFixation(id, '') every 100ms erasing everything.
+    if (section && text && text.trim().length > 20) {
+      section.lastFixationText = text.trim()
+    }
+    // If text is empty/missing — keep whatever was stored before (preserve good text)
   }
 
   trackPageVisit(page: number, sectionId?: string) {
@@ -374,13 +401,15 @@ class InteractionCollectorService {
         gazeFixations: 0,
         struggleScore: 0,
         understandingScore: 0,
-        engagementScore: 0
+        engagementScore: 0,
+        lastActiveTimestamp: Date.now()
       }
       this.currentSession.sectionInteractions.set(sectionId, section)
     }
 
     // Update based on type
     section.lastVisitTime = Date.now()
+    section.lastActiveTimestamp = Date.now() // ✅ Update timestamp on ANY interaction
 
     switch (type) {
       case 'visit':
