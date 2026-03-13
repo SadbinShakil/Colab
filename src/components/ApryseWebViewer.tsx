@@ -3105,12 +3105,13 @@ export default function ApryseWebViewer({
         setInviteEmail('')
         setInviteRole('viewer')
         setInviteMessage('')
-        // Show success message
-        alert('Invitation sent successfully!')
+        toast.success('Invitation sent!')
+      } else {
+        toast.error('Could not send invitation — check the email and try again.')
       }
     } catch (error) {
       console.error('Error inviting collaborator:', error)
-      alert('Failed to send invitation. Please try again.')
+      toast.error('Failed to send invitation. Please try again.')
     }
   }
 
@@ -6784,74 +6785,71 @@ ${documentContent}
 
         {/* Invite Collaborator Modal */}
         {showInviteModal && (
-          <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-            <div className="bg-white rounded-lg p-6 w-96 max-w-md">
-              <div className="flex items-center justify-between mb-4">
-                <h3 className="text-lg font-semibold">Invite Collaborator</h3>
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  onClick={() => setShowInviteModal(false)}
-                >
-                  <X className="h-4 w-4" />
-                </Button>
+          <div className="fixed inset-0 bg-black/40 backdrop-blur-sm flex items-center justify-center z-[200]" onClick={() => setShowInviteModal(false)}>
+            <div className="bg-white rounded-2xl shadow-2xl w-[420px] max-w-[95vw] overflow-hidden" onClick={e => e.stopPropagation()}>
+              {/* Header */}
+              <div className="flex items-center justify-between px-5 py-4 border-b border-gray-100">
+                <div className="flex items-center gap-2.5">
+                  <div className="w-8 h-8 bg-blue-600 rounded-lg flex items-center justify-center">
+                    <Share2 className="w-4 h-4 text-white" />
+                  </div>
+                  <div>
+                    <h3 className="text-sm font-semibold text-gray-900">Invite to collaborate</h3>
+                    <p className="text-[11px] text-gray-400">Share this document with your team</p>
+                  </div>
+                </div>
+                <button onClick={() => setShowInviteModal(false)} className="p-1.5 rounded-lg hover:bg-gray-100 text-gray-400 transition-colors">
+                  <X className="w-4 h-4" />
+                </button>
               </div>
 
-              <div className="space-y-4">
+              <div className="p-5 space-y-4">
+                {/* Copy link */}
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
-                    Email Address
-                  </label>
-                  <Input
-                    type="email"
-                    placeholder="colleague@university.edu"
-                    value={inviteEmail}
-                    onChange={(e) => setInviteEmail(e.target.value)}
-                  />
+                  <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wider mb-1.5">Share Link</label>
+                  <div className="flex gap-2">
+                    <div className="flex-1 bg-gray-50 border border-gray-200 rounded-lg px-3 py-2 text-xs text-gray-500 font-mono truncate">
+                      {typeof window !== 'undefined' ? window.location.href : ''}
+                    </div>
+                    <button
+                      onClick={() => { navigator.clipboard.writeText(window.location.href); toast.success('Link copied!') }}
+                      className="px-3 py-2 bg-gray-900 hover:bg-black text-white text-xs font-semibold rounded-lg transition-colors"
+                    >
+                      Copy
+                    </button>
+                  </div>
                 </div>
 
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
-                    Role
-                  </label>
-                  <select
-                    value={inviteRole}
-                    onChange={(e) => setInviteRole(e.target.value as 'viewer' | 'editor' | 'admin')}
-                    className="w-full p-2 border border-gray-300 rounded-md"
-                  >
-                    <option value="viewer">Viewer (Read only)</option>
-                    <option value="editor">Editor (Can edit)</option>
-                    <option value="admin">Admin (Full control)</option>
-                  </select>
+                <div className="flex items-center gap-2">
+                  <div className="flex-1 h-px bg-gray-100" />
+                  <span className="text-[11px] text-gray-400 font-medium">or invite by email</span>
+                  <div className="flex-1 h-px bg-gray-100" />
                 </div>
 
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
-                    Message (Optional)
-                  </label>
-                  <textarea
-                    placeholder="Hi! I'd like to collaborate on this research document..."
-                    value={inviteMessage}
-                    onChange={(e) => setInviteMessage(e.target.value)}
-                    className="w-full p-2 border border-gray-300 rounded-md h-20 resize-none"
-                  />
-                </div>
-
-                <div className="flex gap-2 pt-4">
-                  <Button
-                    variant="outline"
-                    onClick={() => setShowInviteModal(false)}
-                    className="flex-1"
-                  >
-                    Cancel
-                  </Button>
-                  <Button
-                    onClick={inviteCollaborator}
-                    disabled={!inviteEmail}
-                    className="flex-1"
-                  >
-                    Send Invitation
-                  </Button>
+                <div className="space-y-3">
+                  <div>
+                    <Input
+                      type="email"
+                      placeholder="colleague@university.edu"
+                      value={inviteEmail}
+                      onChange={(e) => setInviteEmail(e.target.value)}
+                      className="h-9 text-sm"
+                    />
+                  </div>
+                  <div className="flex gap-2">
+                    <select
+                      value={inviteRole}
+                      onChange={(e) => setInviteRole(e.target.value as 'viewer' | 'editor' | 'admin')}
+                      className="flex-1 h-9 px-2 border border-gray-200 rounded-lg text-sm text-gray-700 bg-white focus:outline-none focus:ring-2 focus:ring-blue-500/30"
+                    >
+                      <option value="viewer">Viewer</option>
+                      <option value="editor">Editor</option>
+                      <option value="admin">Admin</option>
+                    </select>
+                    <Button onClick={inviteCollaborator} disabled={!inviteEmail} className="h-9 px-4 text-sm">
+                      Send
+                    </Button>
+                  </div>
                 </div>
               </div>
             </div>

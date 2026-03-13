@@ -54,15 +54,15 @@ export default function JoinDocumentPage() {
   useEffect(() => {
     // Try to get document title if documentId is available
     if (documentId) {
-      fetch(`/api/upload?id=${documentId}`)
+      fetch(`/api/documents/${documentId}`)
         .then(response => response.json())
         .then(data => {
           if (data.document) {
             setDocumentTitle(data.document.title || data.document.originalName || 'Research Document')
           }
         })
-        .catch(error => {
-          console.error('Error fetching document:', error)
+        .catch(() => {
+          // Use default title if fetch fails
         })
     }
   }, [documentId])
