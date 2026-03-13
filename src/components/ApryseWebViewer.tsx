@@ -722,6 +722,9 @@ export default function ApryseWebViewer({
   const [wikiInsights, setWikiInsights] = useState<InsightEntry[]>([])
   const [showWikiPanel, setShowWikiPanel] = useState(false)
   const [showComprehensionCheck, setShowComprehensionCheck] = useState(false)
+  const [factCheckResults, setFactCheckResults] = useState<Array<{ claim: string; verdict: string; confidence: number; explanation: string }>>([])
+  const [relatedWorkResults, setRelatedWorkResults] = useState<Array<{ title: string; authors: string; relevance: string; year?: number }>>([])
+  const [showResearchInsights, setShowResearchInsights] = useState(false)
 
 
 
@@ -1905,6 +1908,33 @@ export default function ApryseWebViewer({
     window.addEventListener('agent7:notification', handleNotification)
     return () => { window.removeEventListener('agent7:notification', handleNotification) }
   }, [userId, implicitHelpTrigger, dismissedNotifications])  // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Agent 8: Fact-check results
+  useEffect(() => {
+    const handleFactCheck = (e: Event) => {
+      const { result } = (e as CustomEvent).detail || {}
+      if (result) {
+        setFactCheckResults(prev => {
+          const updated = [result, ...prev].slice(0, 5) // keep last 5
+          return updated
+        })
+      }
+    }
+    window.addEventListener('agent8:fact-check-complete', handleFactCheck)
+    return () => window.removeEventListener('agent8:fact-check-complete', handleFactCheck)
+  }, [])
+
+  // Agent 9: Related work results
+  useEffect(() => {
+    const handleRelatedWork = (e: Event) => {
+      const { result } = (e as CustomEvent).detail || {}
+      if (result?.relatedPapers?.length) {
+        setRelatedWorkResults(result.relatedPapers.slice(0, 5))
+      }
+    }
+    window.addEventListener('agent9:related-work-found', handleRelatedWork)
+    return () => window.removeEventListener('agent9:related-work-found', handleRelatedWork)
+  }, [])
 
 
 
@@ -6063,6 +6093,23 @@ ${documentContent}
               </button>
 
               <button
+                onClick={() => setShowResearchInsights(v => !v)}
+                className="w-full flex items-center gap-3 px-2 py-2.5 text-left rounded-lg hover:bg-white hover:shadow-sm hover:ring-1 hover:ring-slate-100 transition-all group/tool"
+              >
+                <div className="relative w-6 h-6 rounded-md bg-white border border-slate-200 flex items-center justify-center group-hover/tool:border-emerald-200 group-hover/tool:bg-emerald-50 transition-colors">
+                  <Sparkles className="w-3.5 h-3.5 text-slate-400 group-hover/tool:text-emerald-600" />
+                  {(factCheckResults.length + relatedWorkResults.length) > 0 && (
+                    <span className="absolute -top-1 -right-1 w-3.5 h-3.5 bg-emerald-500 rounded-full text-[8px] text-white flex items-center justify-center font-bold">
+                      {factCheckResults.length + relatedWorkResults.length}
+                    </span>
+                  )}
+                </div>
+                <div className="flex-1">
+                  <span className="block text-[13px] font-medium text-slate-700 group-hover/tool:text-slate-900">Research Insights</span>
+                </div>
+              </button>
+
+              <button
                 onClick={() => {
                   if (pdfSections.length > 0) setShowSectionAssignment(true);
                   else toast.error('Wait for analysis...');
@@ -6307,6 +6354,77 @@ ${documentContent}
           // TODO: specific resource jumping logic if needed
         }}
       />
+
+      {/* Research Insights Panel (Fact-Check + Related Work) */}
+      {showResearchInsights && (
+        <div className="fixed right-0 top-0 h-full w-[400px] z-[50] shadow-2xl bg-gray-50 border-l border-gray-200 flex flex-col animate-in slide-in-from-right-10 fade-in duration-300">
+          <div className="flex items-center justify-between px-4 py-3 bg-white border-b border-gray-200 shrink-0">
+            <div className="flex items-center gap-2">
+              <div className="w-7 h-7 bg-emerald-600 rounded-lg flex items-center justify-center">
+                <Sparkles className="w-4 h-4 text-white" />
+              </div>
+              <span className="text-sm font-semibold text-gray-900">Research Insights</span>
+            </div>
+            <button onClick={() => setShowResearchInsights(false)} className="p-1.5 rounded-lg hover:bg-gray-100 text-gray-400 transition-colors">
+              <X className="w-4 h-4" />
+            </button>
+          </div>
+          <div className="flex-1 overflow-y-auto p-4 space-y-4">
+            {/* Fact Check Results */}
+            {factCheckResults.length > 0 && (
+              <div>
+                <div className="text-[11px] font-bold text-gray-500 uppercase tracking-wider mb-2">Fact Checks</div>
+                <div className="space-y-2">
+                  {factCheckResults.map((r, i) => (
+                    <div key={i} className="bg-white border border-gray-200 rounded-xl p-3 shadow-sm">
+                      <div className="flex items-start justify-between gap-2 mb-1">
+                        <p className="text-xs text-gray-700 line-clamp-2 flex-1">{r.claim}</p>
+                        <span className={`shrink-0 text-[10px] font-bold px-1.5 py-0.5 rounded-full ${
+                          r.verdict === 'supported' ? 'bg-green-100 text-green-700' :
+                          r.verdict === 'refuted' ? 'bg-red-100 text-red-700' :
+                          'bg-yellow-100 text-yellow-700'
+                        }`}>
+                          {r.verdict}
+                        </span>
+                      </div>
+                      <p className="text-[11px] text-gray-500 leading-relaxed">{r.explanation}</p>
+                      <div className="mt-1.5 bg-gray-100 rounded-full h-1">
+                        <div className="h-1 rounded-full bg-emerald-500" style={{ width: `${Math.round(r.confidence * 100)}%` }} />
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* Related Work Results */}
+            {relatedWorkResults.length > 0 && (
+              <div>
+                <div className="text-[11px] font-bold text-gray-500 uppercase tracking-wider mb-2">Related Papers</div>
+                <div className="space-y-2">
+                  {relatedWorkResults.map((p, i) => (
+                    <div key={i} className="bg-white border border-gray-200 rounded-xl p-3 shadow-sm">
+                      <div className="text-xs font-semibold text-gray-900 mb-0.5 line-clamp-2">{p.title}</div>
+                      {p.authors && <div className="text-[11px] text-gray-500 mb-1">{p.authors}{p.year ? ` (${p.year})` : ''}</div>}
+                      {p.relevance && <p className="text-[11px] text-gray-600 leading-relaxed line-clamp-2">{p.relevance}</p>}
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {factCheckResults.length === 0 && relatedWorkResults.length === 0 && (
+              <div className="text-center py-12">
+                <div className="w-12 h-12 bg-emerald-50 rounded-full flex items-center justify-center mx-auto mb-3">
+                  <Sparkles className="w-6 h-6 text-emerald-400" />
+                </div>
+                <p className="text-sm font-medium text-gray-600 mb-1">No insights yet</p>
+                <p className="text-xs text-gray-400">AI agents will automatically analyze claims and find related papers as you read.</p>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
 
       {/* Comprehension Check Panel */}
       {showComprehensionCheck && (
