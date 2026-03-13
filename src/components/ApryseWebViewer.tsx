@@ -119,6 +119,14 @@ import { isMathematicalContent } from '../utils/contentDetector'
 // }
 
 
+// Deterministic per-user color from userId (8 distinct palette)
+const USER_COLORS = ['#f59e0b', '#10b981', '#3b82f6', '#8b5cf6', '#ef4444', '#06b6d4', '#ec4899', '#84cc16']
+function getUserColor(userId: string): string {
+  let hash = 0
+  for (let i = 0; i < userId.length; i++) hash = (hash * 31 + userId.charCodeAt(i)) >>> 0
+  return USER_COLORS[hash % USER_COLORS.length]
+}
+
 const HIGHLIGHT_REASONS = {
   confusion: {
     label: 'Confused/Need Help',
@@ -371,6 +379,8 @@ export default function ApryseWebViewer({
 
 
   const [showReasonSelector, setShowReasonSelector] = useState(false);
+  const [showSharePanel, setShowSharePanel] = useState(false);
+  const [sharePanelDismissTimer, setSharePanelDismissTimer] = useState<NodeJS.Timeout | null>(null);
   const [pendingHighlight, setPendingHighlight] = useState<any>(null);
   const [selectedReason, setSelectedReason] = useState<string>('understood');
 
@@ -1813,6 +1823,42 @@ export default function ApryseWebViewer({
   };
 
 
+  // Share the pending highlight with all collaborators
+  const shareHighlightWithTeam = async (reason?: string) => {
+    if (!pendingHighlight || !webViewerInstance?.Core) return
+    const { annotation, highlightedText, documentId: docId, pageNumber } = pendingHighlight
+    const { annotationManager } = webViewerInstance.Core
+
+    // Apply reason color if provided, otherwise keep user color
+    if (reason) {
+      const reasonData = HIGHLIGHT_REASONS[reason as keyof typeof HIGHLIGHT_REASONS]
+      if (reasonData && webViewerInstance.Core.Annotations?.Color) {
+        annotation.StrokeColor = new webViewerInstance.Core.Annotations.Color(
+          parseInt(reasonData.color.slice(1,3), 16),
+          parseInt(reasonData.color.slice(3,5), 16),
+          parseInt(reasonData.color.slice(5,7), 16)
+        )
+        annotationManager.redrawAnnotation(annotation)
+      }
+    }
+    annotation.setCustomData('shared', 'true')
+    if (reason) annotation.setCustomData('reason', reason)
+
+    const xfdf = await annotationManager.exportAnnotations({ annotationList: [annotation], widgets: false })
+    broadcastHighlight({
+      documentId: docId,
+      xfdf,
+      pageNumber,
+      user: userName,
+      userId,
+      color: getUserColor(userId),
+      contents: highlightedText,
+      reason: reason || 'general'
+    })
+    setShowSharePanel(false)
+    if (sharePanelDismissTimer) clearTimeout(sharePanelDismissTimer)
+  }
+
   // useEffect(() => {
   //   if (documentId && userId) {
   //     interactionCollector.startSession(userId, userName, documentId)
@@ -2728,29 +2774,38 @@ export default function ApryseWebViewer({
             // Wrap in try-catch individually to prevent one fail blocking others
             await annotationManager.importAnnotations(highlight.xfdf, { imported: true }).catch((e: any) => console.warn('Failed to import single annotation:', e));
 
-            // Set custom data on imported annotations if not already set by XFDF
-            // This ensures the annotation listener can access reason and authorId
-            if (highlight.reason || highlight.user || highlight.userId) {
+            // Apply sender's user color + name to the imported annotation
+            {
               const allAnnotations = annotationManager.getAnnotationsList();
               const importedAnnotations = allAnnotations.filter((ann: any) => {
                 const isHighlight = ann.Subject === 'Highlight' || ann.Subject === 'highlight';
                 const isCorrectPage = ann.PageNumber === highlight.pageNumber;
-                const hasNoReason = !ann.getCustomData('reason');
-                return isHighlight && isCorrectPage && hasNoReason;
+                const notFromMe = ann.Author !== userName;
+                return isHighlight && isCorrectPage && notFromMe;
               });
 
-              // Set custom data on the most recently imported annotation
               if (importedAnnotations.length > 0) {
                 const annotation = importedAnnotations[importedAnnotations.length - 1];
-                if (highlight.reason) {
-                  annotation.setCustomData('reason', highlight.reason);
+                const authorId = highlight.userId || highlight.user || 'unknown'
+                const authorName = highlight.user || authorId
+
+                // Apply the sender's deterministic color
+                const senderColor = getUserColor(authorId)
+                if (webViewerInstance?.Core?.Annotations?.Color) {
+                  annotation.StrokeColor = new webViewerInstance.Core.Annotations.Color(
+                    parseInt(senderColor.slice(1,3), 16),
+                    parseInt(senderColor.slice(3,5), 16),
+                    parseInt(senderColor.slice(5,7), 16)
+                  )
+                  annotation.Opacity = 0.45
                 }
-                // Use userId if available, otherwise fall back to user name
-                const authorId = highlight.userId || highlight.user;
-                if (authorId) {
-                  annotation.setCustomData('authorId', authorId);
-                  annotation.setCustomData('authorName', highlight.user || authorId);
-                }
+                // Store author metadata for tooltips
+                annotation.setCustomData('authorId', authorId)
+                annotation.setCustomData('authorName', authorName)
+                annotation.setCustomData('shared', 'true')
+                if (highlight.reason) annotation.setCustomData('reason', highlight.reason)
+                // Set Author field so Apryse shows the name in annotation popups
+                annotation.Author = authorName
                 annotationManager.redrawAnnotation(annotation);
               }
             }
@@ -4468,8 +4523,19 @@ ${documentContent}
                 //   });  // ← YES, this closing }); is needed!
 
 
-                // 🚀 SOCKET.IO REAL-TIME BROADCAST - WITH REASON SELECTOR
-                console.log('🎨 Highlight created, showing reason selector');
+                // 🎨 Set author color + metadata immediately, show share panel
+                const userColor = getUserColor(userId)
+                if (webViewerInstance.Core.Annotations?.Color) {
+                  const r = parseInt(userColor.slice(1,3), 16)
+                  const g = parseInt(userColor.slice(3,5), 16)
+                  const b = parseInt(userColor.slice(5,7), 16)
+                  annotation.StrokeColor = new webViewerInstance.Core.Annotations.Color(r, g, b)
+                  annotation.Opacity = 0.4
+                }
+                annotation.setCustomData('authorId', userId)
+                annotation.setCustomData('authorName', userName)
+                annotation.setCustomData('shared', 'false')
+                webViewerInstance.Core.annotationManager?.redrawAnnotation(annotation)
 
                 setPendingHighlight({
                   annotation,
@@ -4477,7 +4543,12 @@ ${documentContent}
                   documentId,
                   pageNumber: annotation.PageNumber
                 });
-                setShowReasonSelector(true);
+
+                // Show compact share panel (auto-dismiss after 8s)
+                setShowSharePanel(true)
+                if (sharePanelDismissTimer) clearTimeout(sharePanelDismissTimer)
+                const t = setTimeout(() => setShowSharePanel(false), 8000)
+                setSharePanelDismissTimer(t)
 
 
 
@@ -7014,70 +7085,56 @@ ${documentContent}
           documentText={documentContent} // Pass the extracted text
         />
 
-        {/* ✅ ADD THIS REASON SELECTOR MODAL HERE: */}
-        {/* Highlight Reason Selector */}
-        {showReasonSelector && (
-          <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-            <div className="bg-white rounded-lg shadow-xl max-w-md w-full mx-4 p-6">
-              <div className="flex items-center justify-between mb-4">
-                <h3 className="text-lg font-semibold text-gray-900">
-                  Why are you highlighting this?
-                </h3>
-                <button
-                  onClick={() => {
-                    setShowReasonSelector(false);
-                    setPendingHighlight(null);
-                  }}
-                  className="text-gray-400 hover:text-gray-600"
-                >
-                  <X className="w-5 h-5" />
+        {/* ── Collaborative Highlight Share Panel ── */}
+        {showSharePanel && pendingHighlight && (
+          <div className="absolute bottom-10 right-4 z-[80] pointer-events-auto">
+            <div className="bg-white border border-gray-200 rounded-2xl shadow-xl w-[260px] overflow-hidden animate-in slide-in-from-bottom-2 duration-200">
+              {/* Header */}
+              <div className="flex items-center justify-between px-4 pt-3 pb-2 border-b border-gray-100">
+                <div className="flex items-center gap-2">
+                  <div className="w-3 h-3 rounded-full" style={{ backgroundColor: getUserColor(userId) }} />
+                  <span className="text-[12px] font-semibold text-gray-800">Share with team?</span>
+                </div>
+                <button onClick={() => { setShowSharePanel(false); if (sharePanelDismissTimer) clearTimeout(sharePanelDismissTimer) }} className="text-gray-400 hover:text-gray-600">
+                  <X className="w-3.5 h-3.5" />
                 </button>
               </div>
 
-              <div className="mb-4">
-                <p className="text-sm text-gray-600 mb-3">
-                  Choose the reason that best describes why you highlighted this text:
-                </p>
+              {/* Highlighted text preview */}
+              <div className="px-4 py-2">
+                <p className="text-[11px] text-gray-500 italic line-clamp-2">"{pendingHighlight.highlightedText}"</p>
+              </div>
 
-                <div className="space-y-2">
-                  {Object.entries(HIGHLIGHT_REASONS).map(([key, reason]) => (
+              {/* Reason tags */}
+              <div className="px-4 pb-3">
+                <p className="text-[10px] text-gray-400 font-medium uppercase tracking-wide mb-2">Tag & Share</p>
+                <div className="flex flex-wrap gap-1.5">
+                  {Object.entries(HIGHLIGHT_REASONS).slice(0, 5).map(([key, r]) => (
                     <button
                       key={key}
-                      onClick={() => completeHighlightWithReason(key)}
-                      className={`w-full text-left p-3 rounded-lg border-2 transition-all hover:border-gray-300 ${selectedReason === key
-                        ? 'border-blue-500 bg-blue-50'
-                        : 'border-gray-200 hover:bg-gray-50'
-                        }`}
+                      onClick={() => shareHighlightWithTeam(key)}
+                      className="flex items-center gap-1 px-2 py-1 rounded-lg border border-gray-200 hover:border-gray-300 hover:bg-gray-50 transition-all text-[11px] font-medium text-gray-700"
                     >
-                      <div className="flex items-center space-x-3">
-                        <div
-                          className="w-4 h-4 rounded"
-                          style={{ backgroundColor: reason.color }}
-                        ></div>
-                        <span className="font-medium text-gray-900">
-                          {reason.label}
-                        </span>
-                      </div>
+                      <div className="w-2 h-2 rounded-full shrink-0" style={{ backgroundColor: r.color }} />
+                      {r.label.split('/')[0].trim()}
                     </button>
                   ))}
                 </div>
               </div>
 
-              <div className="flex space-x-3">
+              {/* Share / Skip */}
+              <div className="flex gap-2 px-4 pb-3">
                 <button
-                  onClick={() => completeHighlightWithReason(selectedReason)}
-                  className="flex-1 bg-blue-600 text-white py-2 px-4 rounded-lg hover:bg-blue-700 transition-colors"
+                  onClick={() => shareHighlightWithTeam()}
+                  className="flex-1 bg-indigo-600 hover:bg-indigo-700 text-white text-[12px] font-semibold py-1.5 rounded-lg transition-colors"
                 >
-                  Highlight with Reason
+                  Share
                 </button>
                 <button
-                  onClick={() => {
-                    setShowReasonSelector(false);
-                    setPendingHighlight(null);
-                  }}
-                  className="px-4 py-2 text-gray-600 border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors"
+                  onClick={() => { setShowSharePanel(false); if (sharePanelDismissTimer) clearTimeout(sharePanelDismissTimer) }}
+                  className="flex-1 text-[12px] text-gray-500 hover:text-gray-700 border border-gray-200 hover:bg-gray-50 py-1.5 rounded-lg transition-colors"
                 >
-                  Cancel
+                  Keep Private
                 </button>
               </div>
             </div>
