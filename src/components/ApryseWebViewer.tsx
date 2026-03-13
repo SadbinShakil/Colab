@@ -106,6 +106,7 @@ import TextSelectionPopup from './TextSelectionPopup'
 import JourneyReplayPanel from './JourneyReplayPanel'
 import CollectiveWikiPanel, { WikiEntry, InsightEntry, Activity as WikiActivity } from './CollectiveWikiPanel'
 import ComprehensionCheck from './ComprehensionCheck'
+import SessionSummaryPanel from './SessionSummaryPanel'
 import { createPaperSummaryGenerator, type PaperSummary } from '@/lib/paperSummaryGenerator'
 import { analyzeChatMessage } from '@/lib/chatAnalyzer'
 import { isMathematicalContent } from '../utils/contentDetector'
@@ -722,6 +723,7 @@ export default function ApryseWebViewer({
   const [wikiInsights, setWikiInsights] = useState<InsightEntry[]>([])
   const [showWikiPanel, setShowWikiPanel] = useState(false)
   const [showComprehensionCheck, setShowComprehensionCheck] = useState(false)
+  const [showSessionSummary, setShowSessionSummary] = useState(false)
   const [factCheckResults, setFactCheckResults] = useState<Array<{ claim: string; verdict: string; confidence: number; explanation: string }>>([])
   const [relatedWorkResults, setRelatedWorkResults] = useState<Array<{ title: string; authors: string; relevance: string; year?: number }>>([])
   const [showResearchInsights, setShowResearchInsights] = useState(false)
@@ -6110,6 +6112,18 @@ ${documentContent}
               </button>
 
               <button
+                onClick={() => setShowSessionSummary(v => !v)}
+                className="w-full flex items-center gap-3 px-2 py-2.5 text-left rounded-lg hover:bg-white hover:shadow-sm hover:ring-1 hover:ring-slate-100 transition-all group/tool"
+              >
+                <div className="w-6 h-6 rounded-md bg-white border border-slate-200 flex items-center justify-center group-hover/tool:border-violet-200 group-hover/tool:bg-violet-50 transition-colors">
+                  <BookOpen className="w-3.5 h-3.5 text-slate-400 group-hover/tool:text-violet-600" />
+                </div>
+                <div className="flex-1">
+                  <span className="block text-[13px] font-medium text-slate-700 group-hover/tool:text-slate-900">Session Summary</span>
+                </div>
+              </button>
+
+              <button
                 onClick={() => {
                   if (pdfSections.length > 0) setShowSectionAssignment(true);
                   else toast.error('Wait for analysis...');
@@ -6422,6 +6436,31 @@ ${documentContent}
                 <p className="text-xs text-gray-400">AI agents will automatically analyze claims and find related papers as you read.</p>
               </div>
             )}
+          </div>
+        </div>
+      )}
+
+      {/* Session Summary Panel */}
+      {showSessionSummary && (
+        <div className="fixed right-0 top-0 h-full w-[420px] z-[50] shadow-2xl bg-gray-50 border-l border-gray-200 flex flex-col animate-in slide-in-from-right-10 fade-in duration-300">
+          <div className="flex items-center justify-between px-4 py-3 bg-white border-b border-gray-200 shrink-0">
+            <div className="flex items-center gap-2">
+              <div className="w-7 h-7 bg-violet-600 rounded-lg flex items-center justify-center">
+                <BookOpen className="w-4 h-4 text-white" />
+              </div>
+              <span className="text-sm font-semibold text-gray-900">Session Summary</span>
+            </div>
+            <button onClick={() => setShowSessionSummary(false)} className="p-1.5 rounded-lg hover:bg-gray-100 text-gray-400 transition-colors">
+              <X className="w-4 h-4" />
+            </button>
+          </div>
+          <div className="flex-1 overflow-y-auto p-4">
+            <SessionSummaryPanel
+              documentTitle={documentTitle}
+              documentContent={documentContent}
+              sessionDurationMinutes={30}
+              onClose={() => setShowSessionSummary(false)}
+            />
           </div>
         </div>
       )}
