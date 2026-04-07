@@ -132,11 +132,11 @@ class Agent7_ImplicitAssistance {
       id: `struggle-${signal.sectionId}-${Date.now()}`,
       type: 'struggle-awareness',
       priority: signal.severity === 'high' ? 'high' : 'medium',
-      title: 'Others find this tricky too',
-      message: `${signal.sectionName} is challenging for many readers. You're not alone!`,
-      actionable: 'Consider using the AI explainer or asking collaborators',
+      title: `High D_s on ${signal.sectionName || 'this section'}`,
+      message: `Your coordination instability signal is elevated here. Other readers have struggled with this passage too.`,
+      actionable: 'Request a section-scoped explanation or route to a peer',
       actionButton: {
-        label: 'Get Help',
+        label: 'Get Explanation',
         action: 'open-stuck-here'
       },
       timestamp: Date.now(),
@@ -258,21 +258,25 @@ class Agent7_ImplicitAssistance {
     this.addNotification(notification)
   }
 
-  generateEncouragement() {
-    const encouragements = [
-      'You\'re making steady progress!',
-      'Keep going, you\'re doing great!',
-      'Complex papers take time - you\'re on track',
-      'Every section you complete is progress!'
+  generateEncouragement(sectionName?: string) {
+    // Researcher-grade pacing signals — factual, not patronising
+    const signals = [
+      { title: 'Sustained reading detected', message: sectionName ? `Long dwell on §${sectionName} — D_s stable, no confusion markers yet.` : 'Extended reading session — D_s stable.' },
+      { title: 'Deep engagement signal', message: sectionName ? `§${sectionName} has held attention above threshold. No peer routing triggered.` : 'Engagement above threshold — no intervention queued.' },
+      { title: 'No confusion markers', message: sectionName ? `§${sectionName}: no struggle signals above τ_fire. Reading appears stable.` : 'D_s below τ_fire — no intervention triggered.' },
+      { title: 'Pacing on track', message: sectionName ? `§${sectionName}: reading pace within expected range for this section length.` : 'Pace consistent with session baseline.' },
     ]
+
+    const pick = signals[Math.floor(Math.random() * signals.length)]
 
     const notification: SmartNotification = {
       id: `encourage-${Date.now()}`,
       type: 'encouragement',
       priority: 'low',
-      title: encouragements[Math.floor(Math.random() * encouragements.length)],
-      message: 'Research reading is challenging work',
-      timestamp: Date.now()
+      title: pick.title,
+      message: pick.message,
+      timestamp: Date.now(),
+      sectionName,
     }
 
     this.addNotification(notification)

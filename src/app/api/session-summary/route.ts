@@ -20,29 +20,7 @@ export async function POST(request: NextRequest) {
     }
 
     if (!process.env.OPENAI_API_KEY || process.env.OPENAI_API_KEY === 'sk-your-openai-api-key-here') {
-      return NextResponse.json({
-        summary: {
-          headline: `Session Complete: ${documentTitle || 'Academic Paper'}`,
-          whatWeLearned: [
-            'The paper introduces a novel approach to the research problem',
-            'The methodology section revealed key experimental design choices',
-            'Results showed significant improvements over baselines'
-          ],
-          keyDiscussionPoints: [
-            'Team discussed the methodology in depth',
-            'Several clarifying questions were raised about the results',
-          ],
-          openQuestions: [
-            'How does this approach scale to larger datasets?',
-            'What are the reproducibility implications?'
-          ],
-          nextSteps: [
-            'Read the related works section more carefully',
-            'Compare with similar papers on this topic'
-          ],
-          participantInsights: []
-        }
-      })
+      return NextResponse.json({ error: 'OpenAI API key not configured. Add OPENAI_API_KEY to .env to generate session log.' }, { status: 503 })
     }
 
     // Build context from chat messages
@@ -58,18 +36,21 @@ export async function POST(request: NextRequest) {
       .map((a: any) => `[${a.type || 'note'}] "${a.text?.substring(0, 100)}"`)
       .join('\n')
 
-    const systemPrompt = `You are an academic session analyst. Generate a structured learning summary for a collaborative paper-reading session.
+    const systemPrompt = `You are generating a Session Log for PhD researchers who have just finished a collaborative paper-reading session. This log is a Phase III artifact — it seeds the next session and persists in the Collective Knowledge Base.
 
-Be specific and factual. Only include what actually happened based on the provided data.
-If chat messages are empty, focus on what can be inferred from the paper content.
+Rules:
+- Every entry must be grounded in the actual paper text or the actual discussion — no generic filler
+- "What we established" means analytical conclusions the group can rely on, not observations
+- "Open questions" must be specific to this paper's methodology, evidence, or claims — not generic future work
+- "Contested claims" are claims where the group's discussion revealed evidence-to-claim tension or interpretive divergence
+- "Next steps" must be specific research actions: which section to re-read, which citation to trace, which comparison to make
+- PhD-level language throughout. Terse and precise.
 Return JSON only.`
 
     const userPrompt = `Paper: "${documentTitle}"
-Session duration: ~${sessionDurationMinutes} minutes
-Participants: ${participantNames.join(', ') || 'Researchers'}
-Sections covered: ${sectionsRead.join(', ') || 'Full paper'}
+Session: ${sessionDurationMinutes} minutes · ${participantNames.join(', ') || 'Researchers'} · Sections: ${sectionsRead.join(', ') || 'Full paper'}
 
-Paper excerpt (first 3000 chars):
+Paper text (first 3000 chars):
 ${documentContent?.substring(0, 3000) || 'Not available'}
 
 Discussion (last 30 messages):
@@ -78,17 +59,17 @@ ${chatSummary || 'No discussion recorded'}
 Annotations:
 ${annotationSummary || 'No annotations'}
 
-Generate a JSON object with:
+Generate a JSON Session Log:
 {
-  "headline": "1-line session outcome",
-  "whatWeLearned": ["3-5 specific things the group learned from this paper"],
-  "keyDiscussionPoints": ["2-4 topics the team actually discussed"],
-  "openQuestions": ["2-3 questions that remain unanswered"],
-  "nextSteps": ["2-3 concrete follow-up actions"],
-  "participantInsights": ["0-2 notable individual contributions if visible from chat"]
+  "headline": "1 sentence: what this session established or failed to establish about the paper's core claim",
+  "whatWeLearned": ["3–5 specific analytical conclusions grounded in the paper text — not observations, conclusions. Each must name a specific claim, figure, or result."],
+  "keyDiscussionPoints": ["2–4 specific claims or tensions that emerged from the discussion — quote the paper or discussion where possible"],
+  "openQuestions": ["2–3 specific unresolved questions about this paper's methodology, evidence, or scope — must be answerable in principle"],
+  "nextSteps": ["2–3 concrete research actions: which section to verify, which citation to check, which comparison to make"],
+  "participantInsights": ["0–2 notable individual observations visible from the discussion — name the participant"]
 }
 
-Be specific to this paper and discussion. No generic filler.`
+Be specific. No filler. Each item must be traceable to the actual paper or discussion.`
 
     const completion = await openai.chat.completions.create({
       model: 'gpt-4o',

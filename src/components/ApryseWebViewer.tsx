@@ -1,5 +1,9 @@
 'use client'
 
+import dynamic from 'next/dynamic'
+import type { PDFViewerCoreHandle } from './PDFViewerCore'
+// Dynamic import with ssr:false — react-pdf uses DOMMatrix which is browser-only
+const PDFViewerCore = dynamic(() => import('./PDFViewerCore'), { ssr: false })
 import { useEffect, useRef, useState, useCallback } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 // import { useRealtimeHighlights } from '@/app/hooks/useRealtimeHighlights'
@@ -11,6 +15,16 @@ import { SmartHeadingExtractor } from '@/lib/smartHeadingExtractor'
 import SectionAssignmentPanel from './SectionAssignmentPanel'
 import ReflectionIntake from './ReflectionIntake'
 import TeamReflections from './TeamReflections'
+import MarginalNotesSidebar from './MarginalNotesSidebar'
+import ExplanationCapturePrompt, { type ExplanationCaptureData } from './ExplanationCapturePrompt'
+import { ConsensusBanner, ConsensusPrompt, type ConsensusCheckpoint } from './ConsensusCheckpointPanel'
+import CritiqueLayerPanel from './CritiqueLayerPanel'
+import MetacognitivePrompt from './MetacognitivePrompt'
+import SectionComplexityBadge from './SectionComplexityBadge'
+import CohortBenchmarkBanner from './CohortBenchmarkBanner'
+import type { SectionComplexityResult } from '@/app/api/section-complexity/route'
+import type { MetacognitivePromptResponse } from '@/app/api/metacognitive-prompt/route'
+import type { CohortBenchmarkResult } from '@/app/api/cohort-benchmark/route'
 
 
 // [ADV] Charts
@@ -34,10 +48,15 @@ import { agent2_collaborationOrchestrator } from '@/lib/agents/Agent2_Collaborat
 import { agent3_discussionFacilitator } from '@/lib/agents/Agent3_DiscussionFacilitator'  // ✅ ADD THIS LINE
 import { agent5_storyboardCurator } from '@/lib/agents/Agent5_StoryboardCurator'
 import { agent7_implicitAssistance } from '@/lib/agents/Agent7_ImplicitAssistance'
+import { agent8_factChecking } from '@/lib/agents/Agent8_FactChecking'
 import ImplicitHelpCard, { type ImplicitHelpTrigger } from '@/components/ImplicitHelpCard'
+import ReadingTrajectoryMap from '@/components/ReadingTrajectoryMap'
+import SessionPrimingCard from '@/components/SessionPrimingCard'
+import SectionSummaryCard from '@/components/SectionSummaryCard'
+import ContentDetectionNudge, { type ContentFlag, shouldShowNudge, markNudgeShown } from '@/components/ContentDetectionNudge'
+import { detectDivergence, type LocalHighlight } from '@/lib/divergenceDetector'
 
 import InteractionAnalysisDashboard from '@/components/InteractionAnalysisDashboard'
-import { SystemFlowVisualizer } from '@/components/SystemFlowVisualizer'
 import ChatSidebar from './ChatSidebar'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
@@ -91,7 +110,8 @@ import {
   BookOpen,
   Book,
   BellOff,
-  Sparkles
+  Sparkles,
+  BookMarked
 } from 'lucide-react'
 import MathExplainer from './MathExplainer'
 import GeneralExplainer from './GeneralExplainer'
@@ -102,6 +122,8 @@ import ScreenCapture from './ScreenCapture'
 import PrerequisiteHelper from './PrerequisiteHelper'
 import SmartPrerequisiteHelper from './SmartPrerequisiteHelper'
 import AIResearchPrerequisites from './AIResearchPrerequisites'
+import PaperPrerequisitesPanel from './PaperPrerequisitesPanel'
+import PaperRelatedWorkPanel from './PaperRelatedWorkPanel'
 import TextSelectionPopup from './TextSelectionPopup'
 import JourneyReplayPanel from './JourneyReplayPanel'
 import CollectiveWikiPanel, { WikiEntry, InsightEntry, Activity as WikiActivity } from './CollectiveWikiPanel'
@@ -164,6 +186,7 @@ interface ApryseWebViewerProps {
   documentId: string
   userName?: string
   userId?: string
+  sessionMode?: 'solo' | 'collaborative'
   onHighlightAdd?: (highlightData: any) => void
   collaborationHighlights?: any[]
   onAnnotationAdd?: (annotation: any) => void
@@ -176,6 +199,10 @@ interface ApryseWebViewerProps {
   onSyncAnnotations?: () => void
   realtimeAnnotations?: any[]
   annotationSubscriberCount?: number
+  onAskAI?: (selectedText: string) => void
+  // Three-phase session state — drives the Phase I gate
+  sessionPhase?: 'I' | 'II' | 'III'
+  onPhaseAdvance?: (phase: 'II' | 'III') => void
 }
 
 interface Collaborator {
@@ -230,6 +257,7 @@ export default function ApryseWebViewer({
   documentId,
   userName = 'Anonymous',
   userId = 'guest',
+  sessionMode = 'solo',
   onHighlightAdd,
   collaborationHighlights = [],
   onAnnotationAdd,
@@ -241,17 +269,44 @@ export default function ApryseWebViewer({
   onBroadcastAnnotationChange,
   onSyncAnnotations,
   realtimeAnnotations,
-  annotationSubscriberCount
+  annotationSubscriberCount,
+  onAskAI,
+  sessionPhase,
+  onPhaseAdvance,
 }: ApryseWebViewerProps) {
   const viewer = useRef<HTMLDivElement>(null)
   const webViewerRef = useRef<any>(null) // ✅ Ref to hold latest instance avoiding stale closures
-  const [isLoading, setIsLoading] = useState(true)
+  const pdfViewerRef = useRef<any>(null) // ref to PDFViewerCore imperative handle
+  const [collaboratorHighlightsList, setCollaboratorHighlightsList] = useState<any[]>([])
+  const processedHighlightIdsRef = useRef<Set<string>>(new Set())
+  // Buffer existing-highlights received before useRealtimeHighlights effect runs
+  const existingHighlightsBufferRef = useRef<any[]>([])
+  const [isLoading, setIsLoading] = useState(false) // PDFViewerCore handles its own loading UI
   const [error, setError] = useState<string | null>(null)
   const [webViewerInstance, setWebViewerInstance] = useState<any>(null)
 
   // ✅ Sync ref with state
   useEffect(() => {
     webViewerRef.current = webViewerInstance
+  }, [webViewerInstance])
+
+  // Capture Apryse selection into persistentSelectionRef on every mousedown.
+  // Apryse clears its internal selection when focus leaves the iframe — this
+  // listener fires before that happens, so toolbar buttons always get the last
+  // known selected text even after the user clicks outside the PDF canvas.
+  useEffect(() => {
+    if (!webViewerInstance) return
+    const capture = () => {
+      try {
+        const text = webViewerInstance.Core?.documentViewer?.getSelectedText?.()?.trim()
+        if (text) {
+          persistentSelectionRef.current = text
+          setLastSelectedText(text)
+        }
+      } catch { /* ignore */ }
+    }
+    document.addEventListener('mousedown', capture, true) // capture phase — before Apryse clears
+    return () => document.removeEventListener('mousedown', capture, true)
   }, [webViewerInstance])
 
   // ✅ FIX: Disable default header to prevent overlap with custom UI
@@ -262,6 +317,7 @@ export default function ApryseWebViewer({
   }, [webViewerInstance]);
 
   const [currentPage, setCurrentPage] = useState(1)
+  const currentPageRef = useRef(1) // kept in sync with currentPage for use in stable closures
   const isJumpingRef = useRef(false)  // ✅ ADD THIS LINE RIGHT AFTER
   const [totalPages, setTotalPages] = useState(0)
 
@@ -290,8 +346,15 @@ export default function ApryseWebViewer({
   const [peerChatOpen, setPeerChatOpen] = useState(false)
   const [peerChatData, setPeerChatData] = useState<{
     sectionId: string
+    sectionName: string
+    sectionText: string      // actual paper text — feeds A3 grounded prompts
     peerId: string
     peerName: string
+    sharedPassage?: string   // passage both readers highlighted
+    myReason?: string        // local user's highlight reason
+    peerReason?: string      // peer's highlight reason
+    myDsScore?: number       // D_s at time of routing
+    routingReason?: string   // why A2 routed them together
   } | null>(null)
 
   const [peerChatMessages, setPeerChatMessages] = useState<Array<{
@@ -353,6 +416,20 @@ export default function ApryseWebViewer({
 
   const [showStoryboard, setShowStoryboard] = useState(false)
 
+  // ── Inline Definitions ──────────────────────────────────────────────────
+  const [inlineDefinitions, setInlineDefinitions] = useState<Array<{
+    term: string; shortDef: string; fullDef: string; type: 'definition' | 'prerequisite' | 'concept'
+  }>>([])
+  const [showDefinitions, setShowDefinitions] = useState(false)
+  const [defPopup, setDefPopup] = useState<{
+    term: string; shortDef: string; fullDef: string; type: string; x: number; y: number
+  } | null>(null)
+  const [documentReady, setDocumentReady] = useState(false)
+  const [defLoading, setDefLoading] = useState(false)
+  const definitionsFetchedRef = useRef(false)
+  const definitionAnnsRef = useRef<any[]>([]) // track added annotation ids for cleanup
+  const searchGenRef = useRef(0) // generation counter — incremented on every effect run to abort stale chains
+
   const [showGazeHeatmap, setShowGazeHeatmap] = useState(false)
 
 
@@ -378,6 +455,45 @@ export default function ApryseWebViewer({
   })
 
 
+  // Section summary card — shown in sidebar, refreshes on section change
+  const [activeSummarySection, setActiveSummarySection] = useState<{
+    sectionId: string
+    sectionName: string
+    sectionText: string
+    sectionIndex: string
+  } | null>(null)
+
+  // Content detection nudge — fires when figures/tables/equations are detected on current page
+  const [contentNudge, setContentNudge] = useState<{
+    sectionId: string
+    sectionName: string
+    sectionText: string
+    flags: ContentFlag[]
+  } | null>(null)
+
+  // Marginal note nudge — proactively surfaces when navigating to a page that has notes from previous readers
+  const [pageNoteNudge, setPageNoteNudge] = useState<{
+    page: number
+    count: number
+    preview: string   // first note content truncated
+    author: string
+  } | null>(null)
+  const pageNoteNudgeShownRef = useRef<Set<number>>(new Set())  // don't re-fire for same page in session
+
+  // Annotation divergence state — triggers when two readers flag the same passage differently
+  const [divergenceBanner, setDivergenceBanner] = useState<{
+    sharedPassage: string
+    localReason: string
+    peerReason: string
+    localUserName: string
+    peerUserName: string
+    sectionId: string
+    debateId: string | null
+    prompt: string
+    groundingQuote: string
+  } | null>(null)
+  const peerHighlightsRef = useRef<LocalHighlight[]>([])
+
   const [showReasonSelector, setShowReasonSelector] = useState(false);
   const [showSharePanel, setShowSharePanel] = useState(false);
   const [sharePanelDismissTimer, setSharePanelDismissTimer] = useState<NodeJS.Timeout | null>(null);
@@ -388,8 +504,9 @@ export default function ApryseWebViewer({
   const [userConfusionHighlights, setUserConfusionHighlights] = useState<Map<string, Map<string, number>>>(new Map());
 
   // ✅ NEW: Phase 1 Reflection State
+  // DEV MODE: reflectionSubmitted starts as true to skip Phase I setup — set false before study
   const [showReflectionIntake, setShowReflectionIntake] = useState(false)
-  const [reflectionSubmitted, setReflectionSubmitted] = useState(false)
+  const [reflectionSubmitted, setReflectionSubmitted] = useState(true)
   const [reflectionData, setReflectionData] = useState<{ type: 'text' | 'audio' | 'file', content: string } | null>(null)
   const [collaboratorReflections, setCollaboratorReflections] = useState<Map<string, { type: string, content: string, userName: string }>>(new Map())
   const reflectionTimerRef = useRef<NodeJS.Timeout | null>(null)
@@ -410,8 +527,19 @@ export default function ApryseWebViewer({
     userName,
     userId,
     webViewerInstance,
-    enabled: true
+    // Disable fallback socket creation — initSocket() owns the socket lifecycle.
+    // externalSocket is set once initSocket connects; all broadcasts go through it.
+    enabled: false,
+    externalSocket: socketInstance,   // share the single socket — no double join
   })
+
+  // Drain any existing-highlights that arrived before the hook's window listener was attached
+  useEffect(() => {
+    if (!socketInstance || existingHighlightsBufferRef.current.length === 0) return
+    const buffered = existingHighlightsBufferRef.current.splice(0)
+    console.log(`[collab] draining ${buffered.length} buffered existing-highlights`)
+    window.dispatchEvent(new CustomEvent('__existing-highlights', { detail: buffered }))
+  }, [socketInstance])
 
   // ✅ ADD: Listen for remote reflections
   useEffect(() => {
@@ -600,16 +728,66 @@ export default function ApryseWebViewer({
     position?: { x: number; y: number };
   }>>([])
   const [lastSelectedText, setLastSelectedText] = useState('')
+  // Persistent ref — never cleared by panel clicks, survives sidebar opens
+  const persistentSelectionRef = useRef<string>('')
   const [showTextSelectionPopup, setShowTextSelectionPopup] = useState(false)
   const [confusionPopupShown, setConfusionPopupShown] = useState(new Set());
   const [sectionHighlightCounts, setSectionHighlightCounts] = useState(new Map());
   const [selectedText, setSelectedText] = useState('')
   const [selectionPosition, setSelectionPosition] = useState({ x: 0, y: 0 })
   const [mousePosition, setMousePosition] = useState({ x: 0, y: 0 })
+  const [annotationTooltip, setAnnotationTooltip] = useState<{ text: string; author: string; x: number; y: number } | null>(null)
 
 
   const [showEyeCalibration, setShowEyeCalibration] = useState(false)
   const [eyeTrackingEnabled, setEyeTrackingEnabled] = useState(false)
+
+  // Async marginal notes
+  const [showMarginalNotes, setShowMarginalNotes] = useState(false)
+  const [marginalNoteCount, setMarginalNoteCount] = useState(0)
+  const [marginalNotePassage, setMarginalNotePassage] = useState('')  // passage to pre-fill when opening sidebar
+
+  // Critique layer
+  const [showCritiquePanel, setShowCritiquePanel] = useState(false)
+  const [critiquePassage, setCritiquePassage] = useState('')
+
+  // Section complexity
+  const [sectionComplexity, setSectionComplexity] = useState<SectionComplexityResult | null>(null)
+  const [showComplexityBadge, setShowComplexityBadge] = useState(false)
+  const complexityShownRef = useRef<Set<string>>(new Set())
+
+  // Cohort benchmark
+  const [cohortBenchmark, setCohortBenchmark] = useState<CohortBenchmarkResult | null>(null)
+  const [showCohortBanner, setShowCohortBanner] = useState(false)
+  const sectionEnteredAtRef = useRef<number>(Date.now())
+
+  // Metacognitive prompt (shown before AI explanation at tau_fire)
+  const [showMetacognitive, setShowMetacognitive] = useState(false)
+  const [metacognitivePrompt, setMetacognitivePrompt] = useState<MetacognitivePromptResponse | null>(null)
+  const [metacognitiveLoading, setMetacognitiveLoading] = useState(false)
+  const [pendingPassageForExplanation, setPendingPassageForExplanation] = useState('')
+  const metacognitiveCooldownRef = useRef<Set<string>>(new Set())
+
+  // Feature 2: Explanation capture + D_s pre/post
+  const [explanationCapture, setExplanationCapture] = useState<ExplanationCaptureData | null>(null)
+  const currentDsRef = useRef<number>(0)  // live D_s — updated from agent1 events
+  const activeCaptureIdRef = useRef<string | null>(null)
+
+  // Feature 7: Knowledge gap warnings
+  const [knowledgeGapWarning, setKnowledgeGapWarning] = useState<{
+    fromSectionName: string
+    conceptBridge: string
+    otherReadersCount: number
+    priority: string
+  } | null>(null)
+
+  // Feature 4: Consensus checkpoints
+  const [sectionConsensus, setSectionConsensus] = useState<ConsensusCheckpoint[]>([])
+  const [showConsensusPrompt, setShowConsensusPrompt] = useState(false)
+  const [consensusPassage, setConsensusPassage] = useState('')
+  const [showConsensusBanner, setShowConsensusBanner] = useState(true)
+  const consensusTimerRef = useRef<NodeJS.Timeout | null>(null)
+  const lastConsensusSection = useRef<string>('')
 
   // ✅ ADD: Section management state
   const [pdfSections, setPdfSections] = useState<PDFSection[]>([])
@@ -645,6 +823,8 @@ export default function ApryseWebViewer({
   const [prerequisiteText, setPrerequisiteText] = useState('')
   const [showSmartPrerequisiteHelper, setShowSmartPrerequisiteHelper] = useState(false)
   const [showAIResearchPrerequisites, setShowAIResearchPrerequisites] = useState(false)
+  const [showPaperPrerequisites, setShowPaperPrerequisites] = useState(false)
+  const [showPaperRelatedWork, setShowPaperRelatedWork] = useState(false)
   const [showInteractionAnalysis, setShowInteractionAnalysis] = useState(false)
 
   // Collective Memory State
@@ -676,6 +856,8 @@ export default function ApryseWebViewer({
 
   // Document metadata state
   const [documentContent, setDocumentContent] = useState('')
+  const documentContentRef = useRef('') // stable ref for use in signal-handler closures
+  const pageTextsRef = useRef<Map<number, string>>(new Map()) // per-page text for accurate section grounding
   const [documentTitle, setDocumentTitle] = useState('')
   const [documentAuthors, setDocumentAuthors] = useState('')
   const [documentAbstract, setDocumentAbstract] = useState('')
@@ -751,6 +933,204 @@ export default function ApryseWebViewer({
     pdfSectionsRef.current = pdfSections
   }, [pdfSections])
 
+  // Fetch marginal note count for current page (badge on toolbar button)
+  useEffect(() => {
+    if (!documentId || !currentPage) return
+    fetch(`/api/marginal-notes?documentId=${encodeURIComponent(documentId)}&pageNumber=${currentPage}`)
+      .then(r => r.json())
+      .then(data => { if (data.success) setMarginalNoteCount(data.notes.length) })
+      .catch(() => {})
+  }, [documentId, currentPage])
+
+  // Feature 4: Fetch consensus checkpoints when section changes
+  useEffect(() => {
+    if (!documentId || !currentPage) return
+    const section = pdfSectionsRef.current.find(s => s.startPage <= currentPage && s.endPage >= currentPage)
+    const sectionId = section ? section.heading.id : `page-${currentPage}`
+    if (sectionId === lastConsensusSection.current) return
+    lastConsensusSection.current = sectionId
+    setShowConsensusBanner(true)
+
+    fetch(`/api/consensus-checkpoint?paperId=${encodeURIComponent(documentId)}&sectionId=${encodeURIComponent(sectionId)}`)
+      .then(r => r.json())
+      .then(data => { if (data.success) setSectionConsensus(data.checkpoints) })
+      .catch(() => {})
+
+    // Auto-trigger consensus prompt if group has been on this section for 5+ minutes
+    // (only trigger if 2+ users are connected)
+    if (consensusTimerRef.current) clearTimeout(consensusTimerRef.current)
+    consensusTimerRef.current = setTimeout(() => {
+      if ((connectedUsers?.length ?? 0) >= 2 && !showConsensusPrompt) {
+        setConsensusPassage(selectedText || '')
+        setShowConsensusPrompt(true)
+      }
+    }, 5 * 60 * 1000) // 5 minutes
+
+    return () => {
+      if (consensusTimerRef.current) clearTimeout(consensusTimerRef.current)
+    }
+  }, [documentId, currentPage])
+
+  // Section complexity + cohort benchmark: fire when section changes
+  useEffect(() => {
+    if (!documentId || !currentPage) return
+    const section = pdfSectionsRef.current.find(s => s.startPage <= currentPage && s.endPage >= currentPage)
+    if (!section) return
+    const sectionId = section.heading.id
+    const sectionName = section.heading.text
+
+    // Log pace for previous section before switching
+    const prevTimeMs = Date.now() - sectionEnteredAtRef.current
+    sectionEnteredAtRef.current = Date.now()
+
+    if (prevTimeMs > 5000 && userId) {
+      fetch('/api/cohort-benchmark', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          paperId: documentId,
+          userId,
+          sectionId,
+          sectionName,
+          timeSpentMs: prevTimeMs,
+          wordCount: section.content.split(/\s+/).length,
+          complexity: sectionComplexity?.complexityScore ?? 0.5,
+          pageCount: section.endPage - section.startPage + 1,
+        }),
+      }).catch(() => {})
+    }
+
+    // Fetch complexity (may already be cached) — fire and forget
+    fetch(`/api/section-complexity?paperId=${encodeURIComponent(documentId)}&sectionId=${encodeURIComponent(sectionId)}`)
+      .then(r => r.json())
+      .then(data => {
+        if (data.success && data.complexity) {
+          setSectionComplexity(data.complexity)
+          // Only show badge once per section per session, only for complex sections
+          if (!complexityShownRef.current.has(sectionId) && data.complexity.complexityScore >= 0.5) {
+            complexityShownRef.current.add(sectionId)
+            setShowComplexityBadge(true)
+          }
+        } else if (data.success && !data.complexity && section.content) {
+          // Not cached — analyze in background
+          fetch('/api/section-complexity', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              paperId: documentId,
+              sectionId,
+              sectionName,
+              sectionText: section.content.slice(0, 6000),
+            }),
+          }).then(r => r.json()).then(d => {
+            if (d.success && d.complexity) {
+              setSectionComplexity(d.complexity)
+              if (!complexityShownRef.current.has(sectionId) && d.complexity.complexityScore >= 0.5) {
+                complexityShownRef.current.add(sectionId)
+                setShowComplexityBadge(true)
+              }
+            }
+          }).catch(() => {})
+        }
+      }).catch(() => {})
+
+    // Fetch cohort benchmark for this section
+    fetch(`/api/cohort-benchmark?paperId=${encodeURIComponent(documentId)}&sectionId=${encodeURIComponent(sectionId)}`)
+      .then(r => r.json())
+      .then(data => {
+        if (data.success && data.benchmark) {
+          setCohortBenchmark(data.benchmark)
+          // Show banner if high struggle section (>= 40%)
+          if (data.benchmark.pctStruggled >= 40) {
+            setShowCohortBanner(true)
+          }
+        }
+      }).catch(() => {})
+
+  }, [documentId, currentPage]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Listen for A7 implicit-struggle: trigger metacognitive prompt before explanation
+  useEffect(() => {
+    const handler = (e: Event) => {
+      const detail = (e as CustomEvent).detail as { sectionId?: string; passageText?: string }
+      if (!detail?.sectionId) return
+
+      // Cooldown: don't show metacognitive prompt for same section twice in 10 min
+      const cooldownKey = `${documentId}-${detail.sectionId}`
+      if (metacognitiveCooldownRef.current.has(cooldownKey)) return
+      metacognitiveCooldownRef.current.add(cooldownKey)
+      setTimeout(() => metacognitiveCooldownRef.current.delete(cooldownKey), 10 * 60 * 1000)
+
+      const passage = detail.passageText || lastSelectedText || selectedText || ''
+      if (!passage) return
+
+      setPendingPassageForExplanation(passage)
+      setShowMetacognitive(true)
+      setMetacognitiveLoading(true)
+      setMetacognitivePrompt(null)
+
+      const section = pdfSectionsRef.current.find(s => s.heading.id === detail.sectionId)
+      fetch('/api/metacognitive-prompt', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          sectionText: section?.content?.slice(0, 4000) || '',
+          sectionName: section?.heading.text || '',
+          passageText: passage,
+          userId,
+          confusionType: sectionComplexity?.hasMath ? 'math' : 'general',
+        }),
+      }).then(r => r.json()).then(data => {
+        if (data.success) setMetacognitivePrompt(data.prompt)
+      }).catch(() => {}).finally(() => setMetacognitiveLoading(false))
+    }
+
+    window.addEventListener('agent1:implicit-struggle', handler)
+    return () => window.removeEventListener('agent1:implicit-struggle', handler)
+  }, [documentId, userId, lastSelectedText, selectedText, sectionComplexity]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Track live D_s score from Agent 1 events — used for pre/post comparison
+  useEffect(() => {
+    const handler = (e: Event) => {
+      const detail = (e as CustomEvent).detail
+      if (detail?.confidence !== undefined) {
+        currentDsRef.current = detail.confidence
+      }
+    }
+    window.addEventListener('agent1:struggle-detected', handler)
+    return () => window.removeEventListener('agent1:struggle-detected', handler)
+  }, [])
+
+  // Feature 3: Listen for implicit struggle signal — show ambient nudge
+  useEffect(() => {
+    const handler = (e: Event) => {
+      const detail = (e as CustomEvent).detail as {
+        sectionId: string
+        visitCount: number
+        dwellTimeSeconds: number
+        currentDs: number
+        description: string
+      }
+      // Surface as a low-priority smart notification (not the full intervention card)
+      setSmartNotifications(prev => {
+        // Don't stack — only one implicit nudge at a time
+        if (prev.some(n => n.type === 'implicit-struggle')) return prev
+        return [...prev, {
+          id: `implicit-${detail.sectionId}-${Date.now()}`,
+          type: 'implicit-struggle',
+          title: 'Still working through this section?',
+          message: detail.description,
+          sectionId: detail.sectionId,
+          priority: 'low',
+          actionButton: { label: 'Get help', action: 'accept-help' },
+          secondaryButton: { label: 'I\'m fine', action: 'dismiss' },
+        }]
+      })
+    }
+    window.addEventListener('agent1:implicit-struggle', handler)
+    return () => window.removeEventListener('agent1:implicit-struggle', handler)
+  }, [])
+
   // ✅ NEW: Generate Real Paper Summary
   const isGeneratingSummary = useRef(false)
 
@@ -766,6 +1146,18 @@ export default function ApryseWebViewer({
 
         setIsLoading(false) // ✅ Ensure spinner stops
         if (onDocumentLoaded) onDocumentLoaded() // ✅ Notify parent
+
+        // Fetch collective memory primer from previous sessions
+        fetch(`/api/collective-memory?documentId=${encodeURIComponent(documentId)}&userId=${encodeURIComponent(userId)}`)
+          .then(r => r.json())
+          .then(data => {
+            if (data.success && data.knowledge?.primerMessage) {
+              window.dispatchEvent(new CustomEvent('coread-collective-primer', {
+                detail: { primer: data.knowledge.primerMessage, totalSessions: data.knowledge.totalSessions }
+              }))
+            }
+          })
+          .catch(() => { /* non-critical */ })
 
         try {
           // Double check document is actually ready
@@ -1007,37 +1399,8 @@ export default function ApryseWebViewer({
         page,
       })
     })
-    // ✅ ADD: Bridge for Agent 1 events -> AI Core
-    // Agent 1 emits window events, but Core needs a direct routing call to trigger Agent 7
-    const onStruggleDetected = (e: Event) => {
-      const customEvent = e as CustomEvent
-      const data = customEvent.detail
-
-      // ✅ DEDUPLICATION: Check if we already handled this section
-      if (data.sectionId && notifiedSectionsRef.current.has(data.sectionId)) {
-        return
-      }
-
-      // Mark as notified
-      if (data.sectionId) {
-        notifiedSectionsRef.current.add(data.sectionId)
-      }
-
-      // DEBUG: Verify Agent 1 is firing
-      console.log('🌉 [ApryseWebViewer] Bridging struggle event to Core:', data)
-
-      aiCoordinationCore.routeAgentEvent('agent-1', 'struggle-detected', data)
-    }
-
-    if (typeof window !== 'undefined') {
-      window.addEventListener('agent1:struggle-detected', onStruggleDetected)
-    }
-
-    return () => {
-      if (typeof window !== 'undefined') {
-        window.removeEventListener('agent1:struggle-detected', onStruggleDetected)
-      }
-    }
+    // NOTE: 'agent1:route-struggle' is already handled in aiCoordinationCore.initialize()
+    // with live section text enrichment. No second bridge needed here.
   }, [])
 
 
@@ -1248,8 +1611,12 @@ export default function ApryseWebViewer({
         }
         break
 
-      // PEER CONNECTION ACTIONS
+      // PEER CONNECTION ACTIONS — suppressed in solo mode (no peers available)
       case 'connect-peer':
+        if (sessionMode !== 'collaborative') {
+          console.log('[Solo mode] connect-peer suppressed — no peers in solo session')
+          break
+        }
         console.log('💡 [Connect Peer] Opening peer chat...')
 
         // ✅ PRIORITY 1: Use the helper data stored directly on the notification (most reliable)
@@ -1388,12 +1755,30 @@ export default function ApryseWebViewer({
             documentId: data.documentId || documentId
           })
 
-          // Open chat for accepter (User B)
+          // Open chat for accepter (User B) — resolve full section context
+          const _section = pdfSectionsRef.current.find(s => s.heading.id === data.sectionId)
+            ?? pdfSectionsRef.current.find(s => s.startPage <= currentPage && s.endPage >= currentPage)
+          const _sectionName = _section?.heading.text ?? `Page ${currentPage}`
+          const _sectionText = (() => {
+            if (_section) {
+              const pages: string[] = []
+              for (let p = _section.startPage; p <= Math.min(_section.endPage, _section.startPage + 3); p++) {
+                const t = pageTextsRef.current.get(p)
+                if (t) pages.push(t)
+              }
+              if (pages.length > 0) return pages.join('\n\n').slice(0, 4000)
+            }
+            return (pageTextsRef.current.get(currentPage) ?? documentContentRef.current).slice(0, 4000)
+          })()
           setPeerChatData({
             peerId: data.fromUserId,
             peerName: data.fromUserName,
-            sectionId: data.sectionId
+            sectionId: data.sectionId,
+            sectionName: _sectionName,
+            sectionText: _sectionText,
+            routingReason: 'Accepted peer invitation via A2 routing',
           })
+          setPeerChatMessages([])
           setPeerChatOpen(true)
 
           console.log(`✅ [Invitation] Accepted from ${data.fromUserName}`)
@@ -1423,18 +1808,59 @@ export default function ApryseWebViewer({
   }
 
 
-  const openPeerChat = (peerId: string, peerName: string, sectionId: string) => {
+  const openPeerChat = (
+    peerId: string,
+    peerName: string,
+    sectionId: string,
+    context?: { sharedPassage?: string; myReason?: string; peerReason?: string; routingReason?: string }
+  ) => {
     console.log(`💬 [Peer Chat] Sending invitation to ${peerName}`)
-    const invitationData = {
+
+    // Resolve section metadata from the extracted sections list
+    const section = pdfSectionsRef.current.find(s => s.heading.id === sectionId)
+      ?? pdfSectionsRef.current.find(s => s.startPage <= currentPage && s.endPage >= currentPage)
+    const sectionName = section?.heading.text ?? `Page ${currentPage}`
+
+    // Resolve section text: prefer per-page text cache, fall back to full doc excerpt
+    const sectionText = (() => {
+      if (section) {
+        const pages: string[] = []
+        for (let p = section.startPage; p <= Math.min(section.endPage, section.startPage + 3); p++) {
+          const t = pageTextsRef.current.get(p)
+          if (t) pages.push(t)
+        }
+        if (pages.length > 0) return pages.join('\n\n').slice(0, 4000)
+      }
+      // Fallback: excerpt around current page
+      const cur = pageTextsRef.current.get(currentPage) ?? ''
+      return cur.slice(0, 4000) || documentContentRef.current.slice(0, 4000)
+    })()
+
+    const myDs = currentDsRef.current
+
+    setPeerChatData({
+      peerId,
+      peerName,
+      sectionId,
+      sectionName,
+      sectionText,
+      sharedPassage: context?.sharedPassage,
+      myReason: context?.myReason,
+      peerReason: context?.peerReason,
+      myDsScore: myDs,
+      routingReason: context?.routingReason ?? (myDs >= 0.88 ? 'High coordination instability (D_s ≥ τ_high)' : 'Peer routing triggered by D_s signal'),
+    })
+    setPeerChatOpen(true)
+    setPeerChatMessages([])
+
+    broadcastPeerInvitation({
       fromUserId: String(userId),
       fromUserName: userName,
       toUserId: String(peerId),
       toUserName: peerName,
-      sectionId: sectionId,
-      documentId: documentId
-    }
-
-    broadcastPeerInvitation(invitationData)
+      sectionId,
+      documentId,
+    })
     toast.info(`Invitation sent to ${peerName}`)
   }
 
@@ -1455,73 +1881,28 @@ export default function ApryseWebViewer({
     broadcastPeerMessage(messageData)
     setPeerChatMessages(prev => [...prev, messageData])
 
-    // ✅ AI FACT CHECKING & OPINION VERIFICATION
-    // Analyzes discussion content and verifies claims against the paper
-    if (message.length > 5) {
-      setTimeout(() => {
-        let aiFeedback = '';
-        const lowerMsg = message.toLowerCase();
-
-        // 1. Fact Check: Statistics
-        if (lowerMsg.includes('sample') || lowerMsg.includes('n=') || lowerMsg.includes('participants')) {
-          aiFeedback = `🔍 **Fact Check: Validated**\nCorrect. The study involved **325 participants** (Section 3.1). Your recall of the sample size is accurate.`;
-        }
-        // 2. Fact Check: P-Value / Significance
-        else if (lowerMsg.includes('significant') || lowerMsg.includes('p-value') || lowerMsg.includes('p<')) {
-          aiFeedback = `📊 **Stat Check: Verified**\nConfirmed. The results showed statistical significance (p < 0.001) for the main hypothesis.`;
-        }
-        // 3. Opinion/Consensus Check
-        else if (lowerMsg.includes('think') || lowerMsg.includes('believe') || lowerMsg.includes('agree')) {
-          aiFeedback = `💡 **Alignment Check**\nYour perspective aligns with the **Future Work** suggestions in the conclusion. The authors also propose exploring this direction.`;
-        }
-        // 4. General Validation (Randomized for Demo)
-        else if (Math.random() > 0.5) {
-          aiFeedback = `✅ **Context Verified**\nThis statement is supported by the evidence in **${peerChatData.sectionId || 'the current section'}**.`;
-        }
-
-        if (aiFeedback) {
-          const verificationMsg = {
-            fromUserId: 'ai-facilitator', // Triggers the AI styling we added earlier
-            fromUserName: 'AI Fact-Checker',
-            toUserId: String(userId),
-            message: aiFeedback,
-            timestamp: Date.now(),
-            documentId: documentId,
-            sectionId: peerChatData.sectionId
-          };
-
-          setPeerChatMessages(prev => [...prev, verificationMsg]);
-          toast.success("Claim Verified by AI", { icon: '🤖' });
-        }
-      }, 2500); // 2.5s delay for realistic "processing" feel
-    }
   }
 
-  const getAvailablePeers = () => {
-    const peers: Array<{
-      userId: string
-      userName: string
-      status: 'online' | 'offline' | 'busy'
-      isProficient: boolean
-    }> = []
-
-    collaborators.forEach(collab => {
-      if (collab.userId && collab.userId !== userId) {
-        const peerProfile = agent2_collaborationOrchestrator.getPeerStatus(collab.userId as string)
-
-        if (peerProfile) {
-          peers.push({
-            userId: collab.userId as string,
-            userName: collab.name,
-            status: 'online', // TODO: Track real status via Socket.io
-            isProficient: peerProfile.status === 'proficient'
-          })
-        }
+  // Derived from collaborators state — recomputes on every render when collaborators changes.
+  // Use collab.userId || collab.id as fallback since the Collaborator interface has userId as optional.
+  const availablePeersComputed = collaborators
+    .filter(collab => {
+      const peerId = collab.userId || collab.id
+      return peerId && peerId !== userId
+    })
+    .map(collab => {
+      const peerId = (collab.userId || collab.id) as string
+      const peerProfile = agent2_collaborationOrchestrator.getPeerStatus(peerId)
+      return {
+        userId: peerId,
+        userName: collab.name,
+        status: 'online' as const,
+        isProficient: peerProfile ? peerProfile.status === 'proficient' : false,
       }
     })
 
-    return peers
-  }
+  // Keep the function for callers that still use it
+  const getAvailablePeers = () => availablePeersComputed
 
 
 
@@ -1548,18 +1929,18 @@ export default function ApryseWebViewer({
     annotation.setCustomData('authorId', userId);
     annotation.setCustomData('authorName', userName);
 
-    // Export and broadcast with reason
-    annotationManager.exportAnnotations({ annotationList: [annotation], widgets: false })
-      .then((xfdf: string) => {
+    // Export and broadcast with reason — use delta command format
+    annotationManager.exportAnnotationCommand()
+      .then((xfdfCommand: string) => {
         const highlightData = {
           documentId,
-          xfdf,
+          xfdfCommand,    // delta — peer uses importAnnotationCommand()
           pageNumber,
           user: userName,
-          userId: userId, // Include userId for reliable tracking
+          userId: userId,
           reason: reason,
           reasonLabel: reasonData.label,
-          color: reasonData.colorRgb,
+          color: reasonData.color,
           contents: highlightedText
         };
 
@@ -1677,12 +2058,14 @@ export default function ApryseWebViewer({
                   }
                 }
 
-                // Update peer status in Agent 2 ONLY when actually struggling
-                agent2_collaborationOrchestrator.updatePeerStatus(
-                  userId,
-                  sectionInfo.id,
-                  30
-                )
+                // Update peer status in Agent 2 ONLY in collaborative mode (solo has no peers)
+                if (sessionMode === 'collaborative') {
+                  agent2_collaborationOrchestrator.updatePeerStatus(
+                    userId,
+                    sectionInfo.id,
+                    30
+                  )
+                }
 
                 // Determine severity based on signals
                 let severity: 'low' | 'medium' | 'high' = 'low'
@@ -1761,20 +2144,22 @@ export default function ApryseWebViewer({
                 }
               }
 
-              // Update peer status in Agent 2 to mark as proficient
-              // This makes them              // Update peer status in Agent 2 to mark as proficient
-              agent2_collaborationOrchestrator.updatePeerStatus(
-                userId,
-                `section-page-${pageNumber}`,
-                Math.max(understandingScore, 75) // Ensure at least 75 to be marked as proficient
-              )
+              // Update peer status in Agent 2 to mark as proficient — collaborative only
+              if (sessionMode === 'collaborative') {
+                agent2_collaborationOrchestrator.updatePeerStatus(
+                  userId,
+                  `section-page-${pageNumber}`,
+                  Math.max(understandingScore, 75)
+                )
+              }
 
               // ✅ Get actual section info for peer matching
               const sectionInfo = getSectionForPage(pageNumber)
 
-              // ✅ FIX: Check for struggling users in this section and notify them
-              // Find all peers who are struggling with this section
-              const strugglingPeers = agent2_collaborationOrchestrator.getStrugglingPeers(sectionInfo.id)
+              // Check for struggling peers — collaborative only
+              const strugglingPeers = sessionMode === 'collaborative'
+                ? agent2_collaborationOrchestrator.getStrugglingPeers(sectionInfo.id)
+                : []
 
               if (strugglingPeers.length > 0) {
                 console.log(`🤝 [PEER MATCHING] Found ${strugglingPeers.length} struggling user(s) in "${sectionInfo.name}" - triggering match notifications`)
@@ -1811,6 +2196,57 @@ export default function ApryseWebViewer({
           reason: reason,
           sectionId: `section-page-${pageNumber}`
         })
+
+        // Register passage highlight for divergence detection across readers
+        const secInfo = getSectionForPage(pageNumber)
+        fetch('/api/socket', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            action: 'register-passage-highlight',
+            documentId,
+            userId,
+            userName,
+            passageText: highlightedText,
+            sectionId: secInfo.id,
+            sectionName: secInfo.name,
+            reason,
+            annotationId: annotation.Id,
+          })
+        }).catch(() => { /* non-critical */ })
+
+        // Feature 7: Knowledge gap propagation — check upstream dependencies on confusion
+        if (reason === 'confused' || reason === 'confusion') {
+          fetch(`/api/knowledge-graph?paperId=${encodeURIComponent(documentId)}&sectionId=${encodeURIComponent(secInfo.id)}&userId=${encodeURIComponent(String(userId))}`)
+            .then(r => r.json())
+            .then(data => {
+              if (data.success && data.warnings?.length > 0) {
+                // Surface the highest-priority warning
+                setKnowledgeGapWarning(data.warnings[0])
+              }
+            }).catch(() => {})
+        }
+
+        // Feature 6: Concept-level extraction for confusion highlights
+        // Runs async — does not block reading
+        if (reason === 'confused' || reason === 'confusion') {
+          const sectionContext = pdfSectionsRef.current
+            .find(s => s.startPage <= pageNumber && s.endPage >= pageNumber)?.content || ''
+          fetch('/api/concept-confusion', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              paperId: documentId,
+              userId: String(userId),
+              userName,
+              sectionId: secInfo.id,
+              sectionName: secInfo.name,
+              passageText: highlightedText,
+              sectionContext,
+              pageNumber,
+            }),
+          }).catch(() => {})
+        }
       });
 
 
@@ -1833,25 +2269,30 @@ export default function ApryseWebViewer({
     if (reason) {
       const reasonData = HIGHLIGHT_REASONS[reason as keyof typeof HIGHLIGHT_REASONS]
       if (reasonData && webViewerInstance.Core.Annotations?.Color) {
-        annotation.StrokeColor = new webViewerInstance.Core.Annotations.Color(
+        const rc = new webViewerInstance.Core.Annotations.Color(
           parseInt(reasonData.color.slice(1,3), 16),
           parseInt(reasonData.color.slice(3,5), 16),
           parseInt(reasonData.color.slice(5,7), 16)
         )
+        annotation.Color = rc
+        annotation.FillColor = rc
         annotationManager.redrawAnnotation(annotation)
       }
     }
     annotation.setCustomData('shared', 'true')
     if (reason) annotation.setCustomData('reason', reason)
 
-    const xfdf = await annotationManager.exportAnnotations({ annotationList: [annotation], widgets: false })
+    const xfdfCommand = await annotationManager.exportAnnotationCommand()
+    const reasonColor = reason
+      ? (HIGHLIGHT_REASONS[reason as keyof typeof HIGHLIGHT_REASONS]?.color || getUserColor(userId))
+      : getUserColor(userId)
     broadcastHighlight({
       documentId: docId,
-      xfdf,
+      xfdfCommand,    // delta — peer uses importAnnotationCommand()
       pageNumber,
       user: userName,
       userId,
-      color: getUserColor(userId),
+      color: reasonColor,
       contents: highlightedText,
       reason: reason || 'general'
     })
@@ -1871,7 +2312,7 @@ export default function ApryseWebViewer({
   useEffect(() => {
     const handleTextExtracted = (e: any) => {
       if (e.detail?.success && e.detail?.text && e.detail.text.length > 100) {
-        setCachedDocumentContent(e.detail.text.slice(0, 6000)) // Keep first 6k chars
+        setCachedDocumentContent(e.detail.text.slice(0, 24000)) // Full paper for cross-section AI analysis
         console.log('📦 [ImplicitHelp] Document text cached for AI insights')
       }
     }
@@ -1934,10 +2375,21 @@ export default function ApryseWebViewer({
             ? `Pages ${sectionId.replace('page-range-', '')}`
             : 'Current section'
 
+        // Build page-accurate section text: current page + 1 page before/after for context
+        const currentPage = currentPageRef.current || 1
+        const prevPageText = pageTextsRef.current.get(currentPage - 1) || ''
+        const currPageText = pageTextsRef.current.get(currentPage) || ''
+        const nextPageText = pageTextsRef.current.get(currentPage + 1) || ''
+        const richPageContext = [
+          prevPageText ? `[Page ${currentPage - 1}]: ${prevPageText.slice(0, 600)}` : '',
+          currPageText ? `[Page ${currentPage}]: ${currPageText.slice(0, 1200)}` : '',
+          nextPageText ? `[Page ${currentPage + 1}]: ${nextPageText.slice(0, 600)}` : '',
+        ].filter(Boolean).join('\n\n')
+
         setImplicitHelpTrigger({
           sectionId,
           sectionName: notification.sectionName || fallbackName,
-          sectionText: notification.text || '',
+          sectionText: richPageContext || notification.text || '',
           confidence: notification.confidence || 0.75,
           contributingFactors: notification.contributingFactors || ['extended reading time'],
           stage
@@ -1989,7 +2441,7 @@ export default function ApryseWebViewer({
 
   useEffect(() => {
     if (documentId && userId && userName) {
-      console.log('🚀 [LitSense] Initializing AI Multi-Agent System...')
+      console.log('🚀 [CoRead] Initializing AI Multi-Agent System...')
 
       // Initialize multi-agent system
       aiCoordinationCore.initialize()
@@ -2000,10 +2452,12 @@ export default function ApryseWebViewer({
       // Start journey tracking for Agent 5
       agent5_storyboardCurator.startJourney(userId, sessionId)
 
-      // Register peer for Agent 2
-      agent2_collaborationOrchestrator.registerPeer(userId, userName)
+      // Register peer for Agent 2 — only in collaborative mode
+      if (sessionMode === 'collaborative') {
+        agent2_collaborationOrchestrator.registerPeer(userId, userName)
+      }
 
-      console.log('✅ [LitSense] All agents activated!')
+      console.log(`✅ [CoRead] All agents activated! mode=${sessionMode}`)
 
       // Emit socket event if connected
       if (socketInstance) {
@@ -2016,7 +2470,7 @@ export default function ApryseWebViewer({
     }
 
     return () => {
-      console.log('🛑 [LitSense] Shutting down agents...')
+      console.log('🛑 [CoRead] Shutting down agents...')
       agent5_storyboardCurator.endJourney()
       interactionCollector.endSession()
       aiCoordinationCore.shutdown()
@@ -2028,13 +2482,24 @@ export default function ApryseWebViewer({
 
 
   useEffect(() => {
-    const initSocket = async () => {
-      // Initialize Socket.io server first
-      await fetch('/api/socketio')
+    // Don't connect until we have real values — avoids phantom room joins with '' / 'guest'
+    if (!documentId || userId === 'guest') return
 
-      // Then connect client
+    let createdSocket: any = null   // track the socket created in this effect instance
+
+    const initSocket = async () => {
       const { io } = await import('socket.io-client')
-      const socket = io('http://localhost:3000')  // Use port 3000 (server.js)
+
+      // Always connect to the same origin — server.js serves both Next.js and Socket.IO
+      // on port 3000 when running `npm run dev-socket`. This is the only supported dev mode.
+      const socket = io({
+        path: '/socket.io',
+        transports: ['websocket', 'polling'],
+        reconnectionAttempts: Infinity,
+        reconnectionDelay: 1000,
+        reconnectionDelayMax: 5000,
+        timeout: 10000,
+      })
 
       socket.on('connect', () => {
         console.log('✅ Socket.io connected:', socket.id)
@@ -2066,15 +2531,48 @@ export default function ApryseWebViewer({
       })
 
       socket.on('disconnect', () => {
-        console.log('❌ Socket.io disconnected')
-        setSocketInstance(null)
+        console.log('❌ Socket.io disconnected — keeping socket ref, will reconnect automatically')
+        // Do NOT null socketInstance — keeps collaboratorHighlightsList intact on screen.
+        // Socket.io will reconnect automatically; the 'connect' handler re-joins the room.
       })
 
       socket.on('connect_error', (error) => {
-        console.error('❌ Socket.io connection error:', error)
-        toast.error('Connection error', {
-          description: 'Failed to connect to server. Please check if server is running.'
-        })
+        console.warn('⚠️ Socket.io connection error (run npm run dev-socket for real-time features):', error.message)
+      })
+
+      // Highlights from peers — feed into incomingHighlights via setIncomingHighlights
+      // (useRealtimeHighlights will also attach to this socket once socketInstance is set,
+      //  but we set it here immediately so existing-highlights on connect is never missed)
+      socket.on('existing-highlights', (highlights: any[]) => {
+        console.log(`📋 [Socket] Existing highlights received: ${highlights.length}`)
+        // On (re)join, server sends the authoritative room highlight list.
+        // Reset local collaborator state so we are always in sync with the server.
+        processedHighlightIdsRef.current.clear()
+        setCollaboratorHighlightsList([])
+        if (highlights.length > 0) {
+          existingHighlightsBufferRef.current.push(...highlights)
+          window.dispatchEvent(new CustomEvent('__existing-highlights', { detail: highlights }))
+        }
+      })
+
+      socket.on('highlight-added', (highlight: any) => {
+        console.log(`✨ [Socket] highlight-added from peer: ${highlight.user}`)
+        if (highlight.action !== 'click') {
+          window.dispatchEvent(new CustomEvent('__highlight-added', { detail: highlight }))
+        }
+      })
+
+      // Peer marginal note — notify page-level team notes panel to refetch
+      socket.on('marginal-note-created', (data: any) => {
+        window.dispatchEvent(new CustomEvent('__peer-note-created', { detail: data }))
+      })
+
+      // Reflection events
+      socket.on('reflection-updated', (data: any) => {
+        window.dispatchEvent(new CustomEvent('remote-reflection-updated', { detail: data }))
+      })
+      socket.on('session-start', (data: any) => {
+        window.dispatchEvent(new CustomEvent('remote-session-start', { detail: data.timestamp }))
       })
 
 
@@ -2103,25 +2601,29 @@ export default function ApryseWebViewer({
 
         console.log('✅ [Invitation] This invitation is for me! Showing notification...')
 
-        // Add notification to smartNotifications
-        const invitationId = `invitation-${data.fromUserId}-${Date.now()}`
-        setSmartNotifications(prev => [...prev, {
-          id: invitationId,
-          type: 'peer-invitation',
-          title: `💬 Chat Invitation from ${data.fromUserName}`,
-          message: `${data.fromUserName} wants to connect and chat about this section.`,
-          targetUserId: userId,
-          sectionId: data.sectionId,
-          invitationData: data,
-          actionButton: {
-            label: 'Connect',
-            action: 'accept-invitation'
-          },
-          secondaryButton: {
-            label: 'Later',
-            action: 'dismiss-invitation'
-          }
-        }])
+        // Skip if already in a peer chat session or already have a pending invite from this user
+        if (peerChatOpen) {
+          console.log('⏭️ [Invitation] Peer chat already open — suppressing notification')
+          return
+        }
+
+        const invitationId = `invitation-${data.fromUserId}`
+        const sectionLabel = pdfSectionsRef.current.find(s => s.heading.id === data.sectionId)?.heading.text ?? 'this section'
+        setSmartNotifications(prev => {
+          // Dedup: only one pending invite per peer at a time
+          if (prev.some(n => n.id === invitationId)) return prev
+          return [...prev, {
+            id: invitationId,
+            type: 'peer-invitation',
+            title: `${data.fromUserName} flagged the same passage`,
+            message: `A2 routed a peer discussion request — both of you have confusion signals on ${sectionLabel}.`,
+            targetUserId: userId,
+            sectionId: data.sectionId,
+            invitationData: data,
+            actionButton: { label: 'Join Discussion', action: 'accept-invitation' },
+            secondaryButton: { label: 'Decline', action: 'dismiss-invitation' },
+          }]
+        })
 
         console.log(`✅ [Invitation] Notification added for ${data.fromUserName}`)
       })
@@ -2141,12 +2643,45 @@ export default function ApryseWebViewer({
         if (String(data.toUserId) !== String(userId)) return
 
         // Open chat for inviter (User A)
-        setPeerChatData({
-          peerId: data.fromUserId, // The person who accepted (User B)
-          peerName: data.fromUserName,
-          sectionId: data.sectionId
-        })
+        {
+          const _sec = pdfSectionsRef.current.find(s => s.heading.id === data.sectionId)
+            ?? pdfSectionsRef.current.find(s => s.startPage <= currentPage && s.endPage >= currentPage)
+          const _secText = _sec
+            ? Array.from({ length: Math.min(_sec.endPage - _sec.startPage + 1, 4) }, (_, i) => pageTextsRef.current.get(_sec.startPage + i) ?? '').join('\n\n').slice(0, 4000)
+            : (pageTextsRef.current.get(currentPage) ?? documentContentRef.current).slice(0, 4000)
+          setPeerChatData({
+            peerId: data.fromUserId,
+            peerName: data.fromUserName,
+            sectionId: data.sectionId,
+            sectionName: _sec?.heading.text ?? `Page ${currentPage}`,
+            sectionText: _secText,
+            routingReason: `${data.fromUserName} accepted your peer invitation`,
+          })
+        }
         setPeerChatOpen(true)
+
+        // Feature 2: Create explanation capture record — inviter is the helpee
+        const captureSessionId = `${documentId}-${Date.now()}`
+        const sectionLabel = pdfSectionsRef.current.find(s => s.heading.id === data.sectionId)?.heading.text || data.sectionId
+        fetch('/api/explanation-capture', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            paperId: documentId,
+            sectionId: data.sectionId,
+            sectionName: sectionLabel,
+            helpeeId: String(userId),
+            helpeeName: userName,
+            helperId: data.fromUserId,
+            helperName: data.fromUserName,
+            dsAtStart: currentDsRef.current,
+            sessionId: captureSessionId,
+          }),
+        }).then(r => r.json()).then(res => {
+          if (res.captureId) {
+            activeCaptureIdRef.current = res.captureId
+          }
+        }).catch(() => {})
 
         // Show success notification
         toast.success(`${data.fromUserName} accepted your chat invitation!`)
@@ -2168,10 +2703,17 @@ export default function ApryseWebViewer({
 
         // Auto-open chat if message is for us and chat is closed
         if (data.toUserId === String(userId) && !peerChatOpen) {
+          const _msgSec = pdfSectionsRef.current.find(s => s.heading.id === data.sectionId)
+            ?? pdfSectionsRef.current.find(s => s.startPage <= currentPage && s.endPage >= currentPage)
           setPeerChatData({
             peerId: data.fromUserId,
             peerName: data.fromUserName,
-            sectionId: data.sectionId || 'unknown'
+            sectionId: data.sectionId || 'unknown',
+            sectionName: _msgSec?.heading.text ?? `Page ${currentPage}`,
+            sectionText: (_msgSec
+              ? Array.from({ length: Math.min(_msgSec.endPage - _msgSec.startPage + 1, 4) }, (_, i) => pageTextsRef.current.get(_msgSec.startPage + i) ?? '').join('\n\n')
+              : (pageTextsRef.current.get(currentPage) ?? documentContentRef.current)
+            ).slice(0, 4000),
           })
           setPeerChatOpen(true)
         }
@@ -2233,6 +2775,7 @@ export default function ApryseWebViewer({
       })
 
       socket.on('peer-joined', (data) => {
+        if (sessionMode !== 'collaborative') return
         console.log('👥 Peer joined:', data.userName)
         agent2_collaborationOrchestrator.registerPeer(data.userId, data.userName)
       })
@@ -2249,6 +2792,48 @@ export default function ApryseWebViewer({
         // Update will come via users-update event
       })
 
+      // Track peer page positions for ReadingTrajectoryMap
+      socket.on('peer-page-changed', (data: { userId: string; userName: string; pageNumber: number; sectionId?: string; sectionName?: string }) => {
+        // Update peer highlights ref for divergence detection — position update only
+        console.log(`📍 [Socket] Peer page changed: ${data.userName} → page ${data.pageNumber}`)
+      })
+
+      // Divergence signal from server (when server detects two readers flagged same passage)
+      socket.on('divergence-signal', async (data: {
+        passage: string; userAName: string; userAReason: string;
+        userBName: string; userBReason: string; sectionId: string
+      }) => {
+        console.log('🔀 [Socket] Divergence signal received:', data)
+        try {
+          const result = await agent3_discussionFacilitator.triggerStructuredDebate(
+            {
+              sharedPassage: data.passage,
+              localReason: data.userAReason,
+              peerReason: data.userBReason,
+              localUserName: data.userAName,
+              peerUserName: data.userBName,
+              sectionId: data.sectionId,
+            },
+            documentContentRef.current?.slice(0, 4000) || '',
+            []
+          )
+          setDivergenceBanner({
+            sharedPassage: data.passage,
+            localReason: data.userAReason,
+            peerReason: data.userBReason,
+            localUserName: data.userAName,
+            peerUserName: data.userBName,
+            sectionId: data.sectionId,
+            debateId: result.debateId,
+            prompt: result.prompt,
+            groundingQuote: result.groundingQuote,
+          })
+        } catch (err) {
+          console.warn('[divergence-signal] Failed to trigger debate:', err)
+        }
+      })
+
+      createdSocket = socket
       setSocketInstance(socket)
         ; (window as any).io = socket
     }
@@ -2256,10 +2841,13 @@ export default function ApryseWebViewer({
     initSocket()
 
     return () => {
-      if (socketInstance) {
-        socketInstance.emit('leave-document', { documentId, userId })
-        socketInstance.disconnect()
+      // Use the locally tracked socket — socketInstance state is stale in closure
+      if (createdSocket) {
+        createdSocket.emit('leave-document', { documentId, userId })
+        createdSocket.disconnect()
+        createdSocket = null
       }
+      setSocketInstance(null)
     }
   }, [documentId, userName, userId])
 
@@ -2272,25 +2860,25 @@ export default function ApryseWebViewer({
       // Only show notification if this invitation is for the current user
       if (String(data.toUserId) !== String(userId)) return
 
-      // Add notification to smartNotifications
-      const invitationId = `invitation-${data.fromUserId}-${Date.now()}`
-      setSmartNotifications(prev => [...prev, {
-        id: invitationId,
-        type: 'peer-invitation',
-        title: `💬 Chat Invitation from ${data.fromUserName}`,
-        message: `${data.fromUserName} wants to connect and chat about this section.`,
-        targetUserId: userId,
-        sectionId: data.sectionId,
-        invitationData: data,
-        actionButton: {
-          label: 'Connect',
-          action: 'accept-invitation'
-        },
-        secondaryButton: {
-          label: 'Later',
-          action: 'dismiss-invitation'
-        }
-      }])
+      // Skip if already in a peer chat session
+      if (peerChatOpen) return
+
+      const invitationId = `invitation-${data.fromUserId}`
+      const sectionLabel2 = pdfSectionsRef.current.find(s => s.heading.id === data.sectionId)?.heading.text ?? 'this section'
+      setSmartNotifications(prev => {
+        if (prev.some(n => n.id === invitationId)) return prev
+        return [...prev, {
+          id: invitationId,
+          type: 'peer-invitation',
+          title: `${data.fromUserName} flagged the same passage`,
+          message: `A2 routed a peer discussion request — both of you have confusion signals on ${sectionLabel2}.`,
+          targetUserId: userId,
+          sectionId: data.sectionId,
+          invitationData: data,
+          actionButton: { label: 'Join Discussion', action: 'accept-invitation' },
+          secondaryButton: { label: 'Decline', action: 'dismiss-invitation' },
+        }]
+      })
     }
 
     const handleAcceptance = (e: any) => {
@@ -2299,10 +2887,18 @@ export default function ApryseWebViewer({
 
       // If "toUserId" is ME, then someone accepted MY invitation
       if (data.toUserId === String(userId)) {
+        const _acSec = pdfSectionsRef.current.find(s => s.heading.id === data.sectionId)
+          ?? pdfSectionsRef.current.find(s => s.startPage <= currentPage && s.endPage >= currentPage)
         setPeerChatData({
-          peerId: data.fromUserId, // Person who accepted
+          peerId: data.fromUserId,
           peerName: data.fromUserName,
-          sectionId: data.sectionId
+          sectionId: data.sectionId,
+          sectionName: _acSec?.heading.text ?? `Page ${currentPage}`,
+          sectionText: (_acSec
+            ? Array.from({ length: Math.min(_acSec.endPage - _acSec.startPage + 1, 4) }, (_, i) => pageTextsRef.current.get(_acSec.startPage + i) ?? '').join('\n\n')
+            : (pageTextsRef.current.get(currentPage) ?? documentContentRef.current)
+          ).slice(0, 4000),
+          routingReason: `${data.fromUserName} accepted your peer invitation`,
         })
         setPeerChatOpen(true)
         toast.success(`${data.fromUserName} accepted your help offer!`)
@@ -2315,10 +2911,17 @@ export default function ApryseWebViewer({
 
       // Auto-open chat if message is for us and chat is closed
       if (e.detail.toUserId === String(userId) && !peerChatOpen) {
+        const _wSec = pdfSectionsRef.current.find(s => s.heading.id === e.detail.sectionId)
+          ?? pdfSectionsRef.current.find(s => s.startPage <= currentPage && s.endPage >= currentPage)
         setPeerChatData({
           peerId: e.detail.fromUserId,
           peerName: e.detail.fromUserName,
-          sectionId: e.detail.sectionId || 'unknown'
+          sectionId: e.detail.sectionId || 'unknown',
+          sectionName: _wSec?.heading.text ?? `Page ${currentPage}`,
+          sectionText: (_wSec
+            ? Array.from({ length: Math.min(_wSec.endPage - _wSec.startPage + 1, 4) }, (_, i) => pageTextsRef.current.get(_wSec.startPage + i) ?? '').join('\n\n')
+            : (pageTextsRef.current.get(currentPage) ?? documentContentRef.current)
+          ).slice(0, 4000),
         })
         setPeerChatOpen(true)
       }
@@ -2335,33 +2938,69 @@ export default function ApryseWebViewer({
     }
   }, [userId, peerChatOpen])
 
-  // ✅ AI DISCUSSION FACILITATOR TRIGGER
-  // When chat opens, inject the "Discussion Analysis" message
+  // ✅ AI DISCUSSION FACILITATOR TRIGGER (A3) — collaborative mode only
+  // When peer chat opens, inject the "Discussion Analysis" message
+  // A3 — grounded discussion opener. Fires once when peer chat opens with no messages.
+  // Uses actual section text so prompts are anchored to the paper, not generic.
   useEffect(() => {
-    if (peerChatOpen && peerChatData && peerChatMessages.length === 0) {
-      console.log('🤖 Triggering AI Discussion Analysis...')
+    if (sessionMode !== 'collaborative') return
+    if (!peerChatOpen || !peerChatData || peerChatMessages.length > 0) return
 
-      const starters = agent3_discussionFacilitator.generateConversationStarters(peerChatData.sectionId || 'Current Section', 'peer-to-peer')
+    const { sectionId, sectionName, sectionText, sharedPassage, myReason, peerReason, myDsScore, routingReason } = peerChatData
 
-      const aiMsg = {
-        fromUserId: 'ai-facilitator',
-        fromUserName: 'AI Facilitator',
-        toUserId: userId, // Internal
-        message: `🤖 **Discussion Analysis Active**\n\nI've detected you are both collaborating on "${peerChatData.sectionId}".\n\n**Facilitation Plan:**\n1. Identify confusion points\n2. Sync mental models\n\n**Suggested Starter:**\n"${starters[0].text}"`,
-        timestamp: Date.now(),
-        documentId: documentId,
-        sectionId: peerChatData.sectionId
+    const buildOpener = async () => {
+      // Build routing context header — always shown regardless of grounding
+      const dsLabel = myDsScore != null ? ` (D_s = ${myDsScore.toFixed(2)})` : ''
+      const divergenceClause = (myReason && peerReason && myReason !== peerReason)
+        ? `\n\nAnnotation divergence detected: you marked this passage as **${myReason}** — ${peerChatData.peerName} marked it as **${peerReason}**. That disagreement is the starting point.`
+        : ''
+      const passageClause = sharedPassage
+        ? `\n\n> "${sharedPassage.slice(0, 150)}${sharedPassage.length > 150 ? '…' : ''}"`
+        : ''
+
+      // Attempt grounded A3 prompts from real section text
+      let promptLines = ''
+      try {
+        const starters = await agent3_discussionFacilitator.generateConversationStartersFromText(
+          sectionId, sectionName, sectionText, 'peer-to-peer', 2,
+          { confusionHighlights: 1, stuckMarkers: 0, avgDsScore: myDsScore ?? 0.75 }
+        )
+        if (starters.length > 0) {
+          promptLines = '\n\n' + starters.slice(0, 3).map((s, i) => `${i + 1}. ${s.text}${s.groundingQuote ? `\n   *"${s.groundingQuote}"*` : ''}`).join('\n\n')
+        }
+      } catch {
+        // fallback handled below
       }
 
-      // Add to local view with a small delay for effect
-      setTimeout(() => {
-        setPeerChatMessages(prev => [...prev, aiMsg])
-        toast.info("AI Facilitator Active", {
-          description: "analyzing conversation patterns...",
-          duration: 4000
-        })
-      }, 800)
+      if (!promptLines) {
+        const fallback = agent3_discussionFacilitator.generateConversationStarters(sectionId, 'peer-to-peer')
+        promptLines = '\n\n' + fallback.slice(0, 3).map((s, i) => `${i + 1}. ${s.text}`).join('\n\n')
+      }
+
+      const message =
+        `**A3 · ${sectionName}**  ${routingReason ? `· *${routingReason}*` : ''}${dsLabel}` +
+        passageClause +
+        divergenceClause +
+        `\n\nThree paper-grounded questions to focus your discussion:` +
+        promptLines +
+        `\n\nTag **@AI** at any point to ask CoRead a question scoped to this section.`
+
+      setPeerChatMessages(prev => [
+        ...prev,
+        {
+          fromUserId: 'ai-facilitator',
+          fromUserName: 'A3 · Discussion Facilitator',
+          toUserId: userId,
+          message,
+          timestamp: Date.now(),
+          documentId,
+          sectionId,
+        }
+      ])
     }
+
+    const timer = setTimeout(buildOpener, 600)
+    return () => clearTimeout(timer)
   }, [peerChatOpen, peerChatData])
 
 
@@ -2375,11 +3014,180 @@ export default function ApryseWebViewer({
     }
   }, [extractedText])
 
+  // Fetch inline definitions once extracted text is available
+  useEffect(() => {
+    if (!extractedText || extractedText.length < 100 || definitionsFetchedRef.current) return
+    definitionsFetchedRef.current = true
+    console.log('[InlineDefs] Fetching definitions for', extractedText.length, 'chars')
+    fetch('/api/inline-definitions', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ documentText: extractedText }),
+    })
+      .then(r => r.json())
+      .then(data => {
+        console.log('[InlineDefs] Got', data.definitions?.length, 'definitions:', data.definitions?.map((d: any) => d.term))
+        if (data.definitions?.length) setInlineDefinitions(data.definitions)
+      })
+      .catch(e => console.error('[InlineDefs] fetch error', e))
+  }, [extractedText])
+
   useEffect(() => {
     if (sectionAssignments.length > 0) {
       highlightAssignedSections()
     }
   }, [sectionAssignments, highlightAssignedSections])
+
+  // Run textSearchInit directly and add annotations — called from button click (not effect)
+  const applyDefinitionHighlights = useCallback((defs: typeof inlineDefinitions) => {
+    if (!webViewerInstance?.Core) return
+    const { documentViewer, annotationManager, Annotations } = webViewerInstance.Core
+    if (!documentViewer?.getDocument() || !defs.length) return
+
+    const COLOR: Record<string, [number, number, number]> = {
+      prerequisite: [123, 31, 162],
+      definition:   [26, 115, 232],
+      concept:      [24, 128, 56],
+    }
+
+    const SM = (documentViewer as any).SearchMode || {}
+    const MODE_CASE_INSENSITIVE = SM.CASE_INSENSITIVE ?? 16
+    const MODE_HIGHLIGHT        = SM.HIGHLIGHT        ?? 512
+    const MODE_REGEX            = SM.REGEX            ?? 64
+    const RESULT_FOUND          = SM.ResultCode?.FOUND ?? 0
+    const searchMode = MODE_CASE_INSENSITIVE | MODE_HIGHLIGHT | MODE_REGEX
+
+    const escaped = defs.map(d => d.term.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'))
+    const pattern = escaped.join('|')
+    console.log('[InlineDefs] searching pattern:', pattern, 'mode:', searchMode)
+
+    let hitCount = 0
+    documentViewer.textSearchInit(pattern, searchMode, {
+      fullSearch: true,
+      onResult: (result: any) => {
+        if (result.resultCode !== RESULT_FOUND) return
+
+        const matched = (result.resultStr || '').toLowerCase()
+        const def = defs.find(d =>
+          matched === d.term.toLowerCase() || matched.includes(d.term.toLowerCase())
+        ) || defs[0]
+
+        const defType = (def?.type as string) || 'concept'
+        const [r, g, b] = COLOR[defType] ?? [26, 115, 232]
+
+        const ann = new Annotations.TextHighlightAnnotation()
+        ann.PageNumber = result.pageNum
+        ann.Quads = result.quads
+        ann.StrokeColor = new Annotations.Color(r, g, b)
+        ann.Opacity = 0.4
+        ann.setContents(`[${defType.toUpperCase()}] ${def?.term || matched}\n\n${def?.shortDef || ''}\n\n${def?.fullDef || ''}`)
+        ann.Author = 'CoRead'
+        ann.setCustomData('inlineDef', 'true')
+        ann.setCustomData('defTerm', def?.term || matched)
+        ann.setCustomData('defShort', def?.shortDef || '')
+        ann.setCustomData('defFull', def?.fullDef || '')
+        ann.setCustomData('defType', defType)
+
+        annotationManager.addAnnotation(ann)
+        annotationManager.drawAnnotationsFromList([ann])
+        definitionAnnsRef.current.push(ann)
+        hitCount++
+      },
+      onDocumentEnd: () => {
+        console.log('[InlineDefs] done —', hitCount, 'annotations')
+        if (hitCount > 0) {
+          toast.success(`${hitCount} terms highlighted in PDF`, { duration: 3000 })
+        } else {
+          toast.error('No terms found — PDF may be image-based', { duration: 4000 })
+        }
+      },
+    })
+  }, [webViewerInstance])
+
+  // Button handler: extract text → fetch definitions → highlight immediately
+  const handleShowDefinitions = useCallback(async () => {
+    if (!webViewerInstance?.Core) return
+
+    // Toggle OFF: remove annotations
+    if (showDefinitions) {
+      const { annotationManager } = webViewerInstance.Core
+      const toRemove = annotationManager.getAnnotationsList()
+        .filter((a: any) => a.getCustomData?.('inlineDef') === 'true')
+      if (toRemove.length) annotationManager.deleteAnnotations(toRemove)
+      definitionAnnsRef.current = []
+      setShowDefinitions(false)
+      setDefPopup(null)
+      return
+    }
+
+    // Toggle ON: re-use existing definitions if already fetched
+    if (inlineDefinitions.length > 0) {
+      setShowDefinitions(true)
+      applyDefinitionHighlights(inlineDefinitions)
+      return
+    }
+
+    // First time: extract text from PDF, fetch definitions, then highlight
+    const { documentViewer } = webViewerInstance.Core
+    const doc = documentViewer.getDocument()
+    if (!doc) { toast.error('No document loaded'); return }
+
+    setDefLoading(true)
+    toast.info('Scanning PDF for key terms…', { duration: 2000 })
+
+    try {
+      const pageCount = documentViewer.getPageCount()
+      let fullText = ''
+      for (let i = 1; i <= Math.min(pageCount, 20); i++) {
+        try {
+          const pageText = await doc.loadPageText(i)
+          if (typeof pageText === 'string') fullText += pageText + ' '
+          else if (pageText && typeof (pageText as any).items !== 'undefined')
+            fullText += ((pageText as any).items || []).map((it: any) => it.str || '').join(' ') + ' '
+        } catch { /* skip */ }
+      }
+      fullText = fullText.replace(/\s+/g, ' ').trim()
+
+      if (fullText.length < 50) {
+        toast.error('Could not extract text — PDF may be scanned/image-based', { duration: 4000 })
+        return
+      }
+
+      const res = await fetch('/api/inline-definitions', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ documentText: fullText }),
+      })
+      const data = await res.json()
+
+      if (!data.definitions?.length) {
+        toast.error('No key terms found in this document', { duration: 3000 })
+        return
+      }
+
+      setInlineDefinitions(data.definitions)
+      setShowDefinitions(true)
+      definitionsFetchedRef.current = true
+      // Call directly — no effect needed, same thread as user interaction
+      applyDefinitionHighlights(data.definitions)
+    } catch (e) {
+      console.error('[InlineDefs]', e)
+      toast.error('Failed to fetch definitions', { duration: 3000 })
+    } finally {
+      setDefLoading(false)
+    }
+  }, [showDefinitions, inlineDefinitions, webViewerInstance, applyDefinitionHighlights])
+
+  // Clean up definition annotations when showDefinitions is turned off externally
+  useEffect(() => {
+    if (!showDefinitions && webViewerInstance?.Core) {
+      const { annotationManager } = webViewerInstance.Core
+      const toRemove = annotationManager.getAnnotationsList()
+        .filter((a: any) => a.getCustomData?.('inlineDef') === 'true')
+      if (toRemove.length) annotationManager.deleteAnnotations(toRemove)
+      definitionAnnsRef.current = []
+    }
+  }, [showDefinitions, webViewerInstance])
 
   // Ghost Layer Logic: Asynchronous Insight Alignment
   useEffect(() => {
@@ -2613,14 +3421,15 @@ export default function ApryseWebViewer({
           }
         }, 1000)
 
-        // Show calibration modal after 2 seconds
-        setTimeout(() => {
-          setShowEyeCalibration(true)
-        }, 2000)
+        // DEV MODE: Eye calibration auto-trigger disabled — re-enable before study
+        // setTimeout(() => {
+        //   setShowEyeCalibration(true)
+        // }, 2000)
       }
     }
 
-    initEyeTracking()
+    // DEV: Eye tracking disabled — re-enable before study
+    // initEyeTracking()
 
 
 
@@ -2631,88 +3440,58 @@ export default function ApryseWebViewer({
     let lastScrollY = 0
     let scrollHandlerRef: ((e: Event) => void) | null = null
 
-    const handleMouseMove = async (e: MouseEvent) => {
+    const handleMouseMove = (e: MouseEvent) => {
       const now = Date.now()
       // Throttle to 100ms for performance (10 signals/sec max)
       if (now - lastEmitTime < 100) return
       lastEmitTime = now
 
-      const viewerRect = viewer.current?.getBoundingClientRect()
-      if (!viewerRect || !webViewerRef.current?.Core) return
+      const mouseX = e.clientX
+      const mouseY = e.clientY
 
-      try {
-        const { documentViewer } = webViewerRef.current.Core
-        const displayMode = documentViewer.getDisplayModeManager().getDisplayMode()
-        const mouseX = e.clientX
-        const mouseY = e.clientY
+      // Use currentPageRef (kept in sync via useEffect) — works with PDFViewerCore
+      const page = currentPageRef.current
+      const section = pdfSectionsRef.current.find(s =>
+        s.startPage <= page && s.endPage >= page
+      )
 
-        const pages = displayMode.getSelectedPages({ x: mouseX, y: mouseY }, { x: mouseX, y: mouseY })
-        if (!pages || pages.length === 0) return
+      const currentSectionId = section ? section.heading.id : `page-${page}`
+      const currentSectionName = section ? section.heading.text : `Page ${page}`
 
-        const currentPage = pages[0].pageNumber
-        const section = pdfSectionsRef.current.find(s =>
-          s.startPage <= currentPage && s.endPage >= currentPage
-        )
+      // 🚦 EMIT MOUSE SIGNAL to Agent 1's probability engine
+      window.dispatchEvent(new CustomEvent('agent1:mouse-signal', {
+        detail: { x: mouseX, y: mouseY, sectionId: currentSectionId, timestamp: now }
+      }))
 
-        const currentSectionId = section ? section.heading.id : `page-${currentPage}`
-        const currentSectionName = section ? section.heading.text : `Page ${currentPage}`
+      if (lastHoveredSectionRef.current !== currentSectionId) {
+        console.log(`📍 [Agent1 Signals] Now on section: "${currentSectionName}"`)
+        lastHoveredSectionRef.current = currentSectionId
 
-        // 🚦 EMIT MOUSE SIGNAL to Agent 1's probability engine
-        window.dispatchEvent(new CustomEvent('agent1:mouse-signal', {
-          detail: { x: mouseX, y: mouseY, sectionId: currentSectionId, timestamp: now }
-        }))
+        // Use per-page text (accurate) or fall back to nearby pages from the full doc
+        // This ensures the ImplicitHelpCard sees what's actually on the current page,
+        // not always the abstract/intro (which was the old slice(0,800) bug).
+        const perPageText = pageTextsRef.current.get(page)
+        const extractedText = perPageText
+          ? perPageText.slice(0, 2000)  // up to 2000 chars of the actual current page
+          : (documentContentRef.current || '').slice(0, 800) // legacy fallback
 
-        // ── Section Change: Extract the actual page text ──────────────────────
-        // CRITICAL: Only update when section changes. Never call trackFixation('')
-        // because that erases the good text we just extracted.
-        if (lastHoveredSectionRef.current !== currentSectionId) {
-          console.log(`📍 [Agent1 Signals] Now on section: "${currentSectionName}"`)
-          lastHoveredSectionRef.current = currentSectionId
-
-          // Extract the actual text from the current page(s)
-          let extractedText = ''
-          try {
-            const doc = documentViewer.getDocument()
-            const startPage = section ? section.startPage : currentPage
-            const endPage = section ? Math.min(section.endPage, startPage + 1) : currentPage // max 2 pages
-
-            for (let p = startPage; p <= endPage; p++) {
-              try {
-                const pageText = await doc.loadPageText(p)
-                if (typeof pageText === 'string' && pageText.trim().length > 0) {
-                  extractedText += pageText.replace(/\s+/g, ' ').trim() + ' '
-                }
-              } catch { /* skip page */ }
-            }
-            extractedText = extractedText.trim().slice(0, 800)
-          } catch { /* ignore */ }
-
-          // ✅ Store in interactionCollector with REAL text (not empty string)
-          if (extractedText.length > 20) {
-            interactionCollector.trackFixation(currentSectionId, extractedText)
-          } else {
-            // Still register the fixation, just without text
-            interactionCollector.trackFixation(currentSectionId)
-          }
-
-          // ✅ Broadcast current-section-text so coordination core uses it
-          // when struggle fires RIGHT NOW — not stale text from minutes ago
-          window.dispatchEvent(new CustomEvent('agent1:current-section-text', {
-            detail: {
-              sectionId: currentSectionId,
-              sectionName: currentSectionName,
-              text: extractedText,
-              page: currentPage
-            }
-          }))
-
+        if (extractedText.length > 20) {
+          interactionCollector.trackFixation(currentSectionId, extractedText)
         } else {
-          // Same section — just register the fixation tick (no text update needed)
           interactionCollector.trackFixation(currentSectionId)
         }
 
-      } catch (err) {
-        // Silently ignore errors in signal emission
+        window.dispatchEvent(new CustomEvent('agent1:current-section-text', {
+          detail: {
+            sectionId: currentSectionId,
+            sectionName: currentSectionName,
+            text: extractedText,
+            page
+          }
+        }))
+
+      } else {
+        interactionCollector.trackFixation(currentSectionId)
       }
     }
 
@@ -2739,22 +3518,16 @@ export default function ApryseWebViewer({
       lastScrollY = currentScrollY
     }
 
-    // Attach scroll listener to the viewer container
-    const viewerEl = viewer.current
-    if (viewerEl) {
-      scrollHandlerRef = handleScroll
-      viewerEl.addEventListener('scroll', handleScroll, { passive: true })
-      // Also listen on window for cases where scroll happens on body
-      window.addEventListener('scroll', handleScroll, { passive: true })
-    }
+    // Attach scroll listener — use capture:true to intercept scrolls from any container
+    // (PDFViewerCore has its own overflow-y-auto div, not accessible via viewer.current)
+    document.addEventListener('scroll', handleScroll, { passive: true, capture: true })
 
     window.addEventListener('mousemove', handleMouseMove)
 
     return () => {
       eyeTracker.end()
       window.removeEventListener('mousemove', handleMouseMove)
-      window.removeEventListener('scroll', handleScroll)
-      if (viewerEl && scrollHandlerRef) viewerEl.removeEventListener('scroll', scrollHandlerRef)
+      document.removeEventListener('scroll', handleScroll, { capture: true } as any)
       if (dwellTimerRef.current) clearTimeout(dwellTimerRef.current)
     }
   }, [])
@@ -2762,67 +3535,128 @@ export default function ApryseWebViewer({
 
 
 
+  // Queue of XFDF payloads waiting for the document to be ready before import
+  const pendingXfdfImportsRef = useRef<string[]>([])
+
+  // Flush queued XFDF imports once the document is ready
   useEffect(() => {
-    const processHighlights = async () => {
-      // console.log('🔄 Processing highlights...')
-      if (incomingHighlights.length > 0 && webViewerInstance?.Core) {
-        const { annotationManager } = webViewerInstance.Core;
+    if (!documentReady || !webViewerInstance?.Core?.annotationManager) return
+    if (pendingXfdfImportsRef.current.length === 0) return
 
-        for (const highlight of incomingHighlights) {
-          try {
-            console.log('📥 Importing XFDF highlight:', highlight);
-            // Wrap in try-catch individually to prevent one fail blocking others
-            await annotationManager.importAnnotations(highlight.xfdf, { imported: true }).catch((e: any) => console.warn('Failed to import single annotation:', e));
+    const { annotationManager } = webViewerInstance.Core
+    const queue = pendingXfdfImportsRef.current.splice(0)
+    // Defer by one tick to ensure the Apryse annotation worker is ready
+    setTimeout(() => {
+      queue.forEach(xfdf => {
+        // Detect delta vs snapshot by presence of <add> tag (delta format from exportAnnotationCommand)
+        const isDelta = xfdf.includes('<add>') || xfdf.includes('<modify>') || xfdf.includes('<delete>')
+        const importFn = isDelta
+          ? annotationManager.importAnnotationCommand(xfdf).then((anns: any[]) => {
+              if (anns?.length) annotationManager.drawAnnotationsFromList(anns)
+              console.log('[collab] flushed queued annotation delta')
+            })
+          : annotationManager.importAnnotations(xfdf).then(() => console.log('[collab] flushed queued XFDF snapshot'))
+        importFn.catch((err: any) => console.warn('[collab] queued XFDF flush failed:', err))
+      })
+    }, 100)
+  }, [documentReady, webViewerInstance])
 
-            // Apply sender's user color + name to the imported annotation
-            {
-              const allAnnotations = annotationManager.getAnnotationsList();
-              const importedAnnotations = allAnnotations.filter((ann: any) => {
-                const isHighlight = ann.Subject === 'Highlight' || ann.Subject === 'highlight';
-                const isCorrectPage = ann.PageNumber === highlight.pageNumber;
-                const notFromMe = ann.Author !== userName;
-                return isHighlight && isCorrectPage && notFromMe;
-              });
+  // Handle incoming socket highlights from collaborators.
+  // Process incoming highlights from collaborators.
+  // Geometry payloads → convert to PDFHighlight for PDFViewerCore.
+  // XFDF payloads → import into Apryse annotationManager (if available).
+  useEffect(() => {
+    if (incomingHighlights.length === 0) return
 
-              if (importedAnnotations.length > 0) {
-                const annotation = importedAnnotations[importedAnnotations.length - 1];
-                const authorId = highlight.userId || highlight.user || 'unknown'
-                const authorName = highlight.user || authorId
+    console.log('[collab] processing', incomingHighlights.length, 'incoming highlights')
 
-                // Apply the sender's deterministic color
-                const senderColor = getUserColor(authorId)
-                if (webViewerInstance?.Core?.Annotations?.Color) {
-                  annotation.StrokeColor = new webViewerInstance.Core.Annotations.Color(
-                    parseInt(senderColor.slice(1,3), 16),
-                    parseInt(senderColor.slice(3,5), 16),
-                    parseInt(senderColor.slice(5,7), 16)
-                  )
-                  annotation.Opacity = 0.45
-                }
-                // Store author metadata for tooltips
-                annotation.setCustomData('authorId', authorId)
-                annotation.setCustomData('authorName', authorName)
-                annotation.setCustomData('shared', 'true')
-                if (highlight.reason) annotation.setCustomData('reason', highlight.reason)
-                // Set Author field so Apryse shows the name in annotation popups
-                annotation.Author = authorName
-                annotationManager.redrawAnnotation(annotation);
-              }
+    const newGeometryHighlights: any[] = []
+
+    for (const h of incomingHighlights) {
+      // Skip cursor-sharing click events
+      if (h.action === 'click') continue
+
+      // xfdfCommand = delta format from exportAnnotationCommand() — preferred real-time path
+      // xfdf        = legacy full-snapshot format — fallback for older broadcasts
+      const xfdfPayload = h.xfdfCommand || h.xfdf
+      if (xfdfPayload) {
+        const isCommand = !!h.xfdfCommand
+        if (documentReady && webViewerInstance?.Core?.annotationManager) {
+          const am = webViewerInstance.Core.annotationManager
+          setTimeout(() => {
+            if (!am) return
+            if (isCommand) {
+              // Delta import — the correct real-time path
+              // importAnnotationCommand triggers annotationChanged with info.imported=true
+              // so the guard in the listener prevents re-broadcast automatically
+              am.importAnnotationCommand(xfdfPayload)
+                .then((updatedAnnotations: any[]) => {
+                  if (updatedAnnotations?.length) am.drawAnnotationsFromList(updatedAnnotations)
+                  console.log('[collab] applied annotation delta from', h.user || h.userName)
+                })
+                .catch((err: any) => console.warn('[collab] importAnnotationCommand failed:', err))
+            } else {
+              // Legacy full-snapshot import (older share-panel broadcasts still use xfdf)
+              am.importAnnotations(xfdfPayload)
+                .then(() => console.log('[collab] imported XFDF snapshot from', h.user || h.userName))
+                .catch((err: any) => console.warn('[collab] importAnnotations failed:', err))
             }
-          } catch (error) {
-            console.error('Error processing incoming highlight:', error);
-          }
+          }, 0)
+        } else {
+          pendingXfdfImportsRef.current.push(xfdfPayload)
         }
-
-        // Clear processed highlights
-        if (clearIncomingHighlights) {
-          clearIncomingHighlights();
-        }
+        continue
       }
+
+      // Deduplicate using a persistent ref — survives across re-renders
+      const highlightId = h.id || `collab_${Date.now()}_${Math.random().toString(36).slice(2,6)}`
+      if (processedHighlightIdsRef.current.has(highlightId)) {
+        console.log('[collab] skipping duplicate highlight:', highlightId)
+        continue
+      }
+      processedHighlightIdsRef.current.add(highlightId)
+
+      const rects = h.rects ?? []
+      if (rects.length === 0) {
+        console.warn('[collab] highlight has no rects, skipping:', highlightId, h)
+        continue
+      }
+
+      console.log('[collab] adding collaborator highlight id=%s page=%d rects=%d color=%s',
+        highlightId, h.pageNumber ?? h.page ?? 1, rects.length, h.color)
+
+      newGeometryHighlights.push({
+        id: highlightId,
+        pageNumber: h.pageNumber ?? h.page ?? 1,
+        rects,
+        text: h.text ?? h.contents ?? '',
+        color: h.color ?? '#FEF08A',
+        comment: h.comment ?? h.reason ?? '',
+        author: h.user ?? h.userName ?? 'Collaborator',
+        timestamp: h.timestamp ?? new Date().toISOString(),
+        userColor: h.userColor,
+        isCollaborator: true,
+      })
     }
 
-    processHighlights()
-  }, [incomingHighlights, webViewerInstance, clearIncomingHighlights])
+    if (newGeometryHighlights.length > 0) {
+      console.log('[collab] committing', newGeometryHighlights.length, 'new highlights to collaboratorHighlightsList')
+      setCollaboratorHighlightsList(prev => [...prev, ...newGeometryHighlights])
+      // Keep peerHighlightsRef in sync for client-side divergence detection
+      peerHighlightsRef.current = [...peerHighlightsRef.current, ...newGeometryHighlights.map((h: any) => ({
+        id: h.id,
+        quoteText: h.text || '',
+        reason: h.comment || 'confusion',
+        sectionId: `page-${h.pageNumber}`,
+        pageNumber: h.pageNumber || 1,
+        userId: h.userId || h.author || 'peer',
+        userName: h.author || 'Collaborator',
+        timestamp: Date.now(),
+      } as LocalHighlight))]
+    }
+
+    clearIncomingHighlights()
+  }, [incomingHighlights, documentReady, webViewerInstance, clearIncomingHighlights])
 
   // Update eye tracking page when PDF page changes
   useEffect(() => {
@@ -3552,6 +4386,7 @@ export default function ApryseWebViewer({
               if (highlightedText.trim()) {
                 console.log('🎯 Showing popup for highlighted text:', highlightedText);
                 setSelectedText(highlightedText);
+                persistentSelectionRef.current = highlightedText;
                 setSelectionPosition({ x: event.detail?.x || 100, y: event.detail?.y || 100 });
                 setShowTextSelectionPopup(true);
               }
@@ -3702,6 +4537,65 @@ export default function ApryseWebViewer({
       annotationManager.addEventListener('annotationClicked', handleAnnotationInteraction);
 
       console.log('✅ Apryse annotation event listeners added');
+
+      // Hover tooltip: use Apryse's annotationManager.getAnnotationByMouseEvent
+      // which is the canonical way to hit-test annotations
+      const scrollEl = documentViewer.getScrollViewElement()
+      if (scrollEl) {
+        const { Annotations } = webViewerInstance.Core
+
+        const handleMouseMoveForTooltip = (e: MouseEvent) => {
+          try {
+            const allAnnotations: any[] = annotationManager.getAnnotationsList()
+            const annotationsWithComments = allAnnotations.filter(
+              (a: any) => a.Contents?.trim() && a.PageNumber
+            )
+            if (!annotationsWithComments.length) { setAnnotationTooltip(null); return }
+
+            const displayMode = documentViewer.getDisplayModeManager().getDisplayMode()
+            const scrollRect = (scrollEl as HTMLElement).getBoundingClientRect()
+
+            // windowToPage wants coords relative to the scrollViewElement (not the page)
+            const wx = e.clientX - scrollRect.left
+            const wy = e.clientY - scrollRect.top
+
+            let pagePt: any
+            try { pagePt = displayMode.windowToPage({ x: wx, y: wy }) } catch { setAnnotationTooltip(null); return }
+            if (!pagePt || typeof pagePt.pageIndex !== 'number') { setAnnotationTooltip(null); return }
+
+            const pageNumber = pagePt.pageIndex + 1
+
+            let hit: any = null
+            for (const ann of annotationsWithComments) {
+              if (ann.PageNumber !== pageNumber) continue
+              try {
+                // Use Apryse's built-in canvas visibility test for accurate hit detection
+                if (Annotations.Annotation.canvasVisibilityTest(ann, pagePt.x, pagePt.y)) {
+                  hit = ann
+                  break
+                }
+                // Fallback: bounding rect with tolerance
+                const rect = ann.getRect?.()
+                if (!rect) continue
+                if (pagePt.x >= rect.x1 - 3 && pagePt.x <= rect.x2 + 3 &&
+                    pagePt.y >= rect.y1 - 3 && pagePt.y <= rect.y2 + 3) {
+                  hit = ann
+                  break
+                }
+              } catch { continue }
+            }
+
+            if (hit) {
+              setAnnotationTooltip({ text: hit.Contents.trim(), author: hit.Author || '', x: e.clientX, y: e.clientY })
+            } else {
+              setAnnotationTooltip(null)
+            }
+          } catch { setAnnotationTooltip(null) }
+        }
+
+        scrollEl.addEventListener('mousemove', handleMouseMoveForTooltip as EventListener)
+        ;(window as any).__annotTooltipCleanup = () => scrollEl.removeEventListener('mousemove', handleMouseMoveForTooltip as EventListener)
+      }
     }
 
     // Fallback: generic click events for non-Apryse annotations
@@ -3773,6 +4667,7 @@ export default function ApryseWebViewer({
                 if (highlightedText.trim()) {
                   console.log('🎯 Showing popup for highlighted text via generic click:', highlightedText);
                   setSelectedText(highlightedText);
+                  persistentSelectionRef.current = highlightedText;
                   setSelectionPosition({ x: event.clientX, y: event.clientY });
                   setShowTextSelectionPopup(true);
                 }
@@ -3802,6 +4697,12 @@ export default function ApryseWebViewer({
       // Remove fallback event listeners
       document.removeEventListener('click', handleGenericClick);
       document.removeEventListener('dblclick', handleGenericClick);
+
+      // Clean up annotation tooltip listener
+      if ((window as any).__annotTooltipCleanup) {
+        (window as any).__annotTooltipCleanup()
+        delete (window as any).__annotTooltipCleanup
+      }
 
       // Clean up global function
       delete (window as any).saveComment;
@@ -4248,6 +5149,7 @@ ${documentContent}
           path: '/webviewer/lib', // required for asset loading
           initialDoc: currentDocumentUrl,
           licenseKey: 'demo:1755219174158:606dde5b03000000004697f8591ea5d9e505e44c124bc6be7fc53870e2', // or your license key
+          useDownloader: false,
         },
         viewer.current as HTMLElement
       ).then((instance: any) => {
@@ -4334,15 +5236,22 @@ ${documentContent}
           annotationManager.setCurrentUser(userName);
         }
 
-        // Listen for annotation events
-        annotationManager.addEventListener('annotationChanged', (annotations: any[], action: string, info: any) => {
-          console.log('🎯 ANNOTATION EVENT:', { action, info, annotationsCount: annotations.length });
+        // ─── REAL-TIME COLLABORATION — Apryse delta-command pattern ───────────
+        // Correct approach per Apryse docs:
+        //   SEND:    exportAnnotationCommand()  → delta XML (add/modify/delete)
+        //   RECEIVE: importAnnotationCommand()  → apply delta, then drawAnnotationsFromList()
+        //   GUARD:   info.imported === true     → skip re-broadcast (never use Author check)
+        // ─────────────────────────────────────────────────────────────────────
+        annotationManager.addEventListener('annotationChanged', async (annotations: any[], action: string, info: any) => {
+
+          // PRIMARY feedback-loop guard — imported annotations must never be re-broadcast
+          if (info.imported) return
 
           if (action === 'add' && annotations && annotations.length > 0) {
-            const annotation = annotations[0]; // Get from annotations array
-            console.log('🎯 NEW ANNOTATION ADDED:', annotation.Subject, annotation);
+            const annotation = annotations[0];
+            console.log('🎯 NEW ANNOTATION ADDED (local user):', annotation.Subject, annotation);
 
-            // ✅ PREVENT FEEDBACK LOOP: Only process annotations created by current user
+            // Dead code path preserved for compatibility — imported check above is the real guard
             if (annotation.Author !== userName) {
               console.log('👥 Received annotation from another user:', annotation.Author)
 
@@ -4491,65 +5400,23 @@ ${documentContent}
 
                 setLastSelectedText(highlightedText);
 
-                // 🚀 SOCKET.IO REAL-TIME BROADCAST - XFDF VERSION
-                // console.log('🔥 Broadcasting XFDF highlight via Socket.io');
-
-                // annotationManager.exportAnnotations({ annotList: [annotation], widgets: false })
-                //   .then((xfdf: string) => {
-                //     const highlightData = {
-                //       documentId,
-                //       xfdf,
-                //       pageNumber: annotation.PageNumber,
-                //       user: userName
-                //     };
-
-                //     broadcastHighlight(highlightData);
-
-                //     // Keep your existing callback
-                //     if (onHighlightAdd) {
-                //       onHighlightAdd({
-                //         id: annotation.Id,
-                //         text: highlightedText,
-                //         page: annotation.PageNumber,
-                //         position: {
-                //           x: annotation.X || 0,
-                //           y: annotation.Y || 0
-                //         },
-                //         author: userName,
-                //         authorId: userId,
-                //         timestamp: new Date().toISOString()
-                //       })
-                //     }
-                //   });  // ← YES, this closing }); is needed!
-
-
-                // 🎨 Set author color + metadata immediately, show share panel
-                const userColor = getUserColor(userId)
-                if (webViewerInstance.Core.Annotations?.Color) {
-                  const r = parseInt(userColor.slice(1,3), 16)
-                  const g = parseInt(userColor.slice(3,5), 16)
-                  const b = parseInt(userColor.slice(5,7), 16)
-                  annotation.StrokeColor = new webViewerInstance.Core.Annotations.Color(r, g, b)
-                  annotation.Opacity = 0.4
-                }
-                annotation.setCustomData('authorId', userId)
-                annotation.setCustomData('authorName', userName)
-                annotation.setCustomData('shared', 'false')
-                webViewerInstance.Core.annotationManager?.redrawAnnotation(annotation)
-
-                setPendingHighlight({
-                  annotation,
-                  highlightedText,
-                  documentId,
-                  pageNumber: annotation.PageNumber
-                });
-
-                // Show compact share panel (auto-dismiss after 8s)
-                setShowSharePanel(true)
-                if (sharePanelDismissTimer) clearTimeout(sharePanelDismissTimer)
-                const t = setTimeout(() => setShowSharePanel(false), 8000)
-                setSharePanelDismissTimer(t)
-
+                // 🚀 REAL-TIME BROADCAST — Apryse exportAnnotationCommand (delta, not full snapshot)
+                // This sends only the single changed annotation as XFDF command XML.
+                // The peer calls importAnnotationCommand() which triggers annotationChanged
+                // with info.imported=true — the guard above prevents the re-broadcast loop.
+                annotationManager.exportAnnotationCommand().then((xfdfCommand: string) => {
+                  if (!xfdfCommand) return
+                  broadcastHighlight({
+                    documentId,
+                    xfdfCommand,        // delta format — peer uses importAnnotationCommand()
+                    pageNumber: annotation.PageNumber,
+                    user: userName,
+                    userId,
+                    color: getUserColor(userId),
+                    contents: highlightedText,
+                  })
+                  console.log('📡 [collab] broadcasted annotation delta for page', annotation.PageNumber)
+                })
 
 
 
@@ -4557,6 +5424,7 @@ ${documentContent}
                 // Show popup with highlighted text
                 if (highlightedText.trim()) {
                   setSelectedText(highlightedText);
+                  persistentSelectionRef.current = highlightedText;
                   setSelectionPosition({ x: annotation.X, y: annotation.Y });
                   setShowTextSelectionPopup(true);
                   console.log('🎯 Popup shown for highlighted text:', highlightedText);
@@ -4607,8 +5475,36 @@ ${documentContent}
 
               } catch (error) {
                 console.log('Error getting highlighted text:', error);
-                highlightedText = 'Highlighted content';
+                highlightedText = highlightedText || 'Highlighted content';
               }
+
+              // 🎨 Set author color + metadata, then always show share panel
+              const userColor = getUserColor(userId)
+              if (instance.Core.Annotations?.Color) {
+                const r = parseInt(userColor.slice(1,3), 16)
+                const g = parseInt(userColor.slice(3,5), 16)
+                const b = parseInt(userColor.slice(5,7), 16)
+                const color = new instance.Core.Annotations.Color(r, g, b)
+                annotation.Color = color
+                annotation.FillColor = color
+                annotation.Opacity = 0.4
+              }
+              annotation.setCustomData('authorId', userId)
+              annotation.setCustomData('authorName', userName)
+              annotation.setCustomData('shared', 'false')
+              instance.Core.annotationManager?.redrawAnnotation(annotation)
+
+              setPendingHighlight({
+                annotation,
+                highlightedText,
+                documentId,
+                pageNumber: annotation.PageNumber
+              })
+
+              // Show compact share panel (auto-dismiss after 8s)
+              setShowSharePanel(true)
+              const t = setTimeout(() => setShowSharePanel(false), 8000)
+              setSharePanelDismissTimer(t)
 
               // Extract highlight data for collaboration
               const highlightData = {
@@ -4672,15 +5568,20 @@ ${documentContent}
           documentViewer.setFitMode(documentViewer.FitMode.FitWidth);
           setIsLoading(false);
           setTotalPages(documentViewer.getPageCount());
+          setDocumentReady(true);
 
-          // ✅ Phase 1: Delayed Contextual Reflection
-          if (reflectionTimerRef.current) clearTimeout(reflectionTimerRef.current)
-          reflectionTimerRef.current = setTimeout(() => {
-            if (!reflectionSubmitted) {
-              console.log('🧠 [LitSense] Triggering Contextual Reflection Phase')
-              setShowReflectionIntake(true)
-            }
-          }, 10000) // 10 seconds after load
+          // Seed the section tracker so Agent 1's heartbeat has a section from the first second
+          const initialPage = documentViewer.getCurrentPage() || 1
+          interactionCollector.trackPageVisit(initialPage, `section-page-${initialPage}`)
+
+          // DEV MODE: Reflection intake auto-trigger disabled — re-enable before study
+          // if (reflectionTimerRef.current) clearTimeout(reflectionTimerRef.current)
+          // reflectionTimerRef.current = setTimeout(() => {
+          //   if (!reflectionSubmitted) {
+          //     console.log('🧠 [CoRead] Triggering Contextual Reflection Phase')
+          //     setShowReflectionIntake(true)
+          //   }
+          // }, 10000) // 10 seconds after load
 
           // ✅ ADD: Extract PDF sections/headings
           setTimeout(async () => {
@@ -4705,6 +5606,15 @@ ${documentContent}
               if (sections.length > 0) {
                 setPdfSections(sections)
                 console.log('📚 Extracted sections:', sections)
+                // Feature 7: Build knowledge dependency graph (async, idempotent)
+                fetch('/api/knowledge-graph', {
+                  method: 'POST',
+                  headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify({
+                    paperId: documentId,
+                    sections: sections.map(s => ({ id: s.heading.id, name: s.heading.text, text: s.content?.slice(0, 300) })),
+                  }),
+                }).catch(() => {})
               } else {
                 // Don't set fake sections - let SmartHeadingExtractor handle it
                 console.log('⚠️ No common sections found, SmartHeadingExtractor will extract from PDF text')
@@ -4933,6 +5843,34 @@ ${documentContent}
           console.log('✅ Text selection capture system ready!');
 
 
+
+          // ── Inline definition popup on click ─────────────────────────────
+          annotationManager.addEventListener('annotationSelected', (annotations: any[]) => {
+            if (!annotations || annotations.length === 0) {
+              setDefPopup(null)
+              return
+            }
+            const ann = annotations[0]
+            const defTerm = ann.getCustomData?.('defTerm')
+            if (defTerm) {
+              // Convert annotation rect to fixed screen coords
+              try {
+                const displayMode = documentViewer.getDisplayModeManager().getDisplayMode()
+                const rect = ann.getRect()
+                const pt = displayMode.pageToWindow({ x: (rect.x1 + rect.x2) / 2, y: rect.y1 }, ann.PageNumber)
+                const scrollEl = documentViewer.getScrollViewElement()
+                const scrollBounds = scrollEl.getBoundingClientRect()
+                setDefPopup({
+                  term: defTerm,
+                  shortDef: ann.getCustomData('defShort') || '',
+                  fullDef: ann.getCustomData('defFull') || '',
+                  type: ann.getCustomData('defType') || 'definition',
+                  x: Math.min(scrollBounds.left + pt.x, window.innerWidth - 340),
+                  y: Math.max(scrollBounds.top + pt.y - scrollEl.scrollTop - 8, 60),
+                })
+              } catch { setDefPopup(null) }
+            }
+          })
 
           // Add click listener for existing highlights
           annotationManager.addEventListener('annotationSelected', (annotations: any[]) => {
@@ -5957,7 +6895,7 @@ ${documentContent}
       {/* Academic Sidebar */}
 
       {/* Redesigned Sidebar */}
-      <div className="w-56 bg-white border-r border-gray-100 flex flex-col h-full">
+      <div className="w-56 bg-white border-r border-gray-100 flex flex-col h-full relative z-[2]">
 
         {/* Document Header */}
         <div className="px-3.5 pt-3.5 pb-3 border-b border-gray-100">
@@ -6103,112 +7041,234 @@ ${documentContent}
 
           <div className="h-px bg-gray-100" />
 
-          {/* Tools Grid */}
+          {/* Analysis Tools */}
           <div>
-            <div className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider mb-2.5">Tools</div>
-            <div className="grid grid-cols-2 gap-1.5">
+            <div className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider mb-2">Analysis</div>
+            <div className="space-y-1">
+
+              {/* Snip & Analyze */}
               <button
                 onClick={() => setShowScreenCapture(true)}
-                className="flex flex-col items-center gap-1.5 p-2.5 rounded-xl border border-gray-100 bg-white hover:border-blue-200 hover:bg-blue-50/60 transition-all group/t"
+                className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl border border-gray-100 bg-white hover:border-blue-200 hover:bg-blue-50/40 transition-all group/t text-left"
               >
-                <div className="w-8 h-8 rounded-lg bg-blue-50 flex items-center justify-center group-hover/t:bg-blue-100 transition-colors">
-                  <Camera className="w-4 h-4 text-blue-500" />
+                <div className="w-7 h-7 rounded-lg bg-blue-50 flex items-center justify-center shrink-0 group-hover/t:bg-blue-100 transition-colors">
+                  <Camera className="w-3.5 h-3.5 text-blue-500" />
                 </div>
-                <span className="text-[10px] font-medium text-gray-600 text-center leading-tight">Snip &amp; Analyze</span>
+                <div className="min-w-0">
+                  <div className="text-xs font-semibold text-gray-800 leading-tight">Visual Capture</div>
+                  <div className="text-[10px] text-gray-400 leading-tight truncate">Snip figure/table → AI analysis</div>
+                </div>
               </button>
 
+              {/* Prerequisites */}
               <button
-                onClick={() => setShowStoryboard(true)}
-                className="flex flex-col items-center gap-1.5 p-2.5 rounded-xl border border-gray-100 bg-white hover:border-violet-200 hover:bg-violet-50/60 transition-all group/t"
+                onClick={() => setShowPaperPrerequisites(true)}
+                className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl border border-gray-100 bg-white hover:border-emerald-200 hover:bg-emerald-50/40 transition-all group/t text-left"
               >
-                <div className="w-8 h-8 rounded-lg bg-violet-50 flex items-center justify-center group-hover/t:bg-violet-100 transition-colors">
-                  <Activity className="w-4 h-4 text-violet-500" />
+                <div className="w-7 h-7 rounded-lg bg-emerald-50 flex items-center justify-center shrink-0 group-hover/t:bg-emerald-100 transition-colors">
+                  <GraduationCap className="w-3.5 h-3.5 text-emerald-600" />
                 </div>
-                <span className="text-[10px] font-medium text-gray-600 text-center leading-tight">Storyboard</span>
+                <div className="min-w-0">
+                  <div className="text-xs font-semibold text-gray-800 leading-tight">Prior Knowledge</div>
+                  <div className="text-[10px] text-gray-400 leading-tight truncate">Concepts assumed by this paper</div>
+                </div>
               </button>
 
+              {/* Related Work */}
               <button
-                onClick={() => setShowAIResearchPrerequisites(true)}
-                className="flex flex-col items-center gap-1.5 p-2.5 rounded-xl border border-gray-100 bg-white hover:border-purple-200 hover:bg-purple-50/60 transition-all group/t"
+                onClick={() => setShowPaperRelatedWork(true)}
+                className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl border border-gray-100 bg-white hover:border-purple-200 hover:bg-purple-50/40 transition-all group/t text-left"
               >
-                <div className="w-8 h-8 rounded-lg bg-purple-50 flex items-center justify-center group-hover/t:bg-purple-100 transition-colors">
-                  <Brain className="w-4 h-4 text-purple-500" />
+                <div className="w-7 h-7 rounded-lg bg-purple-50 flex items-center justify-center shrink-0 group-hover/t:bg-purple-100 transition-colors">
+                  <Brain className="w-3.5 h-3.5 text-purple-500" />
                 </div>
-                <span className="text-[10px] font-medium text-gray-600 text-center leading-tight">Prerequisites</span>
+                <div className="min-w-0">
+                  <div className="text-xs font-semibold text-gray-800 leading-tight">Citation Landscape</div>
+                  <div className="text-[10px] text-gray-400 leading-tight truncate">Related work + direct precedents</div>
+                </div>
               </button>
 
-              <button
-                onClick={() => setShowComprehensionCheck(v => !v)}
-                className="flex flex-col items-center gap-1.5 p-2.5 rounded-xl border border-gray-100 bg-white hover:border-green-200 hover:bg-green-50/60 transition-all group/t"
-              >
-                <div className="w-8 h-8 rounded-lg bg-green-50 flex items-center justify-center group-hover/t:bg-green-100 transition-colors">
-                  <CheckCircle className="w-4 h-4 text-green-500" />
-                </div>
-                <span className="text-[10px] font-medium text-gray-600 text-center leading-tight">Quiz Me</span>
-              </button>
-
+              {/* Fact-Check / Research Insights */}
               <button
                 onClick={() => setShowResearchInsights(v => !v)}
-                className="flex flex-col items-center gap-1.5 p-2.5 rounded-xl border border-gray-100 bg-white hover:border-emerald-200 hover:bg-emerald-50/60 transition-all group/t relative"
+                className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl border transition-all group/t text-left ${showResearchInsights ? 'border-teal-200 bg-teal-50/40' : 'border-gray-100 bg-white hover:border-teal-200 hover:bg-teal-50/40'}`}
               >
+                <div className={`w-7 h-7 rounded-lg flex items-center justify-center shrink-0 transition-colors ${showResearchInsights ? 'bg-teal-100' : 'bg-teal-50 group-hover/t:bg-teal-100'}`}>
+                  <Sparkles className="w-3.5 h-3.5 text-teal-600" />
+                </div>
+                <div className="min-w-0 flex-1">
+                  <div className="text-xs font-semibold text-gray-800 leading-tight">Claim Verification</div>
+                  <div className="text-[10px] text-gray-400 leading-tight truncate">Fact-check against paper + prior work</div>
+                </div>
                 {(factCheckResults.length + relatedWorkResults.length) > 0 && (
-                  <span className="absolute top-1.5 right-1.5 w-3.5 h-3.5 bg-emerald-500 rounded-full text-[8px] text-white flex items-center justify-center font-bold">
+                  <span className="ml-auto shrink-0 text-[10px] font-bold px-1.5 py-0.5 rounded-full bg-teal-100 text-teal-700">
                     {factCheckResults.length + relatedWorkResults.length}
                   </span>
                 )}
-                <div className="w-8 h-8 rounded-lg bg-emerald-50 flex items-center justify-center group-hover/t:bg-emerald-100 transition-colors">
-                  <Sparkles className="w-4 h-4 text-emerald-500" />
-                </div>
-                <span className="text-[10px] font-medium text-gray-600 text-center leading-tight">Insights</span>
               </button>
 
+              {/* Comprehension Self-Test */}
+              <button
+                onClick={() => setShowComprehensionCheck(v => !v)}
+                className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl border border-gray-100 bg-white hover:border-indigo-200 hover:bg-indigo-50/40 transition-all group/t text-left"
+              >
+                <div className="w-7 h-7 rounded-lg bg-indigo-50 flex items-center justify-center shrink-0 group-hover/t:bg-indigo-100 transition-colors">
+                  <CheckCircle className="w-3.5 h-3.5 text-indigo-500" />
+                </div>
+                <div className="min-w-0">
+                  <div className="text-xs font-semibold text-gray-800 leading-tight">Self-Test</div>
+                  <div className="text-[10px] text-gray-400 leading-tight truncate">Probe your understanding of this section</div>
+                </div>
+              </button>
+
+            </div>
+          </div>
+
+          <div className="h-px bg-gray-100" />
+
+          {/* Annotation Tools */}
+          <div>
+            <div className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider mb-2">Annotations</div>
+            <div className="space-y-1">
+
+              {/* Marginal Notes */}
+              <button
+                onClick={() => {
+                  const passage = persistentSelectionRef.current || selectedText || lastSelectedText || ''
+                  setMarginalNotePassage(passage)
+                  if (passage) {
+                    setShowMarginalNotes(true)
+                  } else {
+                    setShowMarginalNotes(v => !v)
+                  }
+                }}
+                className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl border transition-all group/t text-left ${showMarginalNotes ? 'border-violet-200 bg-violet-50/40' : 'border-gray-100 bg-white hover:border-violet-200 hover:bg-violet-50/40'}`}
+              >
+                <div className={`w-7 h-7 rounded-lg flex items-center justify-center shrink-0 transition-colors ${showMarginalNotes ? 'bg-violet-100' : 'bg-violet-50 group-hover/t:bg-violet-100'}`}>
+                  <BookMarked className="w-3.5 h-3.5 text-violet-500" />
+                </div>
+                <div className="min-w-0 flex-1">
+                  <div className="text-xs font-semibold text-gray-800 leading-tight">Marginal Notes</div>
+                  <div className="text-[10px] text-gray-400 leading-tight truncate">Passage-linked notes · shared with group</div>
+                </div>
+                {marginalNoteCount > 0 && (
+                  <span className="ml-auto shrink-0 text-[10px] font-bold px-1.5 py-0.5 rounded-full bg-violet-100 text-violet-700">
+                    {marginalNoteCount}
+                  </span>
+                )}
+              </button>
+
+              {/* Critical Reading Layer */}
+              <button
+                onClick={() => {
+                  const passage = persistentSelectionRef.current || selectedText || lastSelectedText || ''
+                  setCritiquePassage(passage)
+                  if (passage) {
+                    setShowCritiquePanel(true)
+                  } else {
+                    setShowCritiquePanel(v => !v)
+                  }
+                  if (showMarginalNotes) setShowMarginalNotes(false)
+                }}
+                className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl border transition-all group/t text-left ${showCritiquePanel ? 'border-red-200 bg-red-50/40' : 'border-gray-100 bg-white hover:border-red-200 hover:bg-red-50/40'}`}
+              >
+                <div className={`w-7 h-7 rounded-lg flex items-center justify-center shrink-0 transition-colors ${showCritiquePanel ? 'bg-red-100' : 'bg-red-50 group-hover/t:bg-red-100'}`}>
+                  <svg className="w-3.5 h-3.5 text-red-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M12 9v3m0 0v3m0-3h3m-3 0H9m12 0a9 9 0 11-18 0 9 9 0 0118 0z" />
+                  </svg>
+                </div>
+                <div className="min-w-0">
+                  <div className="text-xs font-semibold text-gray-800 leading-tight">Critical Layer</div>
+                  <div className="text-[10px] text-gray-400 leading-tight truncate">Challenge claims · flag methodological gaps</div>
+                </div>
+              </button>
+
+              {/* Inline Definitions toggle */}
+              <button
+                onClick={handleShowDefinitions}
+                disabled={defLoading}
+                className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl border transition-all group/t text-left ${showDefinitions ? 'border-violet-200 bg-violet-50/40' : 'border-gray-100 bg-white hover:border-violet-200 hover:bg-violet-50/40'} ${defLoading ? 'opacity-70 cursor-wait' : ''}`}
+              >
+                <div className={`w-7 h-7 rounded-lg flex items-center justify-center shrink-0 transition-colors ${showDefinitions ? 'bg-violet-100' : 'bg-violet-50 group-hover/t:bg-violet-100'}`}>
+                  {defLoading ? (
+                    <Loader2 className="w-3.5 h-3.5 text-violet-400 animate-spin" />
+                  ) : (
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-violet-500">
+                      <path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"/>
+                    </svg>
+                  )}
+                </div>
+                <div className="min-w-0 flex-1">
+                  <div className="text-xs font-semibold text-gray-800 leading-tight">
+                    {defLoading ? 'Scanning PDF…' : 'Term Definitions'}
+                  </div>
+                  <div className="text-[10px] text-gray-400 leading-tight truncate">
+                    {showDefinitions ? 'Hide inline glossary' : 'Overlay key term definitions'}
+                  </div>
+                </div>
+                {inlineDefinitions.length > 0 && (
+                  <span className={`ml-auto shrink-0 text-[10px] font-bold px-1.5 py-0.5 rounded-full ${showDefinitions ? 'bg-violet-200 text-violet-700' : 'bg-gray-100 text-gray-500'}`}>
+                    {inlineDefinitions.length}
+                  </span>
+                )}
+              </button>
+
+            </div>
+          </div>
+
+          <div className="h-px bg-gray-100" />
+
+          {/* Session & Navigation */}
+          <div>
+            <div className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider mb-2">Session</div>
+            <div className="space-y-1">
+
+              {/* Session Log — A5 artifact */}
               <button
                 onClick={() => setShowSessionSummary(v => !v)}
-                className="flex flex-col items-center gap-1.5 p-2.5 rounded-xl border border-gray-100 bg-white hover:border-indigo-200 hover:bg-indigo-50/60 transition-all group/t"
+                className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl border transition-all group/t text-left ${showSessionSummary ? 'border-indigo-200 bg-indigo-50/40' : 'border-gray-100 bg-white hover:border-indigo-200 hover:bg-indigo-50/40'}`}
               >
-                <div className="w-8 h-8 rounded-lg bg-indigo-50 flex items-center justify-center group-hover/t:bg-indigo-100 transition-colors">
-                  <BookOpen className="w-4 h-4 text-indigo-500" />
+                <div className={`w-7 h-7 rounded-lg flex items-center justify-center shrink-0 transition-colors ${showSessionSummary ? 'bg-indigo-100' : 'bg-indigo-50 group-hover/t:bg-indigo-100'}`}>
+                  <BookOpen className="w-3.5 h-3.5 text-indigo-500" />
                 </div>
-                <span className="text-[10px] font-medium text-gray-600 text-center leading-tight">Summary</span>
+                <div className="min-w-0">
+                  <div className="text-xs font-semibold text-gray-800 leading-tight">Session Log</div>
+                  <div className="text-[10px] text-gray-400 leading-tight truncate">A5 · what was learned · open questions · export</div>
+                </div>
               </button>
 
+              {/* Section Role Assignment (A10) */}
               <button
                 onClick={() => { if (pdfSections.length > 0) setShowSectionAssignment(true); else toast.error('Wait for analysis\u2026'); }}
-                className="flex flex-col items-center gap-1.5 p-2.5 rounded-xl border border-gray-100 bg-white hover:border-rose-200 hover:bg-rose-50/60 transition-all group/t"
+                className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl border border-gray-100 bg-white hover:border-rose-200 hover:bg-rose-50/40 transition-all group/t text-left"
               >
-                <div className="w-8 h-8 rounded-lg bg-rose-50 flex items-center justify-center group-hover/t:bg-rose-100 transition-colors">
-                  <Users className="w-4 h-4 text-rose-500" />
+                <div className="w-7 h-7 rounded-lg bg-rose-50 flex items-center justify-center shrink-0 group-hover/t:bg-rose-100 transition-colors">
+                  <Users className="w-3.5 h-3.5 text-rose-500" />
                 </div>
-                <span className="text-[10px] font-medium text-gray-600 text-center leading-tight">Sections</span>
+                <div className="min-w-0">
+                  <div className="text-xs font-semibold text-gray-800 leading-tight">Section Roles</div>
+                  <div className="text-[10px] text-gray-400 leading-tight truncate">A10 · who leads which section</div>
+                </div>
               </button>
 
-              <button
-                onClick={() => { if (eyeTrackingEnabled) { eyeTracker.pause(); setEyeTrackingEnabled(false); } else { setShowEyeCalibration(true); } }}
-                className={`flex flex-col items-center gap-1.5 p-2.5 rounded-xl border transition-all group/t ${eyeTrackingEnabled ? 'border-teal-200 bg-teal-50/60' : 'border-gray-100 bg-white hover:border-teal-200 hover:bg-teal-50/60'}`}
-              >
-                <div className={`w-8 h-8 rounded-lg flex items-center justify-center transition-colors ${eyeTrackingEnabled ? 'bg-teal-100' : 'bg-teal-50 group-hover/t:bg-teal-100'}`}>
-                  <Eye className="w-4 h-4 text-teal-500" />
-                </div>
-                <span className="text-[10px] font-medium text-gray-600 text-center leading-tight">{eyeTrackingEnabled ? 'Stop Eye' : 'Eye Track'}</span>
-              </button>
-            </div>
+              {/* Search & Outline */}
+              <div className="grid grid-cols-2 gap-1.5 pt-0.5">
+                <button
+                  onClick={() => webViewerInstance?.UI.openElements(['searchPanel'])}
+                  className="flex items-center justify-center gap-1.5 py-2 rounded-xl border border-gray-100 bg-white hover:bg-gray-50 hover:border-gray-200 transition-all text-gray-500 hover:text-gray-700"
+                >
+                  <Search className="w-3.5 h-3.5" />
+                  <span className="text-xs font-medium">Search</span>
+                </button>
+                <button
+                  onClick={() => webViewerInstance?.UI.openElements(['outlinesPanel'])}
+                  className="flex items-center justify-center gap-1.5 py-2 rounded-xl border border-gray-100 bg-white hover:bg-gray-50 hover:border-gray-200 transition-all text-gray-500 hover:text-gray-700"
+                >
+                  <Bookmark className="w-3.5 h-3.5" />
+                  <span className="text-xs font-medium">Outline</span>
+                </button>
+              </div>
 
-            {/* Search & Outline row */}
-            <div className="grid grid-cols-2 gap-1.5 mt-1.5">
-              <button
-                onClick={() => webViewerInstance?.UI.openElements(['searchPanel'])}
-                className="flex items-center justify-center gap-1.5 py-2 rounded-xl border border-gray-100 bg-white hover:bg-gray-50 hover:border-gray-200 transition-all text-gray-500 hover:text-gray-700"
-              >
-                <Search className="w-3.5 h-3.5" />
-                <span className="text-[11px] font-medium">Search</span>
-              </button>
-              <button
-                onClick={() => webViewerInstance?.UI.openElements(['outlinesPanel'])}
-                className="flex items-center justify-center gap-1.5 py-2 rounded-xl border border-gray-100 bg-white hover:bg-gray-50 hover:border-gray-200 transition-all text-gray-500 hover:text-gray-700"
-              >
-                <Bookmark className="w-3.5 h-3.5" />
-                <span className="text-[11px] font-medium">Outline</span>
-              </button>
             </div>
           </div>
 
@@ -6267,6 +7327,33 @@ ${documentContent}
                 ))}
               </div>
             </div>
+          )}
+
+          {/* Section Summary Card — grounded digest for the section currently in view */}
+          {activeSummarySection && (
+            <>
+              <div className="h-px bg-gray-100 -mx-3" />
+              <div className="-mx-3">
+                <SectionSummaryCard
+                  sectionId={activeSummarySection.sectionId}
+                  sectionName={activeSummarySection.sectionName}
+                  sectionText={activeSummarySection.sectionText}
+                  documentTitle={documentTitle}
+                  sectionIndex={activeSummarySection.sectionIndex}
+                  onContentFlagsDetected={(flags, secName, secText) => {
+                    if (flags.length > 0 && shouldShowNudge(activeSummarySection.sectionId)) {
+                      markNudgeShown(activeSummarySection.sectionId)
+                      setContentNudge({
+                        sectionId: activeSummarySection.sectionId,
+                        sectionName: secName,
+                        sectionText: secText,
+                        flags,
+                      })
+                    }
+                  }}
+                />
+              </div>
+            </>
           )}
 
         </div>
@@ -6375,7 +7462,7 @@ ${documentContent}
               <div className="w-7 h-7 bg-emerald-600 rounded-lg flex items-center justify-center">
                 <Sparkles className="w-4 h-4 text-white" />
               </div>
-              <span className="text-sm font-semibold text-gray-900">Research Insights</span>
+              <span className="text-sm font-semibold text-gray-900">Claim Verification</span>
             </div>
             <button onClick={() => setShowResearchInsights(false)} className="p-1.5 rounded-lg hover:bg-gray-100 text-gray-400 transition-colors">
               <X className="w-4 h-4" />
@@ -6425,13 +7512,32 @@ ${documentContent}
               </div>
             )}
 
-            {factCheckResults.length === 0 && relatedWorkResults.length === 0 && (
-              <div className="text-center py-12">
-                <div className="w-12 h-12 bg-emerald-50 rounded-full flex items-center justify-center mx-auto mb-3">
-                  <Sparkles className="w-6 h-6 text-emerald-400" />
+            {/* Manual claim check — fires Agent 8 on current selection */}
+            {(selectedText || lastSelectedText) && (
+              <div className="bg-white border border-gray-200 rounded-xl p-3">
+                <div className="text-[10px] font-bold text-gray-400 uppercase tracking-wider mb-1.5">Selected passage</div>
+                <p className="text-xs text-gray-700 italic line-clamp-3 mb-2">"{(selectedText || lastSelectedText).substring(0, 200)}"</p>
+                <button
+                  onClick={() => {
+                    const claim = selectedText || lastSelectedText
+                    const section = pdfSectionsRef.current.find(s => s.startPage <= currentPage && s.endPage >= currentPage)
+                    agent8_factChecking.checkClaim(claim, section?.heading?.text || documentContent?.substring(0, 4000), documentTitle)
+                  }}
+                  className="w-full flex items-center justify-center gap-1.5 py-1.5 rounded-lg bg-teal-600 hover:bg-teal-700 text-white text-xs font-semibold transition-colors"
+                >
+                  <Sparkles className="w-3 h-3" />
+                  Verify this claim
+                </button>
+              </div>
+            )}
+
+            {factCheckResults.length === 0 && relatedWorkResults.length === 0 && !(selectedText || lastSelectedText) && (
+              <div className="text-center py-10">
+                <div className="w-10 h-10 bg-teal-50 rounded-full flex items-center justify-center mx-auto mb-3">
+                  <Sparkles className="w-5 h-5 text-teal-400" />
                 </div>
-                <p className="text-sm font-medium text-gray-600 mb-1">No insights yet</p>
-                <p className="text-xs text-gray-400">AI agents will automatically analyze claims and find related papers as you read.</p>
+                <p className="text-xs font-semibold text-gray-600 mb-1">No verified claims yet</p>
+                <p className="text-xs text-gray-400 leading-relaxed">Select a passage and click "Verify this claim", or wait for A8 to fire automatically on annotated text.</p>
               </div>
             )}
           </div>
@@ -6456,6 +7562,9 @@ ${documentContent}
             <SessionSummaryPanel
               documentTitle={documentTitle}
               documentContent={documentContent}
+              chatMessages={peerChatMessages.map(m => ({ userName: m.fromUserName || 'Researcher', content: m.message, type: 'chat' }))}
+              participantNames={collaborators.filter(c => c.status === 'online').map(c => c.name)}
+              sectionsRead={pdfSections.filter(s => s.startPage <= currentPage).map(s => s.heading.text)}
               sessionDurationMinutes={30}
               onClose={() => setShowSessionSummary(false)}
             />
@@ -6479,8 +7588,8 @@ ${documentContent}
           </div>
           <div className="flex-1 overflow-y-auto p-4">
             <ComprehensionCheck
-              sectionName={journeyReplaySectionName || documentTitle || 'Current Section'}
-              sectionContent={documentContent?.substring(0, 4000) || ''}
+              sectionName={activeSummarySection?.sectionName || journeyReplaySectionName || 'Current Section'}
+              sectionContent={activeSummarySection?.sectionText || documentContent?.substring(0, 4000) || ''}
               documentTitle={documentTitle}
               onClose={() => setShowComprehensionCheck(false)}
             />
@@ -6522,7 +7631,7 @@ ${documentContent}
 
       {/* PDF Viewer Container */}
       {/* Tabbed PDF Viewer Container */}
-      <div className="flex-1 flex flex-col">
+      <div className="flex-1 flex flex-col relative">
         {/* Tab Bar */}
         <div className="flex items-center bg-white border-b border-gray-100 px-2 min-h-[38px] gap-1">
           <div className="flex items-center gap-0.5 flex-1 overflow-x-auto">
@@ -6624,7 +7733,7 @@ ${documentContent}
         )}
 
         {/* Tab Content Area */}
-        <div className="flex-1 relative" style={{ height: 'calc(100vh - 40px)' }}>
+        <div className="flex-1 relative min-h-0 overflow-hidden">
           {isLoading && (
             <div className="absolute inset-0 bg-white bg-opacity-90 flex items-center justify-center z-10">
               <div className="text-center">
@@ -6635,36 +7744,268 @@ ${documentContent}
             </div>
           )}
 
-          {/* WebViewer Container */}
+          {/* ── Phase I Gate ───────────────────────────────────────────────
+               Blocks the PDF viewer until the user completes their
+               pre-session reflection (Phase I Pre-Discussion Alignment).
+               Implements the paper's three-phase framework.
+               When sessionPhase prop is provided (managed by page.tsx),
+               the gate uses the canonical phase state so the Phase I
+               right-panel and this overlay stay in sync.
+               In collaborative mode: gate on sessionPhase === 'I' (if prop provided)
+               In solo mode or no prop: use internal reflectionSubmitted flag.
+          ─────────────────────────────────────────────────────────────── */}
+          {/* When sessionPhase is managed externally by page.tsx, the right-panel
+               PhaseIPanel is the sole gate — the viewer overlay is suppressed for
+               collaborative mode (sessionPhase prop is defined) to avoid duplication.
+               For solo mode or legacy usage (no prop), the internal reflectionSubmitted
+               flag still controls this gate. */}
+          {(sessionPhase !== undefined
+            ? false  // page.tsx right-panel handles Phase I; overlay not shown
+            : !reflectionSubmitted) && (
+            <div className="absolute inset-0 z-40 bg-white/95 backdrop-blur-sm flex flex-col items-center justify-center">
+              <div className="max-w-md w-full mx-auto px-6 text-center">
+                <div className="w-14 h-14 bg-indigo-50 rounded-2xl flex items-center justify-center mx-auto mb-4 shadow-sm">
+                  <Brain className="w-7 h-7 text-indigo-600" />
+                </div>
+                <h2 className="text-xl font-bold text-slate-900 mb-2">
+                  Before you start reading…
+                </h2>
+                <p className="text-sm text-gray-500 mb-6 leading-relaxed">
+                  CoRead works best when it understands your background and goals.
+                  This takes 30 seconds and unlocks the full collaborative reading experience.
+                </p>
+                <div className="space-y-3 mb-6 text-left">
+                  {[
+                    { icon: '🎯', label: 'Sets your reading goals' },
+                    { icon: '🧩', label: 'Assigns section responsibilities (A10)' },
+                    { icon: '🤝', label: 'Calibrates peer matching (A2)' },
+                  ].map(item => (
+                    <div key={item.label} className="flex items-center gap-3 bg-gray-50 rounded-xl px-4 py-2.5">
+                      <span className="text-lg">{item.icon}</span>
+                      <span className="text-sm text-gray-700 font-medium">{item.label}</span>
+                    </div>
+                  ))}
+                </div>
+                <button
+                  className="w-full bg-indigo-600 hover:bg-indigo-700 text-white font-semibold rounded-xl py-3 px-6 transition-colors flex items-center justify-center gap-2 shadow-sm"
+                  onClick={() => setShowReflectionIntake(true)}
+                >
+                  <Brain className="w-4 h-4" />
+                  Start Phase I Reflection
+                </button>
+                <p className="text-xs text-gray-400 mt-3">
+                  Phase I · Pre-Discussion Alignment
+                </p>
+              </div>
+            </div>
+          )}
+
+          {/* PDF Viewer — react-pdf (MIT, no watermark) */}
           <div
-            id="webviewer-container"
-            className="webviewer flex-1 w-full relative"
-            ref={viewer}
-            style={{
-              height: 'calc(100vh - 140px)',
-              minHeight: '800px',
-              width: '100%'
-            }}
+            className="absolute inset-0 w-full overflow-hidden"
+            onClick={() => { if (defPopup) setDefPopup(null) }}
           >
-            {/* Stuck Markers Overlay */}
+            <PDFViewerCore
+              ref={pdfViewerRef}
+              url={currentDocumentUrl}
+              scale={1.4}
+              userName={userName}
+              documentId={documentId}
+              userId={userId}
+              onDocumentLoaded={(numPages) => {
+                if (onDocumentLoaded) onDocumentLoaded()
+                // Seed the section tracker so Agent 1's heartbeat has a section from the first second
+                const initialPage = currentPageRef.current || 1
+                const initialSection = pdfSectionsRef.current.find(s => s.startPage <= initialPage && s.endPage >= initialPage)
+                const initialSectionId = initialSection ? initialSection.heading.id : `page-${initialPage}`
+                interactionCollector.trackFixation(initialSectionId)
+              }}
+              onTextExtracted={(text) => {
+                // feeds the same event the document page already listens for
+                setDocumentContent(text)
+                documentContentRef.current = text
+              }}
+              onPageTextsExtracted={(pageTexts) => {
+                pageTextsRef.current = pageTexts
+              }}
+              onAnnotationAdd={(ann) => {
+                if (onAnnotationAdd) onAnnotationAdd(ann)
+              }}
+              onHighlightAdd={(data) => {
+                if (onHighlightAdd) onHighlightAdd(data)
+                // Broadcast to collaborators via Socket.IO
+                const payload = {
+                  id: data.annotationId,
+                  documentId,
+                  pageNumber: data.pageNumber,
+                  rects: data.rects ?? [],
+                  text: data.text,
+                  color: data.color,
+                  comment: data.comment ?? '',
+                  reason: data.comment ?? '',   // same value — server reads either field
+                  user: userName,
+                  userName,
+                  userId: userId,
+                  timestamp: new Date().toISOString(),
+                }
+                console.log('[collab] broadcasting highlight, isConnected:', isConnected, payload)
+                broadcastHighlight(payload)
+
+                // Auto-save to shared Team Notes so all readers see highlights/comments
+                if (data.text && data.text.trim().length >= 5) {
+                  const rawComment = data.comment && data.comment.trim() ? data.comment.trim() : ''
+                  const noteContent = rawComment.length >= 10
+                    ? rawComment
+                    : rawComment.length > 0
+                      ? `${rawComment} — "${data.text.slice(0, 80)}"`
+                      : `Highlighted: "${data.text.slice(0, 80)}"`
+                  fetch('/api/marginal-notes', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                      documentId,
+                      userId,
+                      userName,
+                      content: noteContent,
+                      passageText: data.text,
+                      pageNumber: data.pageNumber,
+                      epistemicTag: data.comment ? 'annotation' : 'highlight',
+                    }),
+                  }).then(res => res.json()).then(result => {
+                    if (result.success) {
+                      window.dispatchEvent(new CustomEvent('__team-note-created', { detail: result.note }))
+                      if (socketInstance) {
+                        socketInstance.emit('marginal-note-created', { documentId, note: result.note })
+                      }
+                    }
+                  }).catch(err => console.error('[team-notes] auto-save failed:', err))
+                }
+
+                // Client-side divergence detection: check against peer highlights in peerHighlightsRef
+                if (data.text && data.comment && peerHighlightsRef.current.length > 0) {
+                  const localHighlight: LocalHighlight = {
+                    id: data.annotationId || `local-${Date.now()}`,
+                    quoteText: data.text,
+                    reason: data.comment || 'confusion',
+                    sectionId: `page-${data.pageNumber}`,
+                    pageNumber: data.pageNumber,
+                    userId: userId,
+                    userName,
+                    timestamp: Date.now(),
+                  }
+                  const divergence = detectDivergence(localHighlight, peerHighlightsRef.current)
+                  if (divergence && socketInstance) {
+                    socketInstance.emit('annotation-divergence', {
+                      documentId,
+                      passage: divergence.sharedPassage,
+                      userAId: userId,
+                      userAName: userName,
+                      userAReason: divergence.localHighlight.reason,
+                      userBId: divergence.peerHighlight.userId,
+                      userBName: divergence.peerHighlight.userName,
+                      userBReason: divergence.peerHighlight.reason,
+                      sectionId: localHighlight.sectionId,
+                    })
+                  }
+                }
+              }}
+              collaboratorHighlights={collaboratorHighlightsList}
+              onAskAI={onAskAI ? (text) => onAskAI(text) : undefined}
+              onPrerequisiteHelp={(text) => {
+                setPrerequisiteText(text)
+                setShowPrerequisiteHelper(true)
+              }}
+              onRelatedWork={(text) => {
+                setShowResearchInsights(true)
+                setRelatedWorkResults([]) // clear while loading
+                fetch('/api/related-work', {
+                  method: 'POST',
+                  headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify({
+                    sectionContent: text,
+                    documentTitle: documentTitle || '',
+                    documentAuthors: documentAuthors || '',
+                    documentAbstract: documentContent?.slice(0, 800) || '',
+                  }),
+                })
+                  .then(r => r.json())
+                  .then(data => {
+                    if (data.relatedPapers?.length) {
+                      setRelatedWorkResults(data.relatedPapers.slice(0, 5))
+                    }
+                  })
+                  .catch(err => console.error('[related-work]', err))
+              }}
+              onPageChange={(page) => {
+                setCurrentPage(page)
+                currentPageRef.current = page
+                if (onPageChange) onPageChange(page)
+                // Track page visit for Agent 1 signal pipeline
+                const section = pdfSectionsRef.current.find(s => s.startPage <= page && s.endPage >= page)
+                const sectionId = section ? section.heading.id : `page-${page}`
+                interactionCollector.trackFixation(sectionId)
+                // Broadcast page position to peers for ReadingTrajectoryMap
+                if (socketInstance) {
+                  socketInstance.emit('peer-page-changed', {
+                    documentId,
+                    userId,
+                    userName,
+                    pageNumber: page,
+                    sectionId,
+                    sectionName: section?.heading.text || `Page ${page}`,
+                  })
+                }
+                // Update section summary card when section changes
+                if (section) {
+                  const totalSections = pdfSectionsRef.current.length
+                  const sectionIdx = pdfSectionsRef.current.findIndex(s => s.heading.id === section.heading.id)
+                  const sectionText = section.content ||
+                    [page - 1, page, page + 1]
+                      .map(p => pageTextsRef.current.get(p) || '')
+                      .join(' ')
+                      .trim()
+                  setActiveSummarySection({
+                    sectionId: section.heading.id,
+                    sectionName: section.heading.text,
+                    sectionText: sectionText.slice(0, 6000),
+                    sectionIndex: `section ${sectionIdx + 1} of ${totalSections}`,
+                  })
+                }
+                // Proactive marginal note nudge — fire once per page per session if notes exist
+                if (!pageNoteNudgeShownRef.current.has(page)) {
+                  fetch(`/api/marginal-notes?documentId=${encodeURIComponent(documentId)}&pageNumber=${page}`)
+                    .then(r => r.json())
+                    .then(data => {
+                      if (data.success && data.notes.length > 0) {
+                        pageNoteNudgeShownRef.current.add(page)
+                        const first = data.notes[0]
+                        setPageNoteNudge({
+                          page,
+                          count: data.notes.length,
+                          preview: first.content.slice(0, 90),
+                          author: first.authorName,
+                        })
+                      }
+                    })
+                    .catch(() => {})
+                }
+              }}
+            />
+
+            {/* Stuck Markers Overlay — kept as absolute overlay above PDF */}
             {stuckMarkers
               .filter(marker => marker.page === currentPage)
               .map(marker => (
                 <div
                   key={marker.id}
-                  className="absolute z-50 group"
-                  style={{
-                    left: marker.x,
-                    top: marker.y,
-                  }}
+                  className="absolute z-50 group pointer-events-auto"
+                  style={{ left: marker.x, top: marker.y }}
                 >
                   <div className="bg-gradient-to-r from-red-50 to-orange-50 border-2 border-red-400 rounded-xl px-4 py-3 shadow-xl backdrop-blur-sm">
                     <div className="flex items-center justify-between">
                       <div className="flex items-center space-x-2">
                         <div className="w-3 h-3 bg-red-500 rounded-full animate-pulse"></div>
-                        <span className="text-red-700 font-semibold text-sm">
-                          {marker.text}
-                        </span>
+                        <span className="text-red-700 font-semibold text-sm">{marker.text}</span>
                       </div>
                       <button
                         onClick={() => handleRemoveStuckMarker(marker.id)}
@@ -6678,9 +8019,7 @@ ${documentContent}
                     </div>
                     <div className="mt-1 flex items-center space-x-1">
                       <div className="w-2 h-2 bg-gray-400 rounded-full"></div>
-                      <span className="text-xs text-gray-600 font-medium">
-                        Anonymous Reader
-                      </span>
+                      <span className="text-xs text-gray-600 font-medium">Anonymous Reader</span>
                     </div>
                   </div>
                 </div>
@@ -7056,8 +8395,52 @@ ${documentContent}
               // Copy is handled internally by the popup
               console.log('Text copied to clipboard');
             }}
+            onAskAI={onAskAI ? () => onAskAI(selectedText) : undefined}
+            onReaderNote={() => {
+              const passage = persistentSelectionRef.current || selectedText || lastSelectedText || ''
+              // Append timestamp so MarginalNotesSidebar always treats this as a new selection,
+              // even if the user picks the same passage twice in a row.
+              setMarginalNotePassage(`${passage}::${Date.now()}`)
+              setShowMarginalNotes(true)
+              setShowTextSelectionPopup(false)
+            }}
+            onCritique={() => {
+              const passage = persistentSelectionRef.current || selectedText || lastSelectedText || ''
+              setCritiquePassage(passage)
+              setShowCritiquePanel(true)
+              setShowMarginalNotes(false)
+              setShowTextSelectionPopup(false)
+            }}
             documentContext={equationContext}
           />
+        )}
+
+        {/* Annotation hover tooltip — shows comment when hovering a highlight */}
+        {annotationTooltip && (
+          <div
+            className="fixed z-[9998] pointer-events-none"
+            style={{
+              left: Math.min(annotationTooltip.x + 8, window.innerWidth - 260),
+              top: annotationTooltip.y - 12,
+              transform: 'translateY(-100%)',
+            }}
+          >
+            <div className="bg-gray-900 text-white rounded-xl shadow-2xl w-56 overflow-hidden">
+              {annotationTooltip.author && (
+                <div className="flex items-center gap-1.5 px-3 pt-2.5 pb-1 border-b border-white/10">
+                  <div className="w-4 h-4 rounded-full bg-indigo-500 flex items-center justify-center text-[9px] font-bold shrink-0">
+                    {annotationTooltip.author[0]?.toUpperCase()}
+                  </div>
+                  <span className="text-[10px] font-medium text-gray-300">{annotationTooltip.author}</span>
+                </div>
+              )}
+              <p className="text-[12px] leading-snug px-3 py-2.5 text-white whitespace-pre-wrap break-words">
+                {annotationTooltip.text}
+              </p>
+            </div>
+            {/* Arrow pointing down toward cursor */}
+            <div className="absolute bottom-[-5px] left-4 w-2.5 h-2.5 bg-gray-900 rotate-45" />
+          </div>
         )}
 
         {/* Smart Prerequisite Helper */}
@@ -7083,6 +8466,28 @@ ${documentContent}
           documentYear={documentYear || ''}
           documentUrl={documentUrl}
           documentText={documentContent} // Pass the extracted text
+        />
+
+        {/* Deep Prerequisites Panel — whole-paper analysis */}
+        <PaperPrerequisitesPanel
+          isOpen={showPaperPrerequisites}
+          onClose={() => setShowPaperPrerequisites(false)}
+          paperText={documentContent || ''}
+          paperTitle={documentTitle || ''}
+          paperAuthors={documentAuthors || ''}
+          paperVenue={documentJournal || ''}
+          paperYear={documentYear || ''}
+        />
+
+        {/* Deep Related Work Panel — whole-paper analysis */}
+        <PaperRelatedWorkPanel
+          isOpen={showPaperRelatedWork}
+          onClose={() => setShowPaperRelatedWork(false)}
+          paperText={documentContent || ''}
+          paperTitle={documentTitle || ''}
+          paperAuthors={documentAuthors || ''}
+          paperVenue={documentJournal || ''}
+          paperYear={documentYear || ''}
         />
 
         {/* ── Collaborative Highlight Share Panel ── */}
@@ -7184,27 +8589,20 @@ ${documentContent}
   prerequisiteText={prerequisiteText}
 /> */}
 
-        {/* Gaze Heatmap Overlay */}
-        <GazeHeatmap page={currentPage} enabled={eyeTrackingEnabled && showGazeHeatmap} />
-        {/* Eye Tracking Calibration */}
+        {/* DEV: Eye tracking disabled — re-enable before study */}
+        {/* <GazeHeatmap page={currentPage} enabled={eyeTrackingEnabled && showGazeHeatmap} />
         <EyeTrackingCalibration
           isOpen={showEyeCalibration}
           onClose={() => setShowEyeCalibration(false)}
-          webgazer={eyeTracker.getWebGazerInstance()}  // ✅ ADD THIS LINE
+          webgazer={eyeTracker.getWebGazerInstance()}
           onComplete={() => {
             eyeTracker.finishCalibration()
             eyeTracker.startTracking(documentId, currentPage)
             setEyeTrackingEnabled(true)
-
-            // Show prediction points for testing
             const webgazer = (window as any).webgazer
-            if (webgazer) {
-              webgazer.showPredictionPoints(true) // This shows the red dot
-            }
-
-            console.log('✅ Eye tracking started!')
+            if (webgazer) webgazer.showPredictionPoints(true)
           }}
-        />
+        /> */}
 
 
 
@@ -7222,95 +8620,207 @@ ${documentContent}
               confusedHighlights: [],
               specificText: text,
               initialQuestion: type === 'explain'
-                ? `Can you explain this part simply: "${text.slice(0, 100)}"`
+                ? `In §${implicitHelpTrigger?.sectionName}: trace the causal mechanism and identify the load-bearing assumption. Where else in the paper does this connect? "${text.slice(0, 100)}"`
                 : type === 'example'
-                  ? `Can you give me a real-world example for: "${text.slice(0, 100)}"`
-                  : `I want to ask about this part of the paper: "${text.slice(0, 100)}"`
+                  ? `In §${implicitHelpTrigger?.sectionName}: what is the strongest objection to this claim, and what evidence would resolve it? "${text.slice(0, 100)}"`
+                  : `${text.slice(0, 300)}`
             })
             setShowHelpPanel(true)
             setImplicitHelpTrigger(null)
           }}
         />
 
-        {/* Smart Notifications from Agent 7 */}
+        {/* ── Lower-priority nudges — only shown when no smart notification is active ──
+             They share the same bottom-6 right-6 slot as the smart notification.
+             Priority: contentNudge > pageNoteNudge (content explanation is more actionable).
+        ──────────────────────────────────────────────────────────────────────────────── */}
+        {(() => {
+          const hasActiveSmartNotif = smartNotifications
+            .filter(n => !dismissedNotifications.has(n.id))
+            .some(n => n.targetUserId === userId || n.targetUserIds?.includes(userId))
 
-        {/* Google-Style Implicit Help Assistant */}
+          // Content detection nudge — figure/table/equation detected
+          if (contentNudge && !hasActiveSmartNotif) {
+            return (
+              <ContentDetectionNudge
+                sectionId={contentNudge.sectionId}
+                sectionName={contentNudge.sectionName}
+                sectionText={contentNudge.sectionText}
+                flags={contentNudge.flags}
+                documentTitle={documentTitle}
+                onDismiss={() => setContentNudge(null)}
+              />
+            )
+          }
+
+          // Marginal note nudge — previous reader left a note on this page
+          if (pageNoteNudge && !hasActiveSmartNotif && !contentNudge) {
+            return (
+              <div className="fixed bottom-6 right-6 z-[185] flex items-center gap-2 animate-in slide-in-from-right-4 fade-in duration-200">
+                <button
+                  onClick={() => { setShowMarginalNotes(true); setPageNoteNudge(null) }}
+                  className="flex items-center gap-2 pl-2.5 pr-3.5 py-2 rounded-full text-white text-[12.5px] font-medium shadow-lg hover:opacity-90 transition-opacity active:scale-95"
+                  style={{ background: 'linear-gradient(135deg, #7c3aed 0%, #4f46e5 100%)', boxShadow: '0 4px 16px rgba(124,58,237,0.28)', letterSpacing: '-0.01em', maxWidth: 260 }}
+                >
+                  <svg className="w-3.5 h-3.5 opacity-90 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M7 8h10M7 12h4m1 8l-4-4H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-3l-4 4z" />
+                  </svg>
+                  <span className="truncate">
+                    {pageNoteNudge.count === 1
+                      ? `${pageNoteNudge.author}: note on p.${pageNoteNudge.page}`
+                      : `${pageNoteNudge.count} reader notes on p.${pageNoteNudge.page}`}
+                  </span>
+                  <svg className="w-3.5 h-3.5 opacity-70 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" />
+                  </svg>
+                </button>
+                <button
+                  onClick={() => setPageNoteNudge(null)}
+                  className="w-7 h-7 rounded-full bg-white border border-slate-200 flex items-center justify-center text-slate-400 hover:text-slate-600 shadow-sm transition-colors shrink-0"
+                >
+                  <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+                  </svg>
+                </button>
+              </div>
+            )
+          }
+
+          return null
+        })()}
+
+        {/* ── Inline Definition Popup ─────────────────────────────────────── */}
+        <AnimatePresence>
+          {defPopup && (
+            <motion.div
+              key="def-popup"
+              initial={{ opacity: 0, scale: 0.95, y: 6 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.95, y: 6 }}
+              transition={{ duration: 0.14, ease: [0.4, 0, 0.2, 1] }}
+              style={{
+                position: 'fixed',
+                left: Math.min(defPopup.x - 160, window.innerWidth - 340),
+                top: defPopup.y - 10,
+                width: 320,
+                zIndex: 99999,
+                fontFamily: "'Google Sans', Roboto, Arial, sans-serif",
+                background: '#fff',
+                borderRadius: 8,
+                border: '1px solid #DADCE0',
+                boxShadow: '0 1px 3px 0 rgba(60,64,67,.3), 0 4px 8px 3px rgba(60,64,67,.15)',
+                overflow: 'hidden',
+              }}
+            >
+              {/* Colored top strip by type */}
+              <div style={{
+                height: 3,
+                background: defPopup.type === 'prerequisite' ? '#7B1FA2' : defPopup.type === 'concept' ? '#188038' : '#1a73e8',
+              }} />
+              <div style={{ padding: '12px 14px 14px' }}>
+                {/* Header row */}
+                <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: 8 }}>
+                  <div>
+                    <p style={{ fontSize: 13, fontWeight: 600, color: '#202124', marginBottom: 2, lineHeight: '18px' }}>
+                      {defPopup.term}
+                    </p>
+                    <span style={{
+                      display: 'inline-block',
+                      fontSize: 10,
+                      fontWeight: 600,
+                      letterSpacing: '0.05em',
+                      textTransform: 'uppercase',
+                      color: defPopup.type === 'prerequisite' ? '#7B1FA2' : defPopup.type === 'concept' ? '#188038' : '#1a73e8',
+                      background: defPopup.type === 'prerequisite' ? '#F3E8FF' : defPopup.type === 'concept' ? '#E6F4EA' : '#E8F0FE',
+                      padding: '2px 7px',
+                      borderRadius: 100,
+                    }}>
+                      {defPopup.type === 'prerequisite' ? 'Prerequisite' : defPopup.type === 'concept' ? 'Key Concept' : 'Definition'}
+                    </span>
+                  </div>
+                  <button
+                    onClick={() => setDefPopup(null)}
+                    style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#9AA0A6', padding: 2, flexShrink: 0, marginLeft: 8 }}
+                    onMouseEnter={e => (e.currentTarget.style.color = '#5F6368')}
+                    onMouseLeave={e => (e.currentTarget.style.color = '#9AA0A6')}
+                  >
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round">
+                      <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
+                    </svg>
+                  </button>
+                </div>
+                {/* Short def */}
+                <p style={{ fontSize: 12, color: '#5F6368', lineHeight: '18px', marginBottom: 8 }}>
+                  {defPopup.shortDef}
+                </p>
+                {/* Divider */}
+                <div style={{ height: 1, background: '#F1F3F4', marginBottom: 8 }} />
+                {/* Full def */}
+                <p style={{ fontSize: 12, color: '#3C4043', lineHeight: '19px' }}>
+                  {defPopup.fullDef}
+                </p>
+              </div>
+            </motion.div>
+          )}
+        </AnimatePresence>
+
+        {/* ── Unified notification stack ─────────────────────────────────────────
+             All ambient nudges share one slot: bottom-6 right-6.
+             Priority order (highest first): smart-notification > contentNudge > pageNoteNudge > implicitHelp chip.
+             The smart notification renders here; lower-priority nudges render below only when this is empty.
+        ──────────────────────────────────────────────────────────────────────── */}
+
+        {/* Smart Notifications from Agent 7 — compact pill, never a wide card */}
         <AnimatePresence>
           {smartNotifications.length > 0 && (
-            <div className="fixed bottom-32 right-8 z-[100] flex flex-col items-end space-y-4 pointer-events-none">
+            <div className="fixed bottom-6 right-6 z-[210] flex flex-col items-end gap-2 pointer-events-none">
               {smartNotifications
                 .filter(n => !dismissedNotifications.has(n.id))
                 .filter(n => {
-                  // Strict User Targeting Logic
                   if (n.targetUserId === userId) return true
                   if (n.targetUserIds && n.targetUserIds.includes(userId)) return true
                   return false
                 })
-                .slice(-1) // Only show the verified latest context
-                .map((notif, idx) => (
+                .slice(-1)
+                .map((notif) => (
                   <motion.div
                     key={notif.id}
-                    initial={{ opacity: 0, y: 50, scale: 0.9 }}
-                    animate={{ opacity: 1, y: 0, scale: 1 }}
-                    exit={{ opacity: 0, y: 20, scale: 0.95 }}
-                    transition={{ type: 'spring', damping: 25, stiffness: 300 }}
-                    className="pointer-events-auto bg-white/95 backdrop-blur-xl border border-white/50 shadow-[0_8px_32px_rgba(0,0,0,0.12)] rounded-[28px] p-1 pr-1.5 flex items-center gap-3 max-w-md w-auto overflow-hidden ring-1 ring-black/5"
+                    initial={{ opacity: 0, x: 40, scale: 0.95 }}
+                    animate={{ opacity: 1, x: 0, scale: 1 }}
+                    exit={{ opacity: 0, x: 40, scale: 0.95 }}
+                    transition={{ type: 'spring', damping: 26, stiffness: 320 }}
+                    className="pointer-events-auto flex items-center gap-2"
                   >
-                    {/* Icon Container */}
-                    <div className="w-10 h-10 rounded-full bg-gradient-to-br from-indigo-500 via-purple-500 to-pink-500 flex items-center justify-center shrink-0 shadow-sm ml-1">
-                      <Sparkles className="w-5 h-5 text-white" />
-                    </div>
-
-                    {/* Content */}
-                    <div className="flex flex-col py-2 px-1 min-w-[200px]">
-                      <h4 className="text-sm font-semibold text-gray-900 leading-tight">
-                        {notif.title}
-                      </h4>
-                      <p className="text-xs text-gray-500 mt-0.5 leading-snug">
-                        {notif.message}
-                      </p>
-                    </div>
-
-                    {/* Actions */}
-                    <div className="flex items-center gap-1 pl-2 border-l border-gray-100 h-full py-1">
+                    {/* Pill button */}
+                    <button
+                      onClick={() => handleNotificationAction(notif)}
+                      className="flex items-center gap-2 pl-2.5 pr-3.5 py-2 rounded-full text-white text-[12.5px] font-medium shadow-lg transition-opacity hover:opacity-90 active:scale-95"
+                      style={{
+                        background: 'linear-gradient(135deg, #4f46e5 0%, #7c3aed 100%)',
+                        boxShadow: '0 4px 16px rgba(79,70,229,0.32)',
+                        maxWidth: 280,
+                        letterSpacing: '-0.01em',
+                      }}
+                    >
+                      <Sparkles className="w-3.5 h-3.5 opacity-80 shrink-0" />
+                      <span className="truncate">{notif.title}</span>
                       {notif.actionButton && (
-                        <button
-                          onClick={() => handleNotificationAction(notif)}
-                          className="h-8 px-4 rounded-full bg-gray-900 text-white text-xs font-medium hover:bg-gray-800 transition-all shadow-sm active:scale-95 whitespace-nowrap"
-                        >
+                        <span className="ml-1 px-2 py-0.5 rounded-full bg-white/20 text-[11px] font-semibold whitespace-nowrap">
                           {notif.actionButton.label}
-                        </button>
+                        </span>
                       )}
+                    </button>
 
-                      {notif.secondaryButton ? (
-                        <button
-                          onClick={() => {
-                            if (notif.secondaryButton?.action === 'dismiss-invitation') {
-                              handleNotificationAction({
-                                ...notif,
-                                actionButton: { ...notif.secondaryButton, action: 'dismiss-invitation' }
-                              })
-                            } else {
-                              setDismissedNotifications(prev => new Set(prev).add(notif.id))
-                              setSmartNotifications(prev => prev.filter(n => n.id !== notif.id))
-                            }
-                          }}
-                          className="h-8 px-3 rounded-full text-gray-500 hover:bg-gray-100 text-xs font-medium transition-colors"
-                        >
-                          {notif.secondaryButton.label}
-                        </button>
-                      ) : (
-                        <button
-                          onClick={() => {
-                            setDismissedNotifications(prev => new Set(prev).add(notif.id))
-                            setSmartNotifications(prev => prev.filter(n => n.id !== notif.id))
-                          }}
-                          className="w-8 h-8 rounded-full flex items-center justify-center text-gray-400 hover:text-gray-600 hover:bg-gray-50 transition-colors"
-                        >
-                          <X className="w-4 h-4" />
-                        </button>
-                      )}
-                    </div>
+                    {/* Dismiss */}
+                    <button
+                      onClick={() => {
+                        setDismissedNotifications(prev => new Set(prev).add(notif.id))
+                        setSmartNotifications(prev => prev.filter(n => n.id !== notif.id))
+                      }}
+                      className="w-7 h-7 rounded-full bg-white border border-slate-200 flex items-center justify-center text-slate-400 hover:text-slate-600 shadow-sm transition-colors shrink-0"
+                    >
+                      <X className="w-3.5 h-3.5" />
+                    </button>
                   </motion.div>
                 ))}
             </div>
@@ -7329,6 +8839,130 @@ ${documentContent}
 
 
 
+        {/* Annotation Divergence Banner */}
+        {divergenceBanner && (
+          <div className="fixed top-4 left-1/2 -translate-x-1/2 z-[200] w-[540px] max-w-[94vw]">
+            <div className="bg-white border border-violet-200 rounded-2xl shadow-2xl overflow-hidden">
+              {/* Header */}
+              <div className="flex items-center gap-2.5 px-4 py-2.5 bg-gradient-to-r from-violet-50 to-indigo-50 border-b border-violet-100">
+                <div className="w-5 h-5 rounded-md bg-violet-500 flex items-center justify-center shrink-0">
+                  <AlertCircle className="w-3 h-3 text-white" />
+                </div>
+                <p className="text-[11px] font-bold text-violet-700 uppercase tracking-widest flex-1">A3 · Annotation Divergence</p>
+                <button onClick={() => setDivergenceBanner(null)} className="w-6 h-6 rounded-full flex items-center justify-center text-slate-400 hover:text-slate-600 hover:bg-slate-100 transition-colors">
+                  <X className="w-3.5 h-3.5" />
+                </button>
+              </div>
+
+              {/* Who read it how — the key signal, shown prominently */}
+              <div className="px-4 pt-3 pb-2 flex items-center gap-3">
+                <div className="flex-1 flex items-center gap-2">
+                  <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-amber-50 border border-amber-200 text-amber-800 text-[12px] font-semibold">
+                    <span className="w-4 h-4 rounded-full bg-amber-400 text-white text-[9px] font-bold flex items-center justify-center shrink-0">
+                      {divergenceBanner.localUserName[0]?.toUpperCase()}
+                    </span>
+                    {divergenceBanner.localUserName}: <em className="font-normal">{divergenceBanner.localReason}</em>
+                  </span>
+                  <span className="text-slate-300 text-sm font-light">vs</span>
+                  <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-indigo-50 border border-indigo-200 text-indigo-800 text-[12px] font-semibold">
+                    <span className="w-4 h-4 rounded-full bg-indigo-500 text-white text-[9px] font-bold flex items-center justify-center shrink-0">
+                      {divergenceBanner.peerUserName[0]?.toUpperCase()}
+                    </span>
+                    {divergenceBanner.peerUserName}: <em className="font-normal">{divergenceBanner.peerReason}</em>
+                  </span>
+                </div>
+              </div>
+
+              {/* Grounding quote */}
+              {divergenceBanner.groundingQuote && (
+                <div className="mx-4 mb-2 px-3 py-2 bg-slate-50 border-l-3 border-violet-300 rounded-r-lg">
+                  <p className="text-[11px] text-slate-600 italic leading-relaxed line-clamp-2">
+                    "{divergenceBanner.groundingQuote.slice(0, 160)}{divergenceBanner.groundingQuote.length > 160 ? '…' : ''}"
+                  </p>
+                </div>
+              )}
+
+              {/* A3 debate prompt */}
+              <div className="px-4 pb-3">
+                <p className="text-[12px] text-slate-700 leading-snug">{divergenceBanner.prompt}</p>
+              </div>
+
+              {/* Action row */}
+              <div className="px-4 pb-3 flex justify-end gap-2">
+                <button onClick={() => setDivergenceBanner(null)} className="px-3 py-1.5 rounded-lg text-slate-500 hover:bg-slate-50 text-[12px] font-medium transition-colors">
+                  Dismiss
+                </button>
+                <div className="flex gap-2 shrink-0">
+                  <button
+                    onClick={() => {
+                      if (!divergenceBanner) return
+
+                      // Resolve peer identity — look up by name in live collaborators list
+                      const peer = collaborators.find(c =>
+                        c.name === divergenceBanner.peerUserName &&
+                        (c.userId || c.id) !== userId
+                      )
+                      const peerId = peer ? (peer.userId || peer.id) : divergenceBanner.peerUserName
+                      const peerName = divergenceBanner.peerUserName
+
+                      // Resolve section
+                      const debateSec = pdfSectionsRef.current.find(s => s.heading.id === divergenceBanner.sectionId)
+                        ?? pdfSectionsRef.current.find(s => s.startPage <= currentPage && s.endPage >= currentPage)
+                      const debateSecName = debateSec?.heading.text ?? `Page ${currentPage}`
+                      const debateSecText = (debateSec
+                        ? Array.from({ length: Math.min(debateSec.endPage - debateSec.startPage + 1, 4) }, (_, i) => pageTextsRef.current.get(debateSec.startPage + i) ?? '').join('\n\n')
+                        : (pageTextsRef.current.get(currentPage) ?? documentContentRef.current)
+                      ).slice(0, 4000)
+
+                      // Set chat data with full divergence context
+                      setPeerChatData({
+                        peerId,
+                        peerName,
+                        sectionId: divergenceBanner.sectionId,
+                        sectionName: debateSecName,
+                        sectionText: debateSecText,
+                        sharedPassage: divergenceBanner.groundingQuote || divergenceBanner.sharedPassage,
+                        myReason: divergenceBanner.localReason,
+                        peerReason: divergenceBanner.peerReason,
+                        myDsScore: currentDsRef.current,
+                        routingReason: 'A3 · Annotation divergence detected',
+                      })
+
+                      // Seed the A3 debate prompt as the opening message
+                      setPeerChatMessages([{
+                        fromUserId: 'ai-facilitator',
+                        fromUserName: 'A3 · Discussion Facilitator',
+                        message: divergenceBanner.prompt,
+                        timestamp: Date.now(),
+                        documentId,
+                        sectionId: divergenceBanner.sectionId,
+                      }])
+
+                      setPeerChatOpen(true)
+                      setDivergenceBanner(null)
+
+                      // Also send the peer a chat invitation so they get notified
+                      if (peer) {
+                        broadcastPeerInvitation({
+                          fromUserId: String(userId),
+                          fromUserName: userName,
+                          toUserId: String(peerId),
+                          toUserName: peerName,
+                          sectionId: divergenceBanner.sectionId,
+                          documentId,
+                        })
+                      }
+                    }}
+                    className="px-4 py-1.5 rounded-lg bg-violet-600 hover:bg-violet-700 text-white text-[12px] font-semibold transition-colors shadow-sm"
+                  >
+                    Open debate →
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+
         {/* Smart Help Panel */}
         <SmartHelpPanel
           isOpen={showHelpPanel}
@@ -7337,10 +8971,11 @@ ${documentContent}
           sectionName={helpPanelContext.sectionName || 'This Section'}
           userId={userId}
           userName={userName}
-          availablePeers={getAvailablePeers()}
+          availablePeers={availablePeersComputed}
           documentId={documentId}
           sectionId={helpPanelContext.confusedHighlights?.[0]?.sectionId}
-          sectionText={helpPanelContext.sectionText} // ✅ Pass extracted text
+          sectionText={helpPanelContext.sectionText}
+          initialQuestion={helpPanelContext.initialQuestion}
           onSendInvitation={(peerId, peerName) => {
             const sectionId = helpPanelContext.confusedHighlights?.[0]?.sectionId || 'section-page-1'
             openPeerChat(peerId, peerName, sectionId)
@@ -7351,46 +8986,385 @@ ${documentContent}
 
 
 
-        {/* Floating Peer Chat Window (Google Style) */}
+        {/* ── Peer Chat Window ─────────────────────────────────────────────── */}
         <AnimatePresence>
           {peerChatOpen && peerChatData && (
             <motion.div
-              initial={{ opacity: 0, y: 30, scale: 0.95 }}
+              initial={{ opacity: 0, y: 24, scale: 0.97 }}
               animate={{ opacity: 1, y: 0, scale: 1 }}
-              exit={{ opacity: 0, y: 20, scale: 0.95 }}
-              transition={{ type: 'spring', stiffness: 300, damping: 28 }}
-              className="fixed bottom-0 right-16 z-[150] w-[360px] h-[500px] bg-white rounded-t-2xl shadow-[0_4px_24px_rgba(0,0,0,0.15)] ring-1 ring-gray-200 overflow-hidden flex flex-col"
+              exit={{ opacity: 0, y: 16, scale: 0.97 }}
+              transition={{ type: 'spring', stiffness: 340, damping: 30 }}
+              className="fixed bottom-0 right-16 z-[150] w-[400px] flex flex-col bg-white rounded-t-2xl shadow-[0_8px_32px_rgba(0,0,0,0.14)] ring-1 ring-slate-200 overflow-hidden"
+              style={{ maxHeight: '560px' }}
             >
-              <ChatSidebar
-                documentId={documentId}
-                currentUser={{ id: userId, name: userName, color: '#1a73e8' }}
-                isOpen={true}
-                onClose={() => setPeerChatOpen(false)}
-                topic={`Chat with ${peerChatData.peerName}`}
-                collaboration={{
-                  chatMessages: peerChatMessages.map(msg => ({
-                    id: String(msg.timestamp),
-                    documentId: msg.documentId,
-                    userId: msg.fromUserId,
-                    userName: msg.fromUserName,
-                    content: msg.message,
-                    type: (msg.fromUserId === 'ai-facilitator' || msg.fromUserId === 'ai-assistant') ? 'AI_RESPONSE' : 'TEXT',
-                    timestamp: new Date(msg.timestamp).toISOString()
-                  })),
-                  typingUsers: [],
-                  activeUsers: [peerChatData.peerName]
-                }}
-                onSendMessage={handlePeerChatMessageSend}
-              />
+              {/* Header — section + peer identity */}
+              <div className="shrink-0 bg-white border-b border-slate-100">
+                {/* Top row: title + close */}
+                <div className="flex items-center gap-2.5 px-4 pt-3 pb-2">
+                  <div className="w-7 h-7 rounded-lg bg-gradient-to-br from-indigo-500 to-violet-600 flex items-center justify-center shrink-0">
+                    <MessageSquare className="w-3.5 h-3.5 text-white" />
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <p className="text-[13px] font-semibold text-slate-900 leading-tight truncate">
+                      {peerChatData.peerName}
+                    </p>
+                    <p className="text-[11px] text-slate-400 truncate">{peerChatData.sectionName}</p>
+                  </div>
+                  {/* D_s badge */}
+                  {peerChatData.myDsScore != null && (
+                    <div className="shrink-0 px-2 py-0.5 rounded-full text-[10px] font-bold tracking-wide border"
+                      style={{
+                        backgroundColor: peerChatData.myDsScore >= 0.88 ? '#fef2f2' : '#fffbeb',
+                        borderColor:     peerChatData.myDsScore >= 0.88 ? '#fca5a5' : '#fde68a',
+                        color:           peerChatData.myDsScore >= 0.88 ? '#dc2626' : '#b45309',
+                      }}>
+                      D_s {peerChatData.myDsScore.toFixed(2)}
+                    </div>
+                  )}
+                  <button
+                    onClick={() => {
+                      setPeerChatOpen(false)
+                      if (activeCaptureIdRef.current && peerChatData) {
+                        const captureId = activeCaptureIdRef.current
+                        setTimeout(() => {
+                          setExplanationCapture({
+                            captureId,
+                            helperName: peerChatData.peerName,
+                            sectionName: peerChatData.sectionName,
+                            dsAtStart: currentDsRef.current,
+                            role: 'helpee',
+                          })
+                        }, 10000)
+                      }
+                    }}
+                    className="shrink-0 w-6 h-6 rounded-full flex items-center justify-center text-slate-400 hover:text-slate-700 hover:bg-slate-100 transition-colors"
+                  >
+                    <X className="w-3.5 h-3.5" />
+                  </button>
+                </div>
+
+                {/* Shared passage + divergence context — only shown when available */}
+                {(peerChatData.sharedPassage || (peerChatData.myReason && peerChatData.peerReason)) && (
+                  <div className="mx-3 mb-2.5 rounded-xl bg-amber-50 border border-amber-200 px-3 py-2">
+                    {peerChatData.sharedPassage && (
+                      <p className="text-[11px] text-slate-600 italic leading-relaxed line-clamp-2 mb-1.5">
+                        "{peerChatData.sharedPassage.slice(0, 140)}{peerChatData.sharedPassage.length > 140 ? '…' : ''}"
+                      </p>
+                    )}
+                    {peerChatData.myReason && peerChatData.peerReason && peerChatData.myReason !== peerChatData.peerReason && (
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <span className="text-[10px] font-semibold text-slate-500 uppercase tracking-wide">Divergence:</span>
+                        <span className="text-[11px] px-1.5 py-0.5 rounded-md bg-white border border-amber-200 text-amber-800 font-medium">
+                          You: {peerChatData.myReason}
+                        </span>
+                        <span className="text-[10px] text-slate-400">vs</span>
+                        <span className="text-[11px] px-1.5 py-0.5 rounded-md bg-white border border-violet-200 text-violet-800 font-medium">
+                          {peerChatData.peerName}: {peerChatData.peerReason}
+                        </span>
+                      </div>
+                    )}
+                    {peerChatData.myReason && peerChatData.peerReason && peerChatData.myReason === peerChatData.peerReason && (
+                      <p className="text-[11px] text-amber-700 font-medium">
+                        Both marked as <span className="font-semibold">{peerChatData.myReason}</span> — shared confusion signal
+                      </p>
+                    )}
+                  </div>
+                )}
+
+                {/* Routing reason chip */}
+                {peerChatData.routingReason && !(peerChatData.sharedPassage || (peerChatData.myReason && peerChatData.peerReason)) && (
+                  <div className="mx-3 mb-2.5">
+                    <p className="text-[10px] text-slate-400 italic">{peerChatData.routingReason}</p>
+                  </div>
+                )}
+              </div>
+
+              {/* Chat messages */}
+              <div className="flex-1 overflow-y-auto px-3 py-2 space-y-2 min-h-0" style={{ maxHeight: '320px' }}>
+                {peerChatMessages.length === 0 && (
+                  <div className="flex items-center justify-center h-20">
+                    <div className="flex gap-1">
+                      {[0, 0.15, 0.3].map((d, i) => (
+                        <div key={i} className="w-1.5 h-1.5 bg-indigo-300 rounded-full animate-bounce" style={{ animationDelay: `${d}s` }} />
+                      ))}
+                    </div>
+                  </div>
+                )}
+                {peerChatMessages.map((msg, i) => {
+                  const isMe = msg.fromUserId === userId
+                  const isAI = msg.fromUserId === 'ai-facilitator' || msg.fromUserId === 'ai-assistant'
+                  return (
+                    <div key={i} className={`flex flex-col ${isMe ? 'items-end' : 'items-start'}`}>
+                      {!isMe && (
+                        <p className="text-[10px] font-semibold text-slate-400 px-1 mb-0.5">
+                          {isAI ? 'A3 · Facilitator' : msg.fromUserName}
+                        </p>
+                      )}
+                      <div className={`px-3 py-2 rounded-2xl text-[13px] leading-relaxed max-w-[88%] whitespace-pre-wrap break-words ${
+                        isMe
+                          ? 'bg-indigo-600 text-white rounded-tr-sm'
+                          : isAI
+                            ? 'bg-slate-50 border border-slate-200 text-slate-800 rounded-tl-sm'
+                            : 'bg-slate-100 text-slate-800 rounded-tl-sm'
+                      }`}>
+                        {isAI && (
+                          <div className="flex items-center gap-1 mb-1 text-[10px] font-bold text-indigo-500 uppercase tracking-widest">
+                            <Brain className="w-2.5 h-2.5" /> CoRead
+                          </div>
+                        )}
+                        {msg.message}
+                      </div>
+                    </div>
+                  )
+                })}
+              </div>
+
+              {/* Input */}
+              <div className="shrink-0 px-3 py-2.5 border-t border-slate-100 bg-white">
+                <div className="flex items-center gap-2 bg-slate-50 rounded-xl px-3 py-1.5 border border-slate-200 focus-within:border-indigo-300 focus-within:ring-1 focus-within:ring-indigo-200 transition-all">
+                  <input
+                    className="flex-1 bg-transparent text-[13px] text-slate-800 placeholder:text-slate-400 outline-none"
+                    placeholder={`Message ${peerChatData.peerName}… or tag @AI`}
+                    onKeyDown={e => {
+                      if (e.key === 'Enter' && !e.shiftKey) {
+                        e.preventDefault()
+                        const v = (e.target as HTMLInputElement).value.trim()
+                        if (!v) return
+                        handlePeerChatMessageSend(v);
+                        // If @AI tag — ask CoRead scoped to section text
+                        if (v.toLowerCase().includes('@ai')) {
+                          const question = v.replace(/@ai/gi, '').trim()
+                          fetch('/api/ai-help', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({
+                              question,
+                              documentContent: peerChatData.sectionText || documentContentRef.current,
+                              documentTitle: peerChatData.sectionName,
+                              sectionName: peerChatData.sectionName,
+                            }),
+                          }).then(r => r.json()).then(data => {
+                            const answer = data.response?.answer || data.answer || ''
+                            if (answer) {
+                              setPeerChatMessages(prev => [...prev, {
+                                fromUserId: 'ai-facilitator',
+                                fromUserName: 'CoRead',
+                                message: answer,
+                                timestamp: Date.now(),
+                                documentId,
+                                sectionId: peerChatData.sectionId,
+                              }])
+                            }
+                          }).catch(() => {})
+                        }
+                        ;(e.target as HTMLInputElement).value = ''
+                      }
+                    }}
+                  />
+                  <Send className="w-3.5 h-3.5 text-slate-300 shrink-0" />
+                </div>
+                <p className="text-[10px] text-slate-400 mt-1 px-1">Tag @AI to ask CoRead · scoped to {peerChatData.sectionName}</p>
+              </div>
             </motion.div>
           )}
         </AnimatePresence>
-        <SystemFlowVisualizer
-          summary={summary}
-          entries={wikiEntries}
-          insights={wikiInsights}
-          activities={wikiActivities}
+        {/* Async marginal notes sidebar */}
+        {showMarginalNotes && (
+          <div className="fixed top-0 right-0 h-full w-80 z-[9000] shadow-xl border-l border-slate-100">
+            <MarginalNotesSidebar
+              isOpen={showMarginalNotes}
+              onClose={() => setShowMarginalNotes(false)}
+              documentId={documentId}
+              userId={userId}
+              userName={userName}
+              currentPage={currentPage}
+              currentSectionName={(() => {
+                const s = pdfSectionsRef.current.find(s => s.startPage <= currentPage && s.endPage >= currentPage)
+                return s?.heading.text
+              })()}
+              selectedPassage={marginalNotePassage}
+              socket={socketInstance}
+            />
+          </div>
+        )}
+
+        {/* Feature 7: Knowledge gap warning — upstream concept dependency alert */}
+        {knowledgeGapWarning && (
+          <div className="absolute top-2 left-2 right-2 z-[8100] pointer-events-none">
+            <div className="pointer-events-auto mx-auto max-w-lg bg-amber-50 border border-amber-200 rounded-xl shadow-md px-4 py-3 flex items-start gap-3">
+              <div className="w-7 h-7 rounded-lg bg-amber-100 flex items-center justify-center shrink-0 mt-0.5">
+                <Brain className="w-3.5 h-3.5 text-amber-600" />
+              </div>
+              <div className="flex-1 min-w-0">
+                <p className="text-[12px] font-semibold text-amber-800">
+                  {knowledgeGapWarning.otherReadersCount > 1
+                    ? `${knowledgeGapWarning.otherReadersCount} readers confused here were also confused about the same concept in "${knowledgeGapWarning.fromSectionName}"`
+                    : `This section builds on "${knowledgeGapWarning.fromSectionName}"`}
+                </p>
+                <p className="text-[11px] text-amber-700 mt-0.5 leading-relaxed">{knowledgeGapWarning.conceptBridge}</p>
+                <p className="text-[10px] text-amber-600 mt-1">Did you fully follow that section?</p>
+              </div>
+              <button
+                onClick={() => setKnowledgeGapWarning(null)}
+                className="shrink-0 p-0.5 text-amber-400 hover:text-amber-600"
+              >
+                <X className="w-3.5 h-3.5" />
+              </button>
+            </div>
+          </div>
+        )}
+
+        {/* Feature 4: Consensus banner — shown to new readers when prior group agreed on meaning */}
+        {showConsensusBanner && sectionConsensus.length > 0 && (
+          <div className="absolute top-2 left-0 right-0 z-[8000] pointer-events-none px-2">
+            <div className="pointer-events-auto">
+              <ConsensusBanner
+                checkpoints={sectionConsensus}
+                onDismiss={() => setShowConsensusBanner(false)}
+              />
+            </div>
+          </div>
+        )}
+
+        {/* Feature 4: Consensus prompt — A3 asks group to capture what they agreed */}
+        <ConsensusPrompt
+          isOpen={showConsensusPrompt}
+          sectionName={(() => {
+            const s = pdfSectionsRef.current.find(s => s.startPage <= currentPage && s.endPage >= currentPage)
+            return s?.heading.text || `Page ${currentPage}`
+          })()}
+          sectionId={(() => {
+            const s = pdfSectionsRef.current.find(s => s.startPage <= currentPage && s.endPage >= currentPage)
+            return s?.heading.id || `page-${currentPage}`
+          })()}
+          passageText={consensusPassage || selectedText || ''}
+          paperId={documentId}
+          sessionId={`${documentId}-${userId}`}
+          participants={(connectedUsers || []).map((u: { userId: string; userName: string }) => ({ userId: u.userId, userName: u.userName }))}
+          onClose={() => setShowConsensusPrompt(false)}
+          onSaved={(checkpoint) => {
+            setSectionConsensus(prev => [checkpoint, ...prev])
+            setShowConsensusBanner(true)
+          }}
         />
+
+        {/* Feature 2: Explanation capture prompt — fires after peer chat ends */}
+        <ExplanationCapturePrompt
+          data={explanationCapture}
+          currentDs={currentDsRef.current}
+          onDismiss={() => setExplanationCapture(null)}
+          onSubmit={(resolved, rating, summary) => {
+            if (!explanationCapture) return
+            fetch('/api/explanation-capture', {
+              method: 'PATCH',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                captureId: explanationCapture.captureId,
+                dsAtEnd: currentDsRef.current,
+                resolved,
+                helpeeRating: rating,
+                ...(summary && { helperSummary: summary }),
+              }),
+            }).catch(() => {})
+            activeCaptureIdRef.current = null
+            setExplanationCapture(null)
+          }}
+        />
+
+        {/* Section complexity badge — proactive, shown on entering a dense section */}
+        {showComplexityBadge && sectionComplexity && (
+          <div className="absolute top-4 left-1/2 -translate-x-1/2 z-[8500] w-full max-w-sm px-3">
+            <SectionComplexityBadge
+              complexity={sectionComplexity}
+              onDismiss={() => setShowComplexityBadge(false)}
+              onRequestMathWalkthrough={() => {
+                setShowComplexityBadge(false)
+                // Dispatch custom event that SmartHelpPanel listens to
+                window.dispatchEvent(new CustomEvent('coread:request-math-walkthrough', {
+                  detail: { sectionId: sectionComplexity.sectionId, sectionName: sectionComplexity.sectionName }
+                }))
+              }}
+              onRequestPrerequisites={() => {
+                setShowComplexityBadge(false)
+                window.dispatchEvent(new CustomEvent('coread:request-prerequisites', {
+                  detail: { sectionName: sectionComplexity.sectionName }
+                }))
+              }}
+            />
+          </div>
+        )}
+
+        {/* Cohort benchmark banner — normalizes struggle, shown at bottom */}
+        {showCohortBanner && cohortBenchmark && (
+          <div className="absolute bottom-4 left-1/2 -translate-x-1/2 z-[8400] w-full max-w-md px-3">
+            <CohortBenchmarkBanner
+              benchmark={cohortBenchmark}
+              onDismiss={() => setShowCohortBanner(false)}
+              onRequestHelp={() => {
+                setShowCohortBanner(false)
+                // Trigger smart help panel
+                window.dispatchEvent(new CustomEvent('agent7:notification', {
+                  detail: { type: 'struggle-awareness', message: 'This section has a high struggle rate — would you like AI help or peer support?', priority: 'medium' }
+                }))
+              }}
+            />
+          </div>
+        )}
+
+        {/* Metacognitive prompt — shown before AI explanation at tau_fire */}
+        {showMetacognitive && (
+          <div className="absolute inset-0 z-[9200] flex items-center justify-center bg-black/20 backdrop-blur-[1px] p-4">
+            <MetacognitivePrompt
+              sectionName={(() => {
+                const s = pdfSectionsRef.current.find(s => s.startPage <= currentPage && s.endPage >= currentPage)
+                return s?.heading.text || `Page ${currentPage}`
+              })()}
+              passageText={pendingPassageForExplanation}
+              prompt={metacognitivePrompt}
+              loading={metacognitiveLoading}
+              onSubmitReflection={(reflection) => {
+                setShowMetacognitive(false)
+                // Pass reflection to A6 as metacognitive context
+                window.dispatchEvent(new CustomEvent('coread:metacognitive-reflection', {
+                  detail: { reflection, passageText: pendingPassageForExplanation }
+                }))
+              }}
+              onSkip={() => {
+                setShowMetacognitive(false)
+                window.dispatchEvent(new CustomEvent('coread:metacognitive-reflection', {
+                  detail: { reflection: '', passageText: pendingPassageForExplanation }
+                }))
+              }}
+              onDismiss={() => setShowMetacognitive(false)}
+            />
+          </div>
+        )}
+
+        {/* Critique layer panel — slides in from right alongside marginal notes */}
+        {showCritiquePanel && (
+          <div className="fixed top-0 right-0 h-full w-80 z-[9000] shadow-xl border-l border-slate-100">
+            <CritiqueLayerPanel
+              isOpen={showCritiquePanel}
+              onClose={() => setShowCritiquePanel(false)}
+              documentId={documentId}
+              userId={userId}
+              userName={userName}
+              currentPage={currentPage}
+              selectedPassage={critiquePassage}
+              currentSectionName={(() => {
+                const s = pdfSectionsRef.current.find(s => s.startPage <= currentPage && s.endPage >= currentPage)
+                return s?.heading.text
+              })()}
+            />
+          </div>
+        )}
+
+        {/* Phase I: Session Priming Card — surfaces collective knowledge from prior sessions */}
+        {reflectionSubmitted && sessionMode === 'collaborative' && (
+          <div className="fixed bottom-20 right-4 z-[120] w-[380px] max-h-[60vh] overflow-y-auto">
+            <SessionPrimingCard documentId={documentId} />
+          </div>
+        )}
 
         {/* ✅ NEW: Phase 1 Reflection Intake */}
         <ReflectionIntake
@@ -7420,8 +9394,12 @@ ${documentContent}
               }
             }))
 
-            // ✅ Route to AI system
+            // Route to AI system — transitions to Phase II
             aiCoordinationCore.routeUserAction('reflection-submitted', reflection)
+
+            // Register session in coordination core so Firebase logging is scoped correctly
+            const sessionId = `${documentId}-${Date.now()}`
+            aiCoordinationCore.setSession(sessionId, userId)
           }}
         />
 

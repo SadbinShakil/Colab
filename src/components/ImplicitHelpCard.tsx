@@ -2,705 +2,850 @@
 
 import { useState, useEffect, useRef, useCallback } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
-import { Sparkles, ChevronDown, X, Lightbulb, BookOpen, MessageCircle, Zap, Send, ThumbsUp, ThumbsDown, Star } from 'lucide-react'
+import {
+  X, ChevronRight, Users, BookMarked, Wrench, AlertTriangle,
+  MessageSquare, Send, ThumbsUp, ThumbsDown, Sparkles, Microscope,
+  GitBranch, FileSearch
+} from 'lucide-react'
 
 /**
- * IMPLICIT HELP CARD — Google-quality ambient assistance
+ * ImplicitHelpCard — PhD-level ambient assistance
  *
- * Design philosophy (as a Google Workspace engineer would build it):
+ * Design standard: This appears for researchers who read 10+ papers/week.
+ * It must not patronise. Every word must earn its place.
  *
- * STAGE 0: Silent accumulation — score rising, user sees nothing
- * STAGE 1: Ambient pulse (score ~0.50) — subtle glowing dot, barely visible
- *           → Auto-dismisses if user scrolls away
- * STAGE 2: Suggestion chip (score ~0.65) — "Having trouble with X?" pill  
- *           → One-tap to expand, auto-fades in 15s if ignored
- * STAGE 3: Full AI card (score ~0.80 OR user taps chip)
- *           → LLM-generated insight about the SPECIFIC text
- *           → 3 targeted help options
- *           → Auto-fades in 30s, or when user scrolls past section
+ * Stage 1: Ambient pulse dot — no text, purely a signal
+ * Stage 2: Section-anchored chip — shows the exact section name, not "Page N"
+ * Stage 3: Full card — grounded diagnostic + researcher-grade actions
  *
- * Content behavior:
- * - The card quotes the actual sentence/paragraph you're stuck on
- * - The AI generates a 1-sentence diagnostic: "This section introduces [X],
- *   which typically confuses readers because [Y]."
- * - Then 3 options specific to that content
+ * The full card:
+ *  - Quotes the specific contested/dense claim, not the opening sentence
+ *  - Diagnostic: names the mechanism, points to the tension, cites the exact
+ *    table/equation causing the pause — never generic AI filler
+ *  - Actions calibrated for a researcher:
+ *      Unpack mechanism / Trace prior work / Challenge this claim / Ask a peer
+ *  - Signal provenance: shows what behavioural signals triggered this
+ *  - Peer signal: "2 others paused here" if in collaborative mode
  */
 
 export interface ImplicitHelpTrigger {
-    sectionId: string
-    sectionName: string
-    sectionText: string       // The actual text the user is stuck on
-    confidence: number        // 0.0 → 1.0
-    contributingFactors: string[]
-    stage: 1 | 2 | 3         // Which escalation stage to show
+  sectionId: string
+  sectionName: string
+  sectionText: string
+  confidence: number
+  contributingFactors: string[]
+  stage: 1 | 2 | 3
 }
 
 interface ImplicitHelpCardProps {
-    trigger: ImplicitHelpTrigger | null
-    onDismiss: () => void
-    onHelpChosen: (type: 'explain' | 'example' | 'question', text: string) => void
-    documentTitle?: string
-    documentContent?: string
+  trigger: ImplicitHelpTrigger | null
+  onDismiss: () => void
+  onHelpChosen: (type: 'explain' | 'example' | 'question', text: string) => void
+  documentTitle?: string
+  documentContent?: string
 }
 
-// ─── Stage 1: Ambient Pulse Dot ───────────────────────────────────────────────
+// ─── Stage 1: Ambient Pulse ───────────────────────────────────────────────────
 function AmbientDot({ onClick }: { onClick: () => void }) {
-    return (
-        <motion.button
-            initial={{ scale: 0, opacity: 0 }}
-            animate={{ scale: 1, opacity: 1 }}
-            exit={{ scale: 0, opacity: 0 }}
-            transition={{ type: 'spring', damping: 20, stiffness: 300 }}
-            onClick={onClick}
-            className="fixed bottom-28 right-6 z-[200] w-10 h-10 rounded-full flex items-center justify-center cursor-pointer"
-            style={{
-                background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
-                boxShadow: '0 0 0 0 rgba(102, 126, 234, 0.7)',
-            }}
-            whileHover={{ scale: 1.1 }}
-            whileTap={{ scale: 0.95 }}
-        >
-            {/* Pulsing ring */}
-            <motion.div
-                className="absolute inset-0 rounded-full"
-                style={{ background: 'rgba(102, 126, 234, 0.4)' }}
-                animate={{ scale: [1, 1.6, 1], opacity: [0.7, 0, 0.7] }}
-                transition={{ duration: 2, repeat: Infinity, ease: 'easeInOut' }}
-            />
-            <Sparkles className="w-4 h-4 text-white relative z-10" />
-        </motion.button>
-    )
+  return (
+    <motion.button
+      initial={{ scale: 0, opacity: 0 }}
+      animate={{ scale: 1, opacity: 1 }}
+      exit={{ scale: 0, opacity: 0 }}
+      transition={{ type: 'spring', damping: 20, stiffness: 300 }}
+      onClick={onClick}
+      className="fixed bottom-6 right-6 z-[200] w-9 h-9 rounded-full flex items-center justify-center"
+      style={{
+        background: 'linear-gradient(135deg, #4f46e5 0%, #7c3aed 100%)',
+        boxShadow: '0 0 0 0 rgba(79, 70, 229, 0.5)',
+      }}
+      whileHover={{ scale: 1.1 }}
+      whileTap={{ scale: 0.95 }}
+      title="CoRead detected extended dwell — click to surface analysis"
+    >
+      <motion.div
+        className="absolute inset-0 rounded-full"
+        style={{ background: 'rgba(79,70,229,0.35)' }}
+        animate={{ scale: [1, 1.7, 1], opacity: [0.6, 0, 0.6] }}
+        transition={{ duration: 2.4, repeat: Infinity, ease: 'easeInOut' }}
+      />
+      <Sparkles className="w-3.5 h-3.5 text-white relative z-10" />
+    </motion.button>
+  )
 }
 
-// ─── Stage 2: Suggestion Chip ─────────────────────────────────────────────────
-function SuggestionChip({
-    sectionName,
-    onClick,
-    onDismiss
+// ─── Stage 2: Section Chip ────────────────────────────────────────────────────
+function SectionChip({
+  sectionName,
+  onClick,
+  onDismiss,
 }: {
-    sectionName: string
-    onClick: () => void
-    onDismiss: () => void
+  sectionName: string
+  onClick: () => void
+  onDismiss: () => void
 }) {
-    // Auto-dismiss after 15s
-    useEffect(() => {
-        const t = setTimeout(onDismiss, 15000)
-        return () => clearTimeout(t)
-    }, [onDismiss])
+  useEffect(() => {
+    const t = setTimeout(onDismiss, 18000)
+    return () => clearTimeout(t)
+  }, [onDismiss])
 
-    const shortName = sectionName.length > 28 ? sectionName.slice(0, 28) + '…' : sectionName
+  // Truncate to fit a chip without wrapping
+  const label = sectionName.length > 36 ? sectionName.slice(0, 36) + '…' : sectionName
 
-    return (
+  return (
+    <motion.div
+      initial={{ x: 80, opacity: 0 }}
+      animate={{ x: 0, opacity: 1 }}
+      exit={{ x: 80, opacity: 0 }}
+      transition={{ type: 'spring', damping: 22, stiffness: 280 }}
+      className="fixed bottom-6 right-6 z-[200] flex items-center gap-2"
+    >
+      <motion.button
+        onClick={onClick}
+        whileHover={{ scale: 1.02, y: -1 }}
+        whileTap={{ scale: 0.98 }}
+        className="flex items-center gap-2 pl-3 pr-4 py-2 rounded-full text-white text-[13px] font-medium shadow-lg"
+        style={{
+          background: 'linear-gradient(135deg, #4f46e5 0%, #7c3aed 100%)',
+          boxShadow: '0 4px 18px rgba(79,70,229,0.35)',
+          letterSpacing: '-0.01em'
+        }}
+      >
+        <Microscope className="w-3.5 h-3.5 opacity-80 shrink-0" />
+        <span className="truncate">{label}</span>
+        <ChevronRight className="w-3.5 h-3.5 opacity-60 shrink-0" />
+      </motion.button>
+
+      <motion.button
+        onClick={onDismiss}
+        whileHover={{ scale: 1.1 }}
+        whileTap={{ scale: 0.95 }}
+        className="w-7 h-7 rounded-full bg-gray-100 flex items-center justify-center text-gray-400 hover:text-gray-600 hover:bg-gray-200 transition-colors"
+      >
+        <X className="w-3.5 h-3.5" />
+      </motion.button>
+    </motion.div>
+  )
+}
+
+// ─── Diagnostic loading skeleton ──────────────────────────────────────────────
+function PulseSkeleton({ lines = 2 }: { lines?: number }) {
+  return (
+    <div className="space-y-1.5">
+      {Array.from({ length: lines }).map((_, i) => (
         <motion.div
-            initial={{ x: 80, opacity: 0 }}
-            animate={{ x: 0, opacity: 1 }}
-            exit={{ x: 80, opacity: 0 }}
-            transition={{ type: 'spring', damping: 22, stiffness: 280 }}
-            className="fixed bottom-28 right-6 z-[200] flex items-center gap-2"
-        >
-            <motion.button
-                onClick={onClick}
-                whileHover={{ scale: 1.02, y: -1 }}
-                whileTap={{ scale: 0.98 }}
-                className="flex items-center gap-2.5 pl-3 pr-4 py-2.5 rounded-full text-white text-sm font-medium shadow-lg"
-                style={{
-                    background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
-                    boxShadow: '0 4px 20px rgba(102, 126, 234, 0.4)',
-                    letterSpacing: '-0.01em'
-                }}
-            >
-                <div className="w-6 h-6 rounded-full bg-white/20 flex items-center justify-center shrink-0">
-                    <Sparkles className="w-3.5 h-3.5 text-white" />
-                </div>
-                <span>Need help with <strong>{shortName}</strong>?</span>
-                <ChevronDown className="w-3.5 h-3.5 opacity-70" />
-            </motion.button>
-
-            <motion.button
-                onClick={onDismiss}
-                whileHover={{ scale: 1.1 }}
-                whileTap={{ scale: 0.95 }}
-                className="w-7 h-7 rounded-full bg-gray-100 flex items-center justify-center text-gray-400 hover:text-gray-600 hover:bg-gray-200 transition-colors"
-            >
-                <X className="w-3.5 h-3.5" />
-            </motion.button>
-        </motion.div>
-    )
+          key={i}
+          className="h-3 rounded-full bg-slate-100"
+          style={{ width: i === lines - 1 ? '70%' : '100%' }}
+          animate={{ opacity: [0.5, 1, 0.5] }}
+          transition={{ duration: 1.4, repeat: Infinity, delay: i * 0.1 }}
+        />
+      ))}
+    </div>
+  )
 }
 
-// ─── Stage 3: Full AI Help Card ───────────────────────────────────────────────
+// ─── Stage 3: Full Research Card ──────────────────────────────────────────────
 function FullHelpCard({
-    trigger,
-    onDismiss,
-    onHelpChosen,
-    documentTitle,
-    documentContent
+  trigger,
+  onDismiss,
+  onHelpChosen,
+  documentTitle,
+  documentContent,
 }: {
-    trigger: ImplicitHelpTrigger
-    onDismiss: () => void
-    onHelpChosen: (type: 'explain' | 'example' | 'question', text: string) => void
-    documentTitle?: string
-    documentContent?: string
+  trigger: ImplicitHelpTrigger
+  onDismiss: () => void
+  onHelpChosen: (type: 'explain' | 'example' | 'question', text: string) => void
+  documentTitle?: string
+  documentContent?: string
 }) {
-    const [aiInsight, setAiInsight] = useState<string | null>(null)
-    const [isLoadingInsight, setIsLoadingInsight] = useState(true)
-    const [activeAction, setActiveAction] = useState<string | null>(null)
-    const dismissTimer = useRef<NodeJS.Timeout | null>(null)
+  // ── State ──────────────────────────────────────────────────────────────────
+  const [diagnostic, setDiagnostic] = useState<string | null>(null)
+  const [claimQuote, setClaimQuote] = useState<string | null>(null)
+  const [isLoading, setIsLoading] = useState(true)
 
-    // Inline interaction state
-    const [inlineResponse, setInlineResponse] = useState<string | null>(null)
-    const [isFetchingResponse, setIsFetchingResponse] = useState(false)
-    const [showQuestionInput, setShowQuestionInput] = useState(false)
-    const [questionText, setQuestionText] = useState('')
+  // Focus point selection — when a page has multiple distinct elements
+  interface FocusPoint { id: string; label: string; type: string; description: string }
+  const [focusPoints, setFocusPoints] = useState<FocusPoint[]>([])
+  const [selectedFocus, setSelectedFocus] = useState<FocusPoint | null>(null)
 
-    // Personalization: Remember user's preferred implicit help type
-    const [preferredAction, setPreferredAction] = useState<string | null>(null)
-    const [feedback, setFeedback] = useState<'up' | 'down' | null>(null)
+  const [activeAction, setActiveAction] = useState<string | null>(null)
+  const [responseText, setResponseText] = useState<string | null>(null)
+  const [isFetching, setIsFetching] = useState(false)
+  const [questionInput, setQuestionInput] = useState('')
+  const [showQuestion, setShowQuestion] = useState(false)
+  const [feedback, setFeedback] = useState<'up' | 'down' | null>(null)
 
-    // Load preferred action on mount
-    useEffect(() => {
-        if (typeof window !== 'undefined') {
-            const saved = localStorage.getItem('google_implicit_help_pref')
-            if (saved) setPreferredAction(saved)
-        }
-    }, [])
+  const dismissTimer = useRef<NodeJS.Timeout | null>(null)
 
-    // Smart Fading: auto-dismiss if the user scrolls away significantly
-    useEffect(() => {
-        let scrollCount = 0;
-        const handleWheel = (e: WheelEvent) => {
-            if (Math.abs(e.deltaY) > 10) {
-                scrollCount++
-                if (scrollCount > 25) {
-                    onDismiss()
-                }
-            }
-        }
-        window.addEventListener('wheel', handleWheel, { passive: true })
-        return () => window.removeEventListener('wheel', handleWheel)
-    }, [onDismiss])
+  // ── Auto-dismiss ───────────────────────────────────────────────────────────
+  const resetTimer = useCallback(() => {
+    if (dismissTimer.current) clearTimeout(dismissTimer.current)
+    dismissTimer.current = setTimeout(onDismiss, 90000)
+  }, [onDismiss])
 
-    // Auto-dismiss after 60s if no interaction
-    const resetDismissTimer = useCallback(() => {
-        if (dismissTimer.current) clearTimeout(dismissTimer.current)
-        dismissTimer.current = setTimeout(onDismiss, 60000)
-    }, [onDismiss])
+  useEffect(() => {
+    resetTimer()
+    return () => { if (dismissTimer.current) clearTimeout(dismissTimer.current) }
+  }, [resetTimer])
 
-    useEffect(() => {
-        resetDismissTimer()
-        return () => { if (dismissTimer.current) clearTimeout(dismissTimer.current) }
-    }, [resetDismissTimer])
+  // Dismiss on sustained scroll away (> 30 wheel ticks)
+  useEffect(() => {
+    let count = 0
+    const onWheel = (e: WheelEvent) => {
+      if (Math.abs(e.deltaY) > 10 && ++count > 30) onDismiss()
+    }
+    window.addEventListener('wheel', onWheel, { passive: true })
+    return () => window.removeEventListener('wheel', onWheel)
+  }, [onDismiss])
 
-    // Load AI insight immediately when card appears
-    useEffect(() => {
-        const loadInsight = async () => {
-            setIsLoadingInsight(true)
-            try {
-                // Use sectionText if available (the exact stared-at text), otherwise fall back to full document content
-                const hasSubstantialText = trigger.sectionText && trigger.sectionText.trim().length > 40
+  // ── Load grounded diagnostic ───────────────────────────────────────────────
+  useEffect(() => {
+    const load = async () => {
+      setIsLoading(true)
+      setDiagnostic(null)
+      setClaimQuote(null)
+      setFocusPoints([])
+      setSelectedFocus(null)
+      setResponseText(null)
+      setActiveAction(null)
 
-                const cleanTextForAI = (text: string) => {
-                    return text
-                        .replace(/\s+/g, ' ')
-                        .replace(/(?:\b\d+\b\s*){4,}/g, ' ') // Strip sequences of isolated line numbers (1 2 3 4)
-                        .trim()
-                }
+      const clean = (t: string) =>
+        t.replace(/\s+/g, ' ').replace(/(?:\b\d+\b\s*){4,}/g, ' ').trim()
 
-                const contextContent = hasSubstantialText
-                    ? cleanTextForAI(trigger.sectionText).slice(0, 800)
-                    : documentContent && documentContent.trim().length > 100
-                        ? cleanTextForAI(documentContent).slice(0, 800)
-                        : trigger.sectionName
+      // sectionText now contains page-labeled context: "[Page N]: ..."
+      // Allow up to 2400 chars to include prev/current/next page content
+      const sectionText = trigger.sectionText?.trim().length > 60
+        ? clean(trigger.sectionText).slice(0, 2400)
+        : null
 
-                const aiReferenceContent = hasSubstantialText || !documentContent
-                    ? contextContent
-                    : cleanTextForAI(documentContent).slice(0, 5000)
+      const fallbackContext = documentContent
+        ? clean(documentContent).slice(0, 1200)
+        : trigger.sectionName
 
-                const prompt = hasSubstantialText
-                    ? `I've been reading this specific passage for a while and seem to be stuck. In 1-2 short sentences, identify the single most likely concept causing confusion and why it's typically hard. Be specific — quote a term from the text.\n\nSection: "${trigger.sectionName}"\nText I'm reading: "${contextContent}"`
-                    : `I've been spending a long time on this section. Based on the document content below, in 1-2 sentences identify what concept in this section is most likely to confuse a reader and why. Be specific.\n\nSection: "${trigger.sectionName}"\nDocument content: "${aiReferenceContent.slice(0, 600)}"`
+      const context = sectionText ?? fallbackContext
 
-                const response = await fetch('/api/ai-help', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({
-                        question: prompt,
-                        documentContent: aiReferenceContent,
-                        documentTitle: documentTitle || 'Academic Paper',
-                    })
-                })
+      // Extract the densest claim from the section text for the quote block
+      const extractClaim = (text: string): string | null => {
+        const sentences = text.match(/[^.!?]+[.!?]+/g) || []
+        // Prefer sentences that contain numbers, equations, or technical density markers
+        const dense = sentences.find(s => {
+          const hasNumber = /\d/.test(s)
+          const hasGreek = /[α-ωΑ-Ωτμσ]/.test(s)
+          const hasFormula = /[=≥≤<>]/.test(s)
+          const longEnough = s.trim().length > 40
+          const letters = (s.match(/[a-zA-Z]/g) || []).length
+          const letterRatio = letters / s.length
+          return longEnough && letterRatio > 0.35 && (hasNumber || hasGreek || hasFormula)
+        })
+        // Fallback: longest sentence that reads like a claim
+        const fallback = sentences
+          .filter(s => s.trim().length > 50 && (s.match(/[a-zA-Z]/g) || []).length / s.length > 0.45)
+          .sort((a, b) => b.length - a.length)[0]
 
-                if (response.ok) {
-                    const data = await response.json()
-                    let insight = data.response?.answer || ''
-                    // Clean up any markdown headers the LLM might produce
-                    insight = insight.replace(/^#+\s*/gm, '').replace(/\*\*/g, '').trim()
-                    // Take just the first 2 sentences
-                    const sentences = insight.match(/[^.!?]+[.!?]+/g) || [insight]
-                    setAiInsight(sentences.slice(0, 2).join(' ').trim())
-                } else {
-                    setAiInsight(`This section appears to require careful attention. The concepts here build on each other, so it helps to identify the first term that feels unfamiliar.`)
-                }
-            } catch {
-                setAiInsight(`This section appears to require careful attention. Try identifying the first unfamiliar term and working from there.`)
-            } finally {
-                setIsLoadingInsight(false)
-            }
-        }
-        loadInsight()
-    }, [trigger.sectionId])
+        const chosen = dense || fallback
+        if (!chosen) return null
+        const trimmed = chosen.trim()
+        return trimmed.length > 130 ? trimmed.slice(0, 130) + '…' : trimmed
+      }
 
-    // Get a relevant quote from the section text (first meaningful sentence)
-    const getQuote = () => {
-        const source = trigger.sectionText?.trim().length > 40 ? trigger.sectionText : (documentContent || '')
-        if (!source) return null
+      const claim = sectionText ? extractClaim(sectionText) : null
+      if (claim) setClaimQuote(claim)
 
-        const clean = source
-            .replace(/\s+/g, ' ')
-            .replace(/(?:\b\d+\b\s*){4,}/g, ' ') // Strip isolated line numbers
-            .replace(/^[^a-zA-Z]+/, '') // Strip leading non-alphabetic chars
-            .trim()
+      try {
+        const fullDoc = documentContent?.trim() || ''
+        const hasFullDoc = fullDoc.length > 500
 
-        const sentences = clean.match(/[^.!?]+[.!?]+/g) || [clean] // Fallback to entire text if no punct
+        const prompt = `You are helping a PhD researcher who has been dwelling on page ${trigger.sectionName.replace('Page ', '')} of "${documentTitle || 'this paper'}".
 
-        // Find first sentence that's 20+ chars and has a good ratio of letters
-        const meaningful = sentences.find(s => {
-            const letters = (s.match(/[a-zA-Z]/g) || []).length
-            return s.length > 20 && letters > s.length * 0.4 // Must be at least 40% letters
+VISIBLE PAGE CONTENT (page-labeled, prev/current/next page for context):
+${context}
+
+${hasFullDoc ? `FULL PAPER CONTEXT (for cross-reference only):
+${fullDoc.slice(0, 20000)}` : ''}
+
+Your task: scan the CURRENT page and identify 2–4 distinct elements the researcher might be struggling with or interested in (e.g. a figure, an equation, a specific claim, a method step, a table, a cited result).
+
+Respond with ONLY valid JSON in this exact format — no markdown, no prose:
+{
+  "points": [
+    { "id": "p1", "label": "Figure 1", "type": "figure", "description": "System architecture with three components: signal detection, routing, and output" },
+    { "id": "p2", "label": "τ_fire threshold", "type": "equation", "description": "The 0.72 threshold that triggers A7 notification — derived empirically from 3 sessions" },
+    { "id": "p3", "label": "Peer routing claim", "type": "claim", "description": "Authors claim peer routing activates in 10/12 sessions — but no failure analysis is given" }
+  ],
+  "diagnostic": "One sentence: the single most tension-laden element on this page, and where it connects elsewhere in the paper."
+}
+
+Rules:
+- label: short name (e.g. "Figure 1", "Equation 3", "Section 4.2 claim")
+- type: one of "figure" | "table" | "equation" | "claim" | "method" | "result"
+- description: 1 sentence — what it IS and why a researcher might pause here
+- If page has only 1 notable element, return just that 1 point
+- Focus strictly on the CURRENT page content, not the abstract or introduction
+- diagnostic: cite cross-section link (e.g. "validated in Table 2", "defined in §Introduction")`
+
+        const res = await fetch('/api/ai-help', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            question: prompt,
+            documentContent: fullDoc.slice(0, 20000),
+            documentTitle: documentTitle || 'Academic Paper',
+          }),
         })
 
-        return meaningful ? meaningful.trim().slice(0, 120) + (meaningful.length > 120 ? '…' : '') : null
-    }
-
-    const quote = getQuote()
-
-    const helpOptions = [
-        {
-            id: 'explain',
-            icon: <Lightbulb className="w-3.5 h-3.5" />,
-            label: 'Explain simply',
-            description: 'Plain English breakdown',
-            color: 'bg-blue-50 text-blue-700 hover:bg-blue-100 border-blue-100'
-        },
-        {
-            id: 'example',
-            icon: <BookOpen className="w-3.5 h-3.5" />,
-            label: 'Show an example',
-            description: 'Real-world analogy',
-            color: 'bg-purple-50 text-purple-700 hover:bg-purple-100 border-purple-100'
-        },
-        {
-            id: 'question',
-            icon: <MessageCircle className="w-3.5 h-3.5" />,
-            label: 'Let me ask',
-            description: 'Open a conversation',
-            color: 'bg-emerald-50 text-emerald-700 hover:bg-emerald-100 border-emerald-100'
-        },
-    ]
-
-    // ─── Inline Fetch Logic ──────────────────────────────────────────
-    const handleActionClick = async (actionId: string, customQuery?: string) => {
-        setActiveAction(actionId)
-        resetDismissTimer()
-        setFeedback(null) // reset feedback state for new query
-
-        if (typeof window !== 'undefined' && actionId !== 'question') {
-            localStorage.setItem('google_implicit_help_pref', actionId)
-            setPreferredAction(actionId)
-        }
-
-        // If question mode, just show input and wait for user to submit
-        if (actionId === 'question' && !customQuery) {
-            setShowQuestionInput(true)
-            setInlineResponse(null)
-            return
-        }
-
-        setShowQuestionInput(false)
-        setIsFetchingResponse(true)
-        setInlineResponse(null)
-
-        const cleanTextForAI = (text: string) => {
-            return text.replace(/\s+/g, ' ').replace(/(?:\b\d+\b\s*){4,}/g, ' ').trim()
-        }
-
-        const hasSubstantialText = trigger.sectionText && trigger.sectionText.trim().length > 40
-        const contextContent = hasSubstantialText
-            ? cleanTextForAI(trigger.sectionText).slice(0, 800)
-            : documentContent
-                ? cleanTextForAI(documentContent).slice(0, 800)
-                : trigger.sectionName
-
-        let prompt = ''
-        if (actionId === 'explain') {
-            prompt = `Explain this concept from the paper as simply as possible, as if to a fellow student. Avoid jargon. Keep it to 2-3 short, clear sentences:\n\n"${contextContent}"`
-        } else if (actionId === 'example') {
-            prompt = `Give me one extremely clear, real-world example or analogy to help me understand this concept from the academic paper. Keep it to 2-3 sentences:\n\n"${contextContent}"`
+        if (res.ok) {
+          const data = await res.json()
+          let raw: string = data.response?.answer || ''
+          // Strip markdown code fences if present
+          raw = raw.replace(/^```(?:json)?\s*/i, '').replace(/\s*```\s*$/, '').trim()
+          try {
+            const parsed = JSON.parse(raw)
+            const points: FocusPoint[] = (parsed.points || []).slice(0, 4)
+            setFocusPoints(points)
+            setDiagnostic(parsed.diagnostic || null)
+            // Auto-select if only one point
+            if (points.length === 1) setSelectedFocus(points[0])
+          } catch {
+            // JSON parse failed — fall back to treating as plain text diagnostic
+            const text = raw.replace(/^#+\s*/gm, '').replace(/\*\*/g, '').trim()
+            const sentences = text.match(/[^.!?]+[.!?]+/g) || [text]
+            setDiagnostic(sentences.slice(0, 2).join(' ').trim())
+          }
         } else {
-            prompt = `Answer this specific question: "${customQuery}" based strictly on this academic text:\n\n"${contextContent}"`
+          setDiagnostic(`The authors' claim in §${trigger.sectionName} rests on an assumption that may warrant scrutiny — check whether the evidence in the referenced table supports the stated threshold.`)
         }
-
-        try {
-            const response = await fetch('/api/ai-help', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    question: prompt,
-                    documentContent: documentContent?.slice(0, 4000) || contextContent,
-                    documentTitle: documentTitle || 'Academic Paper',
-                })
-            })
-
-            if (response.ok) {
-                const data = await response.json()
-                let insight = data.response?.answer || ''
-                insight = insight.replace(/^#+\s*/gm, '').replace(/\*\*/g, '').trim()
-                setInlineResponse(insight)
-            } else {
-                setInlineResponse("I couldn't generate an answer right now. Please try again.")
-            }
-        } catch {
-            setInlineResponse("I couldn't generate an answer right now. Please try again.")
-        } finally {
-            setIsFetchingResponse(false)
-        }
+      } catch {
+        setDiagnostic(`The framing in §${trigger.sectionName} contains an implicit assumption — identify it before accepting the conclusion.`)
+      } finally {
+        setIsLoading(false)
+      }
     }
 
-    return (
-        <motion.div
-            initial={{ x: 100, opacity: 0, scale: 0.95 }}
-            animate={{ x: 0, opacity: 1, scale: 1 }}
-            exit={{ x: 100, opacity: 0, scale: 0.93 }}
-            transition={{ type: 'spring', damping: 24, stiffness: 280 }}
-            className="fixed bottom-20 right-5 z-[200] w-[340px]"
-            onMouseEnter={resetDismissTimer}
-        >
-            {/* Card */}
-            <div
-                className="rounded-3xl overflow-hidden"
-                style={{
-                    background: 'rgba(255,255,255,0.97)',
-                    backdropFilter: 'blur(24px)',
-                    boxShadow: '0 8px 40px rgba(0,0,0,0.12), 0 1px 3px rgba(0,0,0,0.08)',
-                    border: '1px solid rgba(0,0,0,0.06)'
-                }}
-            >
-                {/* Header gradient strip */}
-                <div
-                    className="px-4 pt-4 pb-3"
-                    style={{ background: 'linear-gradient(135deg, rgba(102,126,234,0.06) 0%, rgba(118,75,162,0.06) 100%)' }}
+    load()
+  }, [trigger.sectionId]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  // ── Actions ────────────────────────────────────────────────────────────────
+  const actions = [
+    {
+      id: 'mechanism',
+      icon: <Wrench className="w-3.5 h-3.5" />,
+      label: 'Unpack mechanism',
+      sub: 'How does this actually work?',
+      color: 'border-indigo-100 bg-indigo-50/60 text-indigo-800 hover:bg-indigo-100/80',
+      prompt: (ctx: string) =>
+        `The researcher is looking at ${trigger.sectionName} of "${documentTitle}". The page content (prev/current/next page labeled) is:
+
+${ctx}
+
+Trace the complete causal mechanism for the main content on the CURRENT page. For each step:
+- Name what is happening and why
+- If the page shows a figure (e.g., Figure 1) or table, describe its components specifically — do not skip it
+- Flag any assumption left implicit by the authors
+
+Then: does this mechanism connect to another part of the paper? Name the specific section where it is defined, extended, or validated. If the page has a figure, identify which section discusses it in text.
+
+FULL PAPER AVAILABLE FOR CROSS-SECTION LINKING: ${documentContent ? 'yes' : 'no'}`,
+    },
+    {
+      id: 'priorwork',
+      icon: <FileSearch className="w-3.5 h-3.5" />,
+      label: 'Trace prior work',
+      sub: 'What does this build on?',
+      color: 'border-violet-100 bg-violet-50/60 text-violet-800 hover:bg-violet-100/80',
+      prompt: (ctx: string) =>
+        `The researcher is looking at ${trigger.sectionName} of "${documentTitle}". Page content (prev/current/next labeled):
+
+${ctx}
+
+Based on what is ACTUALLY shown on the current page:
+1. What is the single most important prior work this content builds on or contradicts? Name the specific paper or author if cited on this page.
+2. What exactly does this paper change compared to that prior work — what is new vs. inherited?
+3. Is there a notable omission — a well-known paper in this area not cited? Name it and explain why its absence matters.
+4. If this page references a figure, table, or result from another section, identify what that cross-reference establishes.`,
+    },
+    {
+      id: 'challenge',
+      icon: <AlertTriangle className="w-3.5 h-3.5" />,
+      label: 'Challenge this',
+      sub: 'What would a reviewer ask?',
+      color: 'border-amber-100 bg-amber-50/60 text-amber-800 hover:bg-amber-100/80',
+      prompt: (ctx: string) =>
+        `The researcher is looking at ${trigger.sectionName} of "${documentTitle}". Page content (prev/current/next labeled):
+
+${ctx}
+
+You are a program committee reviewer. Identify the 2 strongest methodological objections to the claims on the CURRENT page:
+
+For each objection:
+- State the specific claim (quote from the page text or describe the figure/table)
+- Explain the evidential gap: what data, control, or comparison is missing
+- Rate: minor / moderate / major and why
+
+Also: does this content contradict or underqualify a claim elsewhere in the paper? Cite the specific section.`,
+    },
+    {
+      id: 'peer',
+      icon: <Users className="w-3.5 h-3.5" />,
+      label: 'Ask a peer',
+      sub: 'Route this to a collaborator',
+      color: 'border-emerald-100 bg-emerald-50/60 text-emerald-800 hover:bg-emerald-100/80',
+      prompt: null, // Handled as peer routing
+    },
+  ]
+
+  const handleAction = async (actionId: string, customQuery?: string) => {
+    setActiveAction(actionId)
+    setFeedback(null)
+    resetTimer()
+
+    if (actionId === 'peer') {
+      // Route to peer — tell the parent to open peer routing
+      onHelpChosen('question', `Peer routing requested for section: ${trigger.sectionName}`)
+      return
+    }
+
+    if (actionId === 'question' && !customQuery) {
+      setShowQuestion(true)
+      setResponseText(null)
+      return
+    }
+
+    setShowQuestion(false)
+    setIsFetching(true)
+    setResponseText(null)
+
+    const clean = (t: string) =>
+      t.replace(/\s+/g, ' ').replace(/(?:\b\d+\b\s*){4,}/g, ' ').trim()
+
+    // Use the page-labeled context (prev/current/next page) for all action prompts
+    const ctx = trigger.sectionText?.trim().length > 60
+      ? clean(trigger.sectionText).slice(0, 2400)
+      : documentContent
+        ? clean(documentContent).slice(0, 1200)
+        : trigger.sectionName
+
+    const action = actions.find(a => a.id === actionId)
+
+    // Append selected focus point as the specific anchor for this query
+    const focusAnchor = selectedFocus
+      ? `\n\nFOCUS: The researcher has selected "${selectedFocus.label}" (${selectedFocus.type}) as their specific point of interest: ${selectedFocus.description}\nAnchor your entire response to this specific element.`
+      : ''
+
+    // For custom questions: anchor the response to the current page.
+    const fullDoc = documentContent?.trim() || ''
+    const prompt = actionId === 'question' && customQuery
+      ? `You are helping a PhD researcher reading ${trigger.sectionName} of "${documentTitle || 'this paper'}".
+
+CURRENT PAGE CONTENT (prev/current/next page labeled):
+${ctx}${focusAnchor}
+
+FULL PAPER (for cross-reference only — cite section/page when drawing from it):
+${fullDoc.slice(0, 20000)}
+
+RESEARCHER'S QUESTION: "${customQuery}"
+
+Rules:
+- Base your answer on the CURRENT PAGE and the selected focus element above
+- If the answer requires information from another section, cite it explicitly: "as defined in §Introduction", "see Table 2 on page 5", "elaborated in §Evaluation"
+- Do NOT give a general paper-wide summary — answer the specific question about the selected element
+- Be direct and precise. PhD-level language. No filler.`
+      : (action?.prompt?.(ctx) || '') + focusAnchor
+
+    if (!prompt) return
+
+    try {
+      const res = await fetch('/api/ai-help', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          question: prompt,
+          documentContent: fullDoc.slice(0, 20000) || ctx,
+          documentTitle: documentTitle || 'Academic Paper',
+        }),
+      })
+
+      if (res.ok) {
+        const data = await res.json()
+        let text: string = data.response?.answer || ''
+        text = text.replace(/^#+\s*/gm, '').replace(/\*\*/g, '').trim()
+        setResponseText(text)
+        // Response stays inside ImplicitHelpCard — do NOT call onHelpChosen here.
+        // onHelpChosen is only used for peer routing (handled above).
+      } else {
+        setResponseText('Could not retrieve analysis. Check your connection.')
+      }
+    } catch {
+      setResponseText('Request failed. Please retry.')
+    } finally {
+      setIsFetching(false)
+    }
+  }
+
+  // Signal provenance labels — human-readable, researcher-appropriate
+  const signalLabels: Record<string, string> = {
+    'extended reading time': 'dwell',
+    'extended dwell time': 'dwell',
+    'prolonged passive engagement': 'dwell',
+    'consistently rising struggle score': 'rising D_s',
+    '1 confusion highlight(s)': '1 confusion mark',
+    '2 confusion highlight(s)': '2 confusion marks',
+    '3 confusion highlight(s)': '3 confusion marks',
+    'dense content (math/method)': 'dense section',
+  }
+  const signalDisplay = trigger.contributingFactors
+    .slice(0, 3)
+    .map(f => signalLabels[f] || f)
+    .join(' · ')
+
+  return (
+    <motion.div
+      initial={{ x: 110, opacity: 0, scale: 0.96 }}
+      animate={{ x: 0, opacity: 1, scale: 1 }}
+      exit={{ x: 110, opacity: 0, scale: 0.94 }}
+      transition={{ type: 'spring', damping: 26, stiffness: 290 }}
+      className="fixed bottom-6 right-6 z-[200] w-[348px] max-h-[calc(100vh-5rem)] flex flex-col"
+      onMouseEnter={resetTimer}
+    >
+      <div
+        className="rounded-2xl overflow-hidden flex flex-col min-h-0"
+        style={{
+          background: 'rgba(255,255,255,0.98)',
+          backdropFilter: 'blur(28px)',
+          boxShadow: '0 8px 40px rgba(0,0,0,0.11), 0 1px 4px rgba(0,0,0,0.07)',
+          border: '1px solid rgba(0,0,0,0.07)',
+        }}
+      >
+        {/* ── Header ── */}
+        <div className="px-4 pt-3.5 pb-3 border-b border-slate-100">
+          <div className="flex items-start justify-between gap-2">
+            <div className="flex items-center gap-2.5 min-w-0">
+              <div
+                className="w-7 h-7 rounded-lg flex items-center justify-center shrink-0"
+                style={{ background: 'linear-gradient(135deg, #4f46e5 0%, #7c3aed 100%)' }}
+              >
+                <Microscope className="w-3.5 h-3.5 text-white" />
+              </div>
+              <div className="min-w-0">
+                <p className="text-[10px] font-semibold text-indigo-500 uppercase tracking-widest">
+                  CoRead · A7
+                </p>
+                {/* Section name — this is what was "Page 1" before */}
+                <p
+                  className="text-[13px] font-semibold text-slate-900 leading-tight mt-0.5 truncate"
+                  title={trigger.sectionName}
                 >
-                    <div className="flex items-start justify-between gap-2">
-                        <div className="flex items-center gap-2.5">
-                            {/* Icon */}
-                            <div
-                                className="w-8 h-8 rounded-full flex items-center justify-center shrink-0"
-                                style={{ background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)' }}
-                            >
-                                <Sparkles className="w-4 h-4 text-white" />
-                            </div>
-                            <div>
-                                <p className="text-xs font-semibold text-indigo-600 leading-tight tracking-wide uppercase" style={{ letterSpacing: '0.06em' }}>
-                                    Reading Assistant
-                                </p>
-                                <p className="text-[13px] font-semibold text-gray-900 leading-tight mt-0.5">
-                                    {trigger.sectionName.length > 32
-                                        ? trigger.sectionName.slice(0, 32) + '…'
-                                        : trigger.sectionName}
-                                </p>
-                            </div>
-                        </div>
-                        <button
-                            onClick={onDismiss}
-                            className="w-6 h-6 rounded-full bg-gray-100 flex items-center justify-center text-gray-400 hover:text-gray-600 hover:bg-gray-200 transition-colors shrink-0 mt-0.5"
-                        >
-                            <X className="w-3 h-3" />
-                        </button>
-                    </div>
-                </div>
-
-                <div className="px-4 pb-4 space-y-3">
-                    {/* Quoted text from the section */}
-                    {quote && (
-                        <div
-                            className="rounded-xl px-3 py-2.5 border-l-2"
-                            style={{
-                                background: 'rgba(102,126,234,0.04)',
-                                borderLeftColor: '#667eea'
-                            }}
-                        >
-                            <p className="text-[12px] text-gray-500 italic leading-relaxed">
-                                "{quote}"
-                            </p>
-                        </div>
-                    )}
-
-                    {/* AI diagnostic insight */}
-                    <div className="min-h-[44px]">
-                        <AnimatePresence mode="wait">
-                            {isLoadingInsight ? (
-                                <motion.div
-                                    key="loading"
-                                    initial={{ opacity: 0 }}
-                                    animate={{ opacity: 1 }}
-                                    exit={{ opacity: 0 }}
-                                    className="flex items-center gap-2 py-1"
-                                >
-                                    {/* Animated loading dots */}
-                                    <div className="flex gap-1">
-                                        {[0, 0.15, 0.3].map((delay, i) => (
-                                            <motion.div
-                                                key={i}
-                                                className="w-1.5 h-1.5 rounded-full bg-indigo-300"
-                                                animate={{ opacity: [0.3, 1, 0.3], scale: [0.8, 1.2, 0.8] }}
-                                                transition={{ duration: 1.2, repeat: Infinity, delay }}
-                                            />
-                                        ))}
-                                    </div>
-                                    <span className="text-xs text-gray-400">Analyzing section…</span>
-                                </motion.div>
-                            ) : (
-                                <motion.p
-                                    key="insight"
-                                    initial={{ opacity: 0, y: 4 }}
-                                    animate={{ opacity: 1, y: 0 }}
-                                    className="text-[13px] text-gray-700 leading-relaxed"
-                                >
-                                    {aiInsight}
-                                </motion.p>
-                            )}
-                        </AnimatePresence>
-                    </div>
-
-                    {/* Inline Content Replacement */}
-                    <AnimatePresence mode="popLayout">
-                        {showQuestionInput ? (
-                            <motion.div
-                                key="question-input"
-                                initial={{ opacity: 0, height: 0 }}
-                                animate={{ opacity: 1, height: 'auto' }}
-                                exit={{ opacity: 0, height: 0 }}
-                                className="pt-2"
-                            >
-                                <div className="flex bg-white rounded-xl border p-1 shadow-sm">
-                                    <input
-                                        type="text"
-                                        placeholder="Ask about this section..."
-                                        className="flex-1 bg-transparent border-none text-[13px] px-3 outline-none text-gray-800 placeholder-gray-400"
-                                        autoFocus
-                                        value={questionText}
-                                        onChange={(e) => setQuestionText(e.target.value)}
-                                        onKeyDown={(e) => {
-                                            if (e.key === 'Enter' && questionText.trim()) {
-                                                handleActionClick('question', questionText.trim())
-                                            }
-                                        }}
-                                    />
-                                    <button
-                                        onClick={() => questionText.trim() && handleActionClick('question', questionText.trim())}
-                                        className="p-1.5 rounded-lg bg-indigo-600 text-white hover:bg-indigo-700 transition-colors disabled:opacity-50"
-                                        disabled={!questionText.trim()}
-                                    >
-                                        <Send className="w-3.5 h-3.5" />
-                                    </button>
-                                </div>
-                            </motion.div>
-                        ) : isFetchingResponse || inlineResponse ? (
-                            <motion.div
-                                key="response"
-                                initial={{ opacity: 0, height: 0 }}
-                                animate={{ opacity: 1, height: 'auto' }}
-                                className="pt-2"
-                            >
-                                <div className="rounded-xl px-3 py-3 bg-white border border-gray-100 shadow-sm relative">
-                                    <button
-                                        onClick={() => {
-                                            setInlineResponse(null);
-                                            setActiveAction(null);
-                                            setIsFetchingResponse(false);
-                                            setShowQuestionInput(false);
-                                        }}
-                                        className="absolute top-2 right-2 p-0.5 text-gray-400 hover:text-gray-600 bg-gray-50 rounded-full"
-                                    >
-                                        <X className="w-3.5 h-3.5" />
-                                    </button>
-                                    {isFetchingResponse ? (
-                                        <div className="flex items-center gap-2">
-                                            <div className="flex gap-1">
-                                                {[0, 0.15, 0.3].map((delay, i) => (
-                                                    <motion.div
-                                                        key={i}
-                                                        className="w-1.5 h-1.5 rounded-full bg-indigo-400"
-                                                        animate={{ opacity: [0.3, 1, 0.3], scale: [0.8, 1.2, 0.8] }}
-                                                        transition={{ duration: 1.2, repeat: Infinity, delay }}
-                                                    />
-                                                ))}
-                                            </div>
-                                            <span className="text-xs text-indigo-500 font-medium tracking-wide">Thinking...</span>
-                                        </div>
-                                    ) : (
-                                        <div className="mt-1 pr-2 max-h-[160px] overflow-y-auto flex flex-col [&::-webkit-scrollbar]:w-1.5 [&::-webkit-scrollbar-thumb]:bg-gray-200 hover:[&::-webkit-scrollbar-thumb]:bg-gray-300 [&::-webkit-scrollbar-thumb]:rounded-full [&::-webkit-scrollbar-track]:bg-transparent">
-                                            <p className="text-[13px] text-gray-800 leading-relaxed whitespace-pre-wrap mr-1 mb-3">{inlineResponse}</p>
-
-                                            {/* Micro-Feedback Loop (Google Style) */}
-                                            <div className="flex items-center gap-2 mt-auto pt-2 border-t border-gray-100">
-                                                <span className="text-[10px] text-gray-400 font-medium">Did this help?</span>
-                                                <div className="flex gap-1">
-                                                    <button
-                                                        onClick={() => {
-                                                            setFeedback('up')
-                                                            fetch('/api/telemetry', {
-                                                                method: 'POST',
-                                                                body: JSON.stringify({
-                                                                    type: 'ai_feedback',
-                                                                    payload: { rating: 'up', action: activeAction, section: trigger.sectionName, text: quote }
-                                                                })
-                                                            })
-                                                        }}
-                                                        className={`p-1 rounded-md hover:bg-green-50 transition-colors ${feedback === 'up' ? 'text-green-600 bg-green-50' : 'text-gray-400'}`}
-                                                        title="Good response"
-                                                    >
-                                                        <ThumbsUp className="w-3.5 h-3.5" />
-                                                    </button>
-                                                    <button
-                                                        onClick={() => {
-                                                            setFeedback('down')
-                                                            fetch('/api/telemetry', {
-                                                                method: 'POST',
-                                                                body: JSON.stringify({
-                                                                    type: 'ai_feedback',
-                                                                    payload: { rating: 'down', action: activeAction, section: trigger.sectionName, text: quote }
-                                                                })
-                                                            })
-                                                        }}
-                                                        className={`p-1 rounded-md hover:bg-red-50 transition-colors ${feedback === 'down' ? 'text-red-600 bg-red-50' : 'text-gray-400'}`}
-                                                        title="Confusing"
-                                                    >
-                                                        <ThumbsDown className="w-3.5 h-3.5" />
-                                                    </button>
-                                                </div>
-                                                {feedback && (
-                                                    <span className="text-[10px] text-indigo-500 font-medium ml-auto">Thanks for your feedback!</span>
-                                                )}
-                                            </div>
-                                        </div>
-                                    )}
-                                </div>
-                            </motion.div>
-                        ) : (
-                            <motion.div
-                                key="options"
-                                initial={{ opacity: 0, height: 0 }}
-                                animate={{ opacity: 1, height: 'auto' }}
-                                exit={{ opacity: 0, height: 0 }}
-                                className="grid grid-cols-3 gap-1.5 pt-1"
-                            >
-                                {helpOptions.map((option) => (
-                                    <motion.button
-                                        key={option.id}
-                                        whileHover={{ scale: 1.03, y: -1 }}
-                                        whileTap={{ scale: 0.97 }}
-                                        onClick={() => handleActionClick(option.id)}
-                                        className={`relative flex flex-col items-center gap-1 py-2.5 px-1.5 rounded-2xl border text-center transition-all ${option.color} ${activeAction === option.id ? 'ring-2 ring-offset-1 ring-current' : ''}`}
-                                    >
-                                        {preferredAction === option.id && (
-                                            <div className="absolute -top-1.5 -right-1.5 bg-amber-400 text-white p-0.5 rounded-full shadow-sm" title="Your preferred action">
-                                                <Star className="w-2.5 h-2.5 fill-current" />
-                                            </div>
-                                        )}
-                                        <div className="w-6 h-6 rounded-full bg-white/60 flex items-center justify-center">
-                                            {option.icon}
-                                        </div>
-                                        <span className="text-[11px] font-semibold leading-tight">{option.label}</span>
-                                    </motion.button>
-                                ))}
-                            </motion.div>
-                        )}
-                    </AnimatePresence>
-
-                    {/* Confidence indicator — subtle, not in your face */}
-                    <div className="flex items-center justify-between pt-0.5">
-                        <div className="flex items-center gap-1.5">
-                            <Zap className="w-3 h-3 text-amber-400" />
-                            <p className="text-[11px] text-gray-400">
-                                {trigger.contributingFactors.slice(0, 2).join(' · ')}
-                            </p>
-                        </div>
-                        <div className="flex gap-0.5">
-                            {[...Array(5)].map((_, i) => (
-                                <div
-                                    key={i}
-                                    className="w-1 h-3 rounded-full"
-                                    style={{
-                                        background: i < Math.round(trigger.confidence * 5)
-                                            ? `linear-gradient(to top, #667eea, #764ba2)`
-                                            : '#e5e7eb'
-                                    }}
-                                />
-                            ))}
-                        </div>
-                    </div>
-                </div>
+                  §{trigger.sectionName}
+                </p>
+              </div>
             </div>
-        </motion.div>
-    )
+            <button
+              onClick={onDismiss}
+              className="w-6 h-6 rounded-full bg-slate-100 flex items-center justify-center text-slate-400 hover:text-slate-600 hover:bg-slate-200 transition-colors shrink-0 mt-0.5"
+            >
+              <X className="w-3 h-3" />
+            </button>
+          </div>
+        </div>
+
+        <div className="px-4 pt-3 pb-3.5 space-y-3 overflow-y-auto flex-1 min-h-0">
+
+          {/* ── Claim Quote ── The specific dense/contested sentence ── */}
+          {claimQuote && (
+            <div
+              className="rounded-xl px-3 py-2.5"
+              style={{
+                background: 'linear-gradient(135deg, rgba(79,70,229,0.04) 0%, rgba(124,58,237,0.04) 100%)',
+                borderLeft: '2px solid #4f46e5',
+              }}
+            >
+              <p className="text-[11.5px] text-slate-600 italic leading-relaxed font-mono">
+                "{claimQuote}"
+              </p>
+            </div>
+          )}
+
+          {/* ── Focus Point Selector ── shown when page has multiple elements ── */}
+          <AnimatePresence>
+            {!isLoading && focusPoints.length > 1 && (
+              <motion.div
+                key="focus-selector"
+                initial={{ opacity: 0, y: 4 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -4 }}
+                className="space-y-1.5"
+              >
+                <p className="text-[10px] font-semibold text-slate-400 uppercase tracking-widest">
+                  {selectedFocus ? 'Focused on' : 'What are you looking at?'}
+                </p>
+                <div className="flex flex-wrap gap-1.5">
+                  {focusPoints.map(fp => {
+                    const typeColors: Record<string, string> = {
+                      figure:   'bg-violet-50 border-violet-200 text-violet-700',
+                      table:    'bg-teal-50 border-teal-200 text-teal-700',
+                      equation: 'bg-indigo-50 border-indigo-200 text-indigo-700',
+                      claim:    'bg-amber-50 border-amber-200 text-amber-700',
+                      method:   'bg-blue-50 border-blue-200 text-blue-700',
+                      result:   'bg-emerald-50 border-emerald-200 text-emerald-700',
+                    }
+                    const color = typeColors[fp.type] || 'bg-slate-50 border-slate-200 text-slate-700'
+                    const isSelected = selectedFocus?.id === fp.id
+                    return (
+                      <button
+                        key={fp.id}
+                        onClick={() => {
+                          setSelectedFocus(isSelected ? null : fp)
+                          setResponseText(null)
+                          setActiveAction(null)
+                        }}
+                        title={fp.description}
+                        className={`px-2.5 py-1 rounded-lg border text-[11.5px] font-medium transition-all ${color} ${
+                          isSelected
+                            ? 'ring-2 ring-offset-1 ring-current shadow-sm scale-[1.03]'
+                            : 'opacity-75 hover:opacity-100'
+                        }`}
+                      >
+                        {fp.label}
+                      </button>
+                    )
+                  })}
+                </div>
+                {selectedFocus && (
+                  <motion.p
+                    initial={{ opacity: 0 }}
+                    animate={{ opacity: 1 }}
+                    className="text-[11.5px] text-slate-500 leading-snug"
+                  >
+                    {selectedFocus.description}
+                  </motion.p>
+                )}
+              </motion.div>
+            )}
+          </AnimatePresence>
+
+          {/* ── Diagnostic ── Cross-section tension, shown after focus selection or when single item ── */}
+          <div className="min-h-[48px]">
+            <AnimatePresence mode="wait">
+              {isLoading ? (
+                <motion.div key="skel" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
+                  <PulseSkeleton lines={2} />
+                </motion.div>
+              ) : diagnostic ? (
+                <motion.p
+                  key="diag"
+                  initial={{ opacity: 0, y: 3 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  className="text-[13px] text-slate-700 leading-relaxed"
+                >
+                  {diagnostic}
+                </motion.p>
+              ) : null}
+            </AnimatePresence>
+          </div>
+
+          {/* ── Inline Response Area ── */}
+          <AnimatePresence mode="popLayout">
+            {showQuestion ? (
+              <motion.div
+                key="q-input"
+                initial={{ opacity: 0, height: 0 }}
+                animate={{ opacity: 1, height: 'auto' }}
+                exit={{ opacity: 0, height: 0 }}
+              >
+                <div className="flex bg-slate-50 rounded-xl border border-slate-200 overflow-hidden">
+                  <input
+                    autoFocus
+                    type="text"
+                    value={questionInput}
+                    onChange={e => setQuestionInput(e.target.value)}
+                    onKeyDown={e => {
+                      if (e.key === 'Enter' && questionInput.trim())
+                        handleAction('question', questionInput.trim())
+                    }}
+                    placeholder="Your specific question about this section…"
+                    className="flex-1 bg-transparent text-[13px] px-3 py-2 outline-none text-slate-800 placeholder-slate-400"
+                  />
+                  <button
+                    onClick={() => questionInput.trim() && handleAction('question', questionInput.trim())}
+                    disabled={!questionInput.trim()}
+                    className="px-3 bg-indigo-600 text-white hover:bg-indigo-700 disabled:opacity-40 transition-colors"
+                  >
+                    <Send className="w-3.5 h-3.5" />
+                  </button>
+                </div>
+              </motion.div>
+            ) : isFetching || responseText ? (
+              <motion.div
+                key="response"
+                initial={{ opacity: 0, height: 0 }}
+                animate={{ opacity: 1, height: 'auto' }}
+              >
+                <div className="rounded-xl border border-slate-100 bg-slate-50/60 relative">
+                  <button
+                    onClick={() => { setResponseText(null); setActiveAction(null); setIsFetching(false) }}
+                    className="absolute top-2 right-2 p-0.5 text-slate-400 hover:text-slate-600 rounded"
+                  >
+                    <X className="w-3.5 h-3.5" />
+                  </button>
+                  <div className="px-3 py-3 pr-7">
+                    {isFetching ? (
+                      <PulseSkeleton lines={3} />
+                    ) : (
+                      <div className="space-y-2.5">
+                        <p className="text-[12.5px] text-slate-800 leading-relaxed whitespace-pre-wrap max-h-[180px] overflow-y-auto pr-1">
+                          {responseText}
+                        </p>
+                        <div className="flex items-center gap-2 pt-1.5 border-t border-slate-100">
+                          <span className="text-[10px] text-slate-400 font-medium">Useful?</span>
+                          <div className="flex gap-1">
+                            {(['up', 'down'] as const).map(dir => (
+                              <button
+                                key={dir}
+                                onClick={() => {
+                                  setFeedback(dir)
+                                  fetch('/api/telemetry', {
+                                    method: 'POST',
+                                    headers: { 'Content-Type': 'application/json' },
+                                    body: JSON.stringify({
+                                      type: 'ai_feedback',
+                                      payload: { rating: dir, action: activeAction, section: trigger.sectionName },
+                                    }),
+                                  })
+                                }}
+                                className={`p-1 rounded transition-colors ${
+                                  feedback === dir
+                                    ? dir === 'up' ? 'text-emerald-600 bg-emerald-50' : 'text-red-500 bg-red-50'
+                                    : 'text-slate-400 hover:text-slate-600'
+                                }`}
+                              >
+                                {dir === 'up'
+                                  ? <ThumbsUp className="w-3.5 h-3.5" />
+                                  : <ThumbsDown className="w-3.5 h-3.5" />
+                                }
+                              </button>
+                            ))}
+                          </div>
+                          {feedback && (
+                            <span className="text-[10px] text-indigo-500 font-medium ml-auto">Logged</span>
+                          )}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              </motion.div>
+            ) : (
+              /* ── Action grid ── */
+              <motion.div
+                key="actions"
+                initial={{ opacity: 0, height: 0 }}
+                animate={{ opacity: 1, height: 'auto' }}
+                exit={{ opacity: 0, height: 0 }}
+                className="grid grid-cols-2 gap-1.5"
+              >
+                {actions.map(action => (
+                  <motion.button
+                    key={action.id}
+                    whileHover={{ scale: 1.02, y: -1 }}
+                    whileTap={{ scale: 0.98 }}
+                    onClick={() => handleAction(action.id)}
+                    className={`flex items-start gap-2 px-3 py-2.5 rounded-xl border text-left transition-all ${action.color} ${activeAction === action.id ? 'ring-1 ring-offset-1 ring-current' : ''}`}
+                  >
+                    <div className="w-5 h-5 rounded-md bg-white/70 flex items-center justify-center shrink-0 mt-0.5">
+                      {action.icon}
+                    </div>
+                    <div className="min-w-0">
+                      <p className="text-[11.5px] font-semibold leading-tight">{action.label}</p>
+                      <p className="text-[10px] opacity-65 leading-tight mt-0.5">{action.sub}</p>
+                    </div>
+                  </motion.button>
+                ))}
+              </motion.div>
+            )}
+          </AnimatePresence>
+
+          {/* ── Also ask ── */}
+          {!showQuestion && !responseText && !isFetching && (
+            <button
+              onClick={() => { setShowQuestion(true); setActiveAction('question'); setResponseText(null) }}
+              className="flex items-center gap-1.5 text-[11px] text-slate-400 hover:text-indigo-500 transition-colors"
+            >
+              <MessageSquare className="w-3 h-3" />
+              Ask a specific question about this section
+            </button>
+          )}
+
+          {/* ── Signal provenance ── confidence bars only ── */}
+          <div className="flex items-center justify-end pt-0.5 border-t border-slate-100">
+            {/* D_s confidence bars */}
+            <div className="flex items-end gap-0.5">
+              {[...Array(5)].map((_, i) => (
+                <div
+                  key={i}
+                  className="w-1 rounded-full"
+                  style={{
+                    height: 4 + i * 2,
+                    background: i < Math.round(trigger.confidence * 5)
+                      ? 'linear-gradient(to top, #4f46e5, #7c3aed)'
+                      : '#e2e8f0',
+                  }}
+                />
+              ))}
+            </div>
+          </div>
+        </div>
+      </div>
+    </motion.div>
+  )
 }
 
-// ─── Main Export: Orchestrates the 3-stage system ─────────────────────────────
+// ─── Main Orchestrator ────────────────────────────────────────────────────────
 export default function ImplicitHelpCard({
-    trigger,
-    onDismiss,
-    onHelpChosen,
-    documentTitle,
-    documentContent
+  trigger,
+  onDismiss,
+  onHelpChosen,
+  documentTitle,
+  documentContent,
 }: ImplicitHelpCardProps) {
-    const [currentStage, setCurrentStage] = useState<0 | 1 | 2 | 3>(0)
-    const prevTrigger = useRef<string | null>(null)
+  const [stage, setStage] = useState<0 | 1 | 2 | 3>(0)
+  const prevSection = useRef<string | null>(null)
 
-    useEffect(() => {
-        if (!trigger) {
-            setCurrentStage(0)
-            return
-        }
+  useEffect(() => {
+    if (!trigger) { setStage(0); return }
 
-        // If this is a new section trigger, reset
-        if (prevTrigger.current !== trigger.sectionId) {
-            prevTrigger.current = trigger.sectionId
-            setCurrentStage(trigger.stage)
-        } else {
-            // Escalate if same section, higher confidence
-            setCurrentStage(prev => Math.max(prev, trigger.stage) as 0 | 1 | 2 | 3)
-        }
-    }, [trigger])
-
-    const handleDismiss = () => {
-        setCurrentStage(0)
-        onDismiss()
+    if (prevSection.current !== trigger.sectionId) {
+      prevSection.current = trigger.sectionId
+      setStage(trigger.stage)
+    } else {
+      setStage(prev => Math.max(prev, trigger.stage) as 0 | 1 | 2 | 3)
     }
+  }, [trigger])
 
-    return (
-        <AnimatePresence mode="wait">
-            {currentStage === 1 && trigger && (
-                <AmbientDot key="dot" onClick={() => setCurrentStage(2)} />
-            )}
-            {currentStage === 2 && trigger && (
-                <SuggestionChip
-                    key="chip"
-                    sectionName={trigger.sectionName}
-                    onClick={() => setCurrentStage(3)}
-                    onDismiss={handleDismiss}
-                />
-            )}
-            {currentStage === 3 && trigger && (
-                <FullHelpCard
-                    key="card"
-                    trigger={trigger}
-                    onDismiss={handleDismiss}
-                    onHelpChosen={onHelpChosen}
-                    documentTitle={documentTitle}
-                    documentContent={documentContent}
-                />
-            )}
-        </AnimatePresence>
-    )
+  const dismiss = () => { setStage(0); onDismiss() }
+
+  return (
+    <AnimatePresence mode="wait">
+      {stage === 1 && trigger && (
+        <AmbientDot key="dot" onClick={() => setStage(2)} />
+      )}
+      {stage === 2 && trigger && (
+        <SectionChip
+          key="chip"
+          sectionName={trigger.sectionName}
+          onClick={() => setStage(3)}
+          onDismiss={dismiss}
+        />
+      )}
+      {stage === 3 && trigger && (
+        <FullHelpCard
+          key="card"
+          trigger={trigger}
+          onDismiss={dismiss}
+          onHelpChosen={onHelpChosen}
+          documentTitle={documentTitle}
+          documentContent={documentContent}
+        />
+      )}
+    </AnimatePresence>
+  )
 }

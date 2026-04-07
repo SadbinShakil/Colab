@@ -21,70 +21,28 @@ export async function POST(request: NextRequest) {
     }
 
     if (!process.env.OPENAI_API_KEY || process.env.OPENAI_API_KEY === 'sk-your-openai-api-key-here') {
-      // Demo questions
-      const demo: ComprehensionQuestion[] = [
-        {
-          id: 'q1',
-          question: `What is the main contribution described in ${sectionName || 'this section'}?`,
-          options: [
-            'A new algorithm for data processing',
-            'The key finding or methodology presented',
-            'A comparison with existing approaches',
-            'Future work recommendations'
-          ],
-          correctIndex: 1,
-          explanation: 'The main contribution is typically the novel finding or methodology the authors introduce.',
-          difficulty: 'basic'
-        },
-        {
-          id: 'q2',
-          question: 'Which aspect does the author emphasize most in this section?',
-          options: [
-            'Theoretical foundations',
-            'Experimental results',
-            'Limitations of the approach',
-            'Practical applications'
-          ],
-          correctIndex: 0,
-          explanation: 'Identifying the emphasis helps understand the author\'s priority in this section.',
-          difficulty: 'intermediate'
-        },
-        {
-          id: 'q3',
-          question: 'How does this section connect to the overall paper?',
-          options: [
-            'It introduces background context',
-            'It validates the proposed approach',
-            'It summarizes prior work',
-            'It presents the core methodology'
-          ],
-          correctIndex: 3,
-          explanation: 'Understanding how sections connect is key to grasping the paper\'s narrative.',
-          difficulty: 'advanced'
-        }
-      ]
-      return NextResponse.json({ questions: demo.slice(0, count) })
+      return NextResponse.json({ error: 'OpenAI API key not configured. Add OPENAI_API_KEY to .env to enable self-test.' }, { status: 503 })
     }
 
-    const systemPrompt = `You are an expert academic tutor creating comprehension check questions for researchers reading academic papers. Generate multiple-choice questions that test genuine understanding — not just recall.
+    const systemPrompt = `You are embedded in CoRead, a reading system for PhD researchers. Your task is to generate self-test questions that expose whether a researcher has genuinely understood a section — not whether they can recall surface facts.
 
-Rules:
-- Questions should test conceptual understanding, not just memory
-- All 4 options should be plausible (avoid obviously wrong answers)
-- Explanations should teach, not just restate the answer
-- Difficulty levels: basic (recall/definition), intermediate (application/analysis), advanced (synthesis/evaluation)
-- Questions should be specific to the provided content`
+Hard rules:
+- Every question must be anchored to a specific claim, mechanism, or finding in the provided section text. No generic questions.
+- Wrong options must be plausible to someone who skimmed but didn't understand — not obviously wrong distractors.
+- The explanation must identify the exact sentence or phrase in the section that resolves the question.
+- Difficulty levels: basic = tests a specific factual claim from the text; intermediate = requires understanding a mechanism or relationship; advanced = requires evaluating an inferential step, assumption, or limitation.
+- Do not ask "what is the main contribution" — that tests skimming, not reading.`
 
     const userPrompt = `Paper: "${documentTitle || 'Academic Paper'}"
-Section: "${sectionName || 'Current Section'}"
+Section: §${sectionName || 'Current Section'}
 
-Section Content:
+Section text:
 ${sectionContent.substring(0, 4000)}
 
-Generate exactly ${count} multiple-choice comprehension questions.
+Generate exactly ${count} multiple-choice questions grounded strictly in the above section text.
 Difficulty mix: ${difficulty === 'mixed' ? '1 basic, 1 intermediate, 1 advanced (for 3 questions; scale proportionally for more)' : difficulty}
 
-Return a JSON array with this exact structure:
+Return a JSON object with key "questions" containing an array:
 [
   {
     "question": "...",
@@ -93,9 +51,7 @@ Return a JSON array with this exact structure:
     "explanation": "...",
     "difficulty": "basic|intermediate|advanced"
   }
-]
-
-Return ONLY the JSON array, no other text.`
+]`
 
     const completion = await openai.chat.completions.create({
       model: 'gpt-4o',
@@ -103,8 +59,8 @@ Return ONLY the JSON array, no other text.`
         { role: 'system', content: systemPrompt },
         { role: 'user', content: userPrompt }
       ],
-      max_tokens: 2000,
-      temperature: 0.6,
+      max_tokens: 1500,
+      temperature: 0.2,
       response_format: { type: 'json_object' }
     })
 

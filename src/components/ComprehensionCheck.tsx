@@ -50,8 +50,8 @@ export default function ComprehensionCheck({
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ sectionName, sectionContent, documentTitle, count: 3 })
       })
-      if (!res.ok) throw new Error('Failed to generate questions')
       const data = await res.json()
+      if (!res.ok) throw new Error(data.error || 'Failed to generate questions')
       if (!data.questions?.length) throw new Error('No questions returned')
       setQuestions(data.questions)
       setCurrentIdx(0)
