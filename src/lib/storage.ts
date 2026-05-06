@@ -21,7 +21,7 @@ const s3Client = new S3Client({
   }
 })
 
-const S3_BUCKET = process.env.AWS_S3_BUCKET || 'litsense-documents'
+const S3_BUCKET = process.env.AWS_S3_BUCKET || 'coread-documents'
 const CLOUDFRONT_DOMAIN = process.env.CLOUDFRONT_DOMAIN
 
 export interface UploadResult {
@@ -48,7 +48,7 @@ const getServerModules = () => {
 export class CloudStorageService {
   private static config: StorageConfig = {
     provider: (process.env.STORAGE_PROVIDER as StorageProvider) || 'local',
-    bucketName: process.env.AWS_S3_BUCKET_NAME || 'litsense-documents',
+    bucketName: process.env.AWS_S3_BUCKET_NAME || 'coread-documents',
     region: process.env.AWS_REGION || 'us-east-1',
     cloudinaryName: process.env.CLOUDINARY_CLOUD_NAME || '',
   }
@@ -157,7 +157,7 @@ export class CloudStorageService {
     // Generate public URL - ensure it works in production
     const baseUrl = process.env.NEXT_PUBLIC_APP_URL || 
                    (process.env.NODE_ENV === 'production' 
-                     ? 'https://litsense.app' 
+                     ? 'https://coread.app' 
                      : 'http://localhost:3000')
     
     return {

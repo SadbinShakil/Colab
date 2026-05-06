@@ -23,6 +23,8 @@ export interface PeerProfile {
   userName: string
   sectionId: string
   understandingScore: number
+  explainerScore: number   // 0-100: how well they make others understand (from teaching-profile API)
+  explainerConfidence: 'high' | 'medium' | 'low' | 'unknown'
   status: 'struggling' | 'proficient' | 'neutral'
   availableToHelp: boolean
   currentlyHelping: string | null
@@ -97,6 +99,8 @@ class Agent2_CollaborationOrchestrator {
         userName,
         sectionId: '',
         understandingScore: 50,
+        explainerScore: 50,
+        explainerConfidence: 'unknown',
         status: 'neutral',
         availableToHelp: true,
         currentlyHelping: null
@@ -108,20 +112,91 @@ class Agent2_CollaborationOrchestrator {
   }
 
   /**
-   * SIMULATION HELPER: Injects a fake peer for demo purposes
+   * Sync live peers from the session-peers API into the local peerProfiles map.
+   * Called whenever A1 detects a significant D_s change or on a 10s heartbeat.
+   *
+   * D_s → understandingScore mapping: score = (1 - D_s) * 100
+   * so D_s=0.9 → score=10 (struggling), D_s=0.2 → score=80 (proficient)
    */
+  async syncLivePeers(documentId: string, requestingUserId: string): Promise<void> {
+    try {
+      const res = await fetch(
+        `/api/session-peers?documentId=${encodeURIComponent(documentId)}&userId=${encodeURIComponent(requestingUserId)}`
+      )
+      if (!res.ok) return
+
+      const { peers } = await res.json() as {
+        peers: Array<{
+          userId: string
+          userName: string
+          sectionId: string
+          dsScore: number
+          lastSeen: number
+        }>
+      }
+
+      peers.forEach(peer => {
+        const understandingScore = Math.round((1 - Math.min(peer.dsScore, 1)) * 100)
+        const existing = this.peerProfiles.get(peer.userId)
+        if (existing) {
+          existing.sectionId = peer.sectionId
+          existing.understandingScore = understandingScore
+          existing.status = understandingScore < 40 ? 'struggling'
+                          : understandingScore > 70 ? 'proficient'
+                          : 'neutral'
+        } else {
+          this.peerProfiles.set(peer.userId, {
+            userId: peer.userId,
+            userName: peer.userName,
+            sectionId: peer.sectionId,
+            understandingScore,
+            explainerScore: 50,   // neutral default — updated by syncTeachingProfiles()
+            explainerConfidence: 'unknown',
+            status: understandingScore < 40 ? 'struggling'
+                  : understandingScore > 70 ? 'proficient'
+                  : 'neutral',
+            availableToHelp: true,
+            currentlyHelping: null,
+          })
+        }
+      })
+
+      console.log(`🤖 [A2] Synced ${peers.length} live peers for document ${documentId}`)
+    } catch (err) {
+      console.warn('[A2] syncLivePeers failed:', err)
+    }
+  }
+
+  /**
+   * Broadcast own D_s to the session-peers API so other users see it.
+   */
+  async broadcastOwnState(documentId: string, userId: string, sectionId: string, dsScore: number): Promise<void> {
+    try {
+      await fetch('/api/session-peers', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ documentId, userId, sectionId, dsScore }),
+      })
+    } catch (err) {
+      console.warn('[A2] broadcastOwnState failed:', err)
+    }
+  }
+
+  /** @deprecated Use syncLivePeers() — kept for backward compat during transition */
   injectFakePeer(userId: string, userName: string, sectionId: string, status: 'proficient' | 'struggling') {
     const profile: PeerProfile = {
       userId,
       userName,
       sectionId,
       understandingScore: status === 'proficient' ? 85 : 30,
+      explainerScore: 50,
+      explainerConfidence: 'unknown',
       status,
       availableToHelp: true,
-      currentlyHelping: null
+      currentlyHelping: null,
     }
     this.peerProfiles.set(userId, profile)
-    console.log(`🤖 [Agent 2] Fake peer injected: ${userName} (${status})`)
+    console.warn(`🤖 [A2] injectFakePeer() is deprecated — use syncLivePeers() instead`)
   }
 
   updatePeerStatus(userId: string, sectionId: string, understandingScore: number) {
@@ -211,40 +286,68 @@ class Agent2_CollaborationOrchestrator {
     return matches.sort((a, b) => b.matchScore - a.matchScore).slice(0, 3)
   }
 
+  /**
+   * Sync teaching profiles from the /api/teaching-profile endpoint.
+   * Updates explainerScore for all registered peers.
+   * Call this once after syncLivePeers(), before findPeersForHelp().
+   */
+  async syncTeachingProfiles(documentId: string): Promise<void> {
+    try {
+      const res = await fetch(`/api/teaching-profile?paperId=${encodeURIComponent(documentId)}`)
+      if (!res.ok) return
+      const data = await res.json() as {
+        success: boolean
+        profiles: Array<{ userId: string; explainerScore: number; confidence: 'high' | 'medium' | 'low' }>
+      }
+      if (!data.success) return
+      for (const tp of data.profiles) {
+        const profile = this.peerProfiles.get(tp.userId)
+        if (profile) {
+          profile.explainerScore = Math.round(tp.explainerScore * 100)
+          profile.explainerConfidence = tp.confidence
+        }
+      }
+      console.log(`🤖 [A2] Teaching profiles synced for ${data.profiles.length} peers`)
+    } catch {
+      // fail silently — teaching profiles are a bonus signal, not a blocker
+    }
+  }
+
   private calculateMatchScore(helpee: PeerProfile, helper: PeerProfile): number {
-    // Higher score = better match
     let score = 0
 
-    // Score based on understanding gap (not too large, not too small)
+    // 40 pts — understanding gap (ideal: helper is 20-40 pts above helpee)
     const gap = helper.understandingScore - helpee.understandingScore
-    if (gap > 20 && gap < 40) {
-      score += 50 // Ideal gap
-    } else if (gap >= 40) {
-      score += 30 // Large gap (helper might be too advanced)
+    if (gap > 20 && gap < 40) score += 40
+    else if (gap >= 40) score += 25  // Too large — may not relate to helpee's confusion
+    else score += 15
+
+    // 35 pts — explainer effectiveness score (key differentiator from Feature 5)
+    // Only weight this if confidence is medium or high — ignore unknown/low
+    if (helper.explainerConfidence !== 'unknown' && helper.explainerConfidence !== 'low') {
+      score += Math.round((helper.explainerScore / 100) * 35)
     } else {
-      score += 20 // Small gap
+      score += 17  // neutral if no data yet
     }
 
-    // Bonus if helper is available
-    if (helper.availableToHelp) {
-      score += 30
-    }
+    // 15 pts — availability
+    if (helper.availableToHelp && !helper.currentlyHelping) score += 15
 
-    // Bonus if same section
-    if (helper.sectionId === helpee.sectionId) {
-      score += 20
-    }
+    // 10 pts — same section
+    if (helper.sectionId === helpee.sectionId) score += 10
 
     return Math.min(score, 100)
   }
 
   private getMatchReason(helpee: PeerProfile, helper: PeerProfile): string {
     const gap = helper.understandingScore - helpee.understandingScore
+    const hasExplainerData = helper.explainerConfidence === 'high' || helper.explainerConfidence === 'medium'
+    const isStrongExplainer = hasExplainerData && helper.explainerScore >= 70
 
-    // A Google workspace/doc type reasoning approach
-    // We infer understanding contextually based on their scoring gap without exposing the raw score
-    if (gap > 40) {
-      return `${helper.userName} recently reviewed this section smoothly and may have valuable insights.`
+    if (isStrongExplainer && gap > 20) {
+      return `${helper.userName} navigated this section smoothly and has a strong track record of making explanations land (${helper.explainerScore}% effectiveness across ${helper.explainerConfidence === 'high' ? 'multiple' : 'recent'} peer sessions).`
+    } else if (gap > 40) {
+      return `${helper.userName} reviewed this section with minimal coordination instability — likely has clear mental model of the key concepts.`
     } else if (gap > 20) {
       return `${helper.userName} navigated this section with high engagement and minimal struggle.`
     } else {

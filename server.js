@@ -30,8 +30,70 @@ app.prepare().then(() => {
     }
   })
 
-  // Document rooms
+  // Expose io globally so REST routes can emit Socket.IO events
+  global.__io = io
+
+  // Document rooms — exposed globally so API routes can read live peer state
   const documentRooms = new Map()
+  global.__documentRooms = documentRooms
+
+  // Cooldown per room — prevent discussion-navigator from firing too frequently
+  const discussionNavCooldowns = new Map() // documentId → timestamp of last fire
+
+  async function maybeNavigateDiscussion(documentId) {
+    const now = Date.now()
+    const lastFired = discussionNavCooldowns.get(documentId) || 0
+    if (now - lastFired < 30000) return // 30s cooldown
+
+    const room = documentRooms.get(documentId)
+    if (!room || room.chatHistory.length < 2) return
+
+    // Only proceed if multiple users are present
+    const uniqueUsers = new Set(room.chatHistory.slice(-6).map(m => m.userId))
+    if (uniqueUsers.size < 2) return
+
+    discussionNavCooldowns.set(documentId, now)
+
+    try {
+      const res = await fetch(`http://localhost:3000/api/discussion-navigator`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          messages: room.chatHistory.slice(-6),
+          documentTitle: room.documentTitle || '',
+          pageTexts: room.pageTexts || {},
+        }),
+      })
+      const data = await res.json()
+      if (data.navigate && data.page) {
+        console.log(`🧭 [DiscussionNav] Room ${documentId}: navigating all to page ${data.page} — "${data.label}"`)
+        io.to(documentId).emit('discussion-navigate', {
+          page: data.page,
+          label: data.label || '',
+          highlightLabel: data.highlightLabel || data.label || '',
+          confidence: data.confidence || 'medium',
+          reason: data.reason || '',
+        })
+      }
+    } catch (err) {
+      console.warn(`[DiscussionNav] fetch error for ${documentId}:`, err.message)
+    }
+  }
+
+  // Expose discussion navigator globally so REST routes can trigger it
+  global.__maybeNavigateDiscussion = maybeNavigateDiscussion
+
+  // Google-Docs-style user identity colors — assigned by join order
+  const USER_IDENTITY_COLORS = [
+    '#0ea5e9', // sky blue
+    '#f97316', // orange
+    '#10b981', // emerald
+    '#a855f7', // purple
+    '#ef4444', // red
+    '#eab308', // yellow
+    '#ec4899', // pink
+    '#14b8a6', // teal
+  ]
 
   io.on('connection', (socket) => {
     console.log(`👤 User connected: ${socket.id}`)
@@ -43,7 +105,7 @@ app.prepare().then(() => {
       socket.data = { documentId, userName, userId }
 
       if (!documentRooms.has(documentId)) {
-        documentRooms.set(documentId, { highlights: [], users: [] })
+        documentRooms.set(documentId, { highlights: [], users: [], chatHistory: [], pageTexts: {}, documentTitle: '' })
       }
 
       const room = documentRooms.get(documentId)
@@ -51,13 +113,14 @@ app.prepare().then(() => {
       // ✅ Check if user already exists (prevent duplicates)
       const existingUserIndex = room.users.findIndex(u => u.userId === userId)
       if (existingUserIndex >= 0) {
-        // Update existing user's socketId
+        // Update existing user's socketId (keep their assigned color)
         room.users[existingUserIndex].socketId = socket.id
         console.log(`🔄 Updated existing user: ${userName} (${userId}) -> socket: ${socket.id}`)
       } else {
-        // Add new user
-        room.users.push({ socketId: socket.id, userName, userId })
-        console.log(`✅ Added new user: ${userName} (${userId}) -> socket: ${socket.id}`)
+        // Assign identity color by join order
+        const userColor = USER_IDENTITY_COLORS[room.users.length % USER_IDENTITY_COLORS.length]
+        room.users.push({ socketId: socket.id, userName, userId, userColor })
+        console.log(`✅ Added new user: ${userName} (${userId}) -> socket: ${socket.id}, color: ${userColor}`)
       }
 
       console.log(`👥 [Server] Current users in room ${documentId}:`, room.users.map(u => `${u.userName} (${u.userId})`))
@@ -78,15 +141,68 @@ app.prepare().then(() => {
     socket.on('new-highlight', (highlightData) => {
       const { documentId } = highlightData
 
+      const room = documentRooms.get(documentId)
+      const senderUser = room?.users.find(u => u.userId === highlightData.userId)
       const enrichedHighlight = {
         ...highlightData,
         id: `highlight_${Date.now()}_${socket.id}`,
-        timestamp: new Date().toISOString()
+        timestamp: new Date().toISOString(),
+        userColor: senderUser?.userColor || '#6366f1',
       }
 
-      const room = documentRooms.get(documentId)
       if (room) {
         room.highlights.push(enrichedHighlight)
+
+        // ── Server-side divergence detection ──────────────────────────────────
+        // Only check when the incoming highlight has a reason (set after user picks one)
+        const inReason = (highlightData.reason || highlightData.comment || '').toLowerCase()
+        const inText = (highlightData.text || highlightData.contents || '').toLowerCase()
+        const inPage = highlightData.pageNumber || highlightData.page || 0
+        const inUser = highlightData.userId || highlightData.user || ''
+        const inUserName = highlightData.userName || highlightData.user || 'Peer'
+
+        if (inReason && inText && inText.length > 10) {
+          // Tokenise — words longer than 3 chars
+          const tokensIn = new Set(inText.split(/\s+/).filter(t => t.length > 3))
+
+          for (const h of room.highlights) {
+            const hReason = (h.reason || h.comment || '').toLowerCase()
+            const hText = (h.text || h.contents || '').toLowerCase()
+            const hPage = h.pageNumber || h.page || 0
+            const hUser = h.userId || h.user || ''
+            const hUserName = h.userName || h.user || 'Peer'
+
+            // Skip same user, same reason, far-away pages
+            if (hUser === inUser) continue
+            if (hReason === inReason) continue
+            if (Math.abs(hPage - inPage) > 1) continue
+            if (!hText || hText.length < 10) continue
+
+            const tokensH = new Set(hText.split(/\s+/).filter(t => t.length > 3))
+            if (tokensH.size === 0 || tokensIn.size === 0) continue
+
+            const intersection = [...tokensIn].filter(t => tokensH.has(t)).length
+            const union = new Set([...tokensIn, ...tokensH]).size
+            const jaccard = intersection / union
+
+            if (jaccard >= 0.20) {  // lower threshold — same-page nearby passages
+              // Find shared words as passage excerpt
+              const shared = [...tokensIn].filter(t => tokensH.has(t)).slice(0, 8).join(' ')
+              console.log(`🔀 [Server] Divergence: "${inUserName}" (${inReason}) vs "${hUserName}" (${hReason}) — overlap ${(jaccard*100).toFixed(0)}%`)
+
+              io.to(documentId).emit('divergence-signal', {
+                passage: shared || inText.slice(0, 80),
+                userAName: inUserName,
+                userAReason: inReason,
+                userBName: hUserName,
+                userBReason: hReason,
+                sectionId: highlightData.sectionId || `page-${inPage}`,
+                overlapScore: jaccard,
+              })
+              break  // one divergence signal per highlight is enough
+            }
+          }
+        }
       }
 
       socket.to(documentId).emit('highlight-added', enrichedHighlight)
@@ -150,6 +266,23 @@ app.prepare().then(() => {
 
       const room = documentRooms.get(data.documentId)
       if (room) {
+        // Accumulate all group messages for discussion navigator
+        if (!data.toUserId) {
+          room.chatHistory.push({
+            userId: data.fromUserId || data.userId || socket.id,
+            userName: data.fromUserName || 'Unknown',
+            message: data.message || data.content || '',
+            timestamp: Date.now(),
+          })
+          // Keep only last 20 messages
+          if (room.chatHistory.length > 20) room.chatHistory.splice(0, room.chatHistory.length - 20)
+
+          // Every 3 group messages, check if we should navigate
+          if (room.chatHistory.length % 3 === 0) {
+            maybeNavigateDiscussion(data.documentId)
+          }
+        }
+
         if (data.toUserId) {
           // PRIVATE MESSAGE: Find target user
           const targetUser = room.users.find((u) => u.userId === data.toUserId)
@@ -167,6 +300,17 @@ app.prepare().then(() => {
       }
     })
 
+    // ── Page texts sync — clients send extracted page text for discussion navigator ──
+    socket.on('page-texts-sync', (data) => {
+      const room = documentRooms.get(data.documentId)
+      if (room && data.pageTexts) {
+        // Merge — client sends its current page texts cache
+        Object.assign(room.pageTexts, data.pageTexts)
+        if (data.documentTitle) room.documentTitle = data.documentTitle
+        console.log(`📄 [Server] Page texts synced for ${data.documentId}: ${Object.keys(room.pageTexts).length} pages`)
+      }
+    })
+
     // ✅ ADD: Handle Reflection Updates
     socket.on('reflection-updated', (data) => {
       console.log(`🧠 [Server] Reflection update from ${data.userName}:`, {
@@ -180,6 +324,13 @@ app.prepare().then(() => {
       console.log(`✅ [Server] Reflection broadcasted to room: ${data.documentId}`)
     })
 
+    // Async marginal note created — broadcast to live readers in same document
+    socket.on('marginal-note-created', (data) => {
+      const { documentId } = data
+      console.log(`📝 [Server] Marginal note created by ${data.authorName} on page ${data.pageNumber} in ${documentId}`)
+      socket.to(documentId).emit('marginal-note-created', data)
+    })
+
     // ✅ ADD: Handle Session Phase Start Sync
     socket.on('session-start', (data) => {
       console.log(`🚀 [Server] Session Start Triggered by ${socket.id} at ${data.timestamp}`)
@@ -187,6 +338,77 @@ app.prepare().then(() => {
       if (data.documentId) {
         io.to(data.documentId).emit('session-start', data)
       }
+    })
+
+    // ── Peer page position tracking — feeds ReadingTrajectoryMap ──────────────
+    socket.on('peer-page-changed', (data) => {
+      const room = documentRooms.get(data.documentId)
+      if (room) {
+        const user = room.users.find(u => u.userId === data.userId)
+        if (user) {
+          user.currentPage = data.currentPage
+          user.currentSectionId = data.currentSectionId
+          user.currentSectionName = data.currentSectionName
+        }
+      }
+      socket.to(data.documentId).emit('peer-page-changed', data)
+    })
+
+    // ── A2 peer notification — routes struggle/help signals cross-user ──────────
+    // Sent by the coordination core when A2 identifies a helper for a struggling reader.
+    // Delivered only to the target user's socket, not broadcast to the whole room.
+    socket.on('peer-notification', (data) => {
+      const { targetUserId, documentId } = data
+      const room = documentRooms.get(documentId)
+      if (!room) {
+        console.log(`[Server] peer-notification: room ${documentId} not found`)
+        return
+      }
+      const targetUser = room.users.find(u => String(u.userId) === String(targetUserId))
+      if (targetUser) {
+        io.to(targetUser.socketId).emit('peer-notification', data)
+        console.log(`🔔 [Server] peer-notification → ${targetUser.userName} (${targetUser.socketId})`)
+      } else {
+        console.log(`[Server] peer-notification: target user ${targetUserId} not in room`)
+      }
+    })
+
+    // ── Annotation divergence — when two readers mark same passage differently ─
+    socket.on('annotation-divergence', (data) => {
+      const excerpt = (data.passage || data.passageText || '').slice(0, 40)
+      console.log(`⚡ [Server] Divergence detected in ${data.documentId}: "${excerpt}..."`)
+      io.to(data.documentId).emit('divergence-signal', data)
+    })
+
+    // ── Structured debate — A3 facilitated discussion ─────────────────────────
+    socket.on('debate-position', (data) => {
+      socket.to(data.documentId).emit('debate-position', data)
+    })
+
+    socket.on('debate-synthesis-ready', (data) => {
+      io.to(data.documentId).emit('debate-synthesis-ready', data)
+    })
+
+    socket.on('debate-opened', (data) => {
+      socket.to(data.documentId).emit('debate-opened', data)
+    })
+
+    socket.on('debate-closed', (data) => {
+      io.to(data.documentId).emit('debate-closed', data)
+    })
+
+    // ── Marginal note replies — threaded epistemic notes ──────────────────────
+    socket.on('marginal-note-reply', (data) => {
+      socket.to(data.documentId).emit('marginal-note-reply', data)
+    })
+
+    socket.on('marginal-note-tag-update', (data) => {
+      socket.to(data.documentId).emit('marginal-note-tag-update', data)
+    })
+
+    // ── Reading trajectory — D_s snapshot broadcast ───────────────────────────
+    socket.on('ds-snapshot', (data) => {
+      socket.to(data.documentId).emit('ds-snapshot', data)
     })
 
     socket.on('disconnect', () => {

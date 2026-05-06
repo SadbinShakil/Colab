@@ -1,7 +1,7 @@
 /**
  * sessionLogger.ts
  *
- * Writes CoRead evaluation data to Firebase Realtime Database (v8 SDK).
+ * Writes CoRead evaluation data to Firebase Realtime Database (v8 compat SDK).
  * Implements the data model from CLAUDE.md:
  *
  *   sessions/{sessionId}/
@@ -9,8 +9,11 @@
  *     interventions/{interventionId}/
  *     artifacts/sessionLog/{userId}
  *
- * Always call from client-side code (agents, hooks).
- * Designed to fail silently — never block reading if Firebase is offline.
+ * Always called from client-side code (agents, hooks).
+ * Fails silently — never blocks reading if Firebase is offline.
+ *
+ * NOTE: This project uses Firebase v8 (namespace/compat API).
+ * Do NOT use v9 modular imports (getApps, getDatabase, ref, push, etc.)
  */
 
 import firebase from 'firebase/app'
@@ -26,15 +29,13 @@ const firebaseConfig = {
   appId: '1:233993540501:web:7e092a284a0ba56cb59c9c',
 }
 
-// Re-use the existing app if already initialised (firebaseClient.js may initialise first)
-if (!firebase.apps.length) {
-  firebase.initializeApp(firebaseConfig)
-}
-
-const db = firebase.database()
+// Re-use existing app if already initialised (firebaseClient.js may initialise first)
+const app = firebase.apps.length
+  ? firebase.apps[0]
+  : firebase.initializeApp(firebaseConfig)
 
 // ---------------------------------------------------------------------------
-// Types matching the CLAUDE.md data model
+// Types — match the CLAUDE.md data model exactly
 // ---------------------------------------------------------------------------
 
 export type InterventionType =
@@ -80,13 +81,13 @@ export async function logIntervention(
   event: InterventionEvent
 ): Promise<void> {
   if (typeof window === 'undefined') return
-
   try {
-    const ref = db.ref(`sessions/${sessionId}/interventions`)
-    await ref.push({
-      ...event,
-      serverTimestamp: firebase.database.ServerValue.TIMESTAMP,
-    })
+    await app.database()
+      .ref(`sessions/${sessionId}/interventions`)
+      .push({
+        ...event,
+        serverTimestamp: firebase.database.ServerValue.TIMESTAMP,
+      })
     console.log(`📊 [SessionLogger] Intervention logged: ${event.agentId} / ${event.type}`)
   } catch (err) {
     console.warn('[SessionLogger] Failed to log intervention (offline?):', err)
@@ -103,10 +104,10 @@ export async function logDsDataPoint(
   point: DsDataPoint
 ): Promise<void> {
   if (typeof window === 'undefined') return
-
   try {
-    const ref = db.ref(`sessions/${sessionId}/participants/${userId}/dsHistory`)
-    await ref.push(point)
+    await app.database()
+      .ref(`sessions/${sessionId}/participants/${userId}/dsHistory`)
+      .push(point)
   } catch (err) {
     console.warn('[SessionLogger] Failed to log D_s point (offline?):', err)
   }
@@ -122,9 +123,8 @@ export async function updateInterventionOutcome(
   outcome: InterventionOutcome
 ): Promise<void> {
   if (typeof window === 'undefined') return
-
   try {
-    await db
+    await app.database()
       .ref(`sessions/${sessionId}/interventions/${interventionId}/outcome`)
       .set(outcome)
     console.log(`📊 [SessionLogger] Outcome updated: ${interventionId} → ${outcome}`)
@@ -142,9 +142,8 @@ export async function writeSessionLog(
   artifact: Record<string, unknown>
 ): Promise<void> {
   if (typeof window === 'undefined') return
-
   try {
-    await db
+    await app.database()
       .ref(`sessions/${sessionId}/artifacts/sessionLog/${userId}`)
       .set({ ...artifact, generatedAt: Date.now() })
     console.log(`📊 [SessionLogger] Session Log written for user ${userId}`)
@@ -155,6 +154,7 @@ export async function writeSessionLog(
 
 /**
  * Register a participant's profile for the session.
+ * Called at Phase I completion — sets role, expertise, section assignments.
  */
 export async function registerParticipant(
   sessionId: string,
@@ -167,13 +167,36 @@ export async function registerParticipant(
   }
 ): Promise<void> {
   if (typeof window === 'undefined') return
-
   try {
-    await db
+    await app.database()
       .ref(`sessions/${sessionId}/participants/${userId}`)
       .set({ ...profile, joinedAt: Date.now() })
     console.log(`📊 [SessionLogger] Participant registered: ${userId}`)
   } catch (err) {
     console.warn('[SessionLogger] Failed to register participant (offline?):', err)
+  }
+}
+
+/**
+ * Write a Collective Knowledge Base entry (A5 / Phase III).
+ */
+export async function writeCollectiveKnowledge(
+  sessionId: string,
+  entry: {
+    sectionId: string
+    summary: string
+    openQuestions: string[]
+    contestedClaims: string[]
+    createdAt: number
+  }
+): Promise<void> {
+  if (typeof window === 'undefined') return
+  try {
+    await app.database()
+      .ref(`sessions/${sessionId}/artifacts/collectiveKnowledgeBase`)
+      .push(entry)
+    console.log(`📊 [SessionLogger] CKB entry written for session ${sessionId}`)
+  } catch (err) {
+    console.warn('[SessionLogger] Failed to write CKB entry (offline?):', err)
   }
 }

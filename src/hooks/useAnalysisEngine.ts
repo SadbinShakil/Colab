@@ -55,11 +55,17 @@ export function useAnalysisEngine(documentContent?: string, summary?: any) {
 
     setState(prev => ({ ...prev, loading: true, error: null }))
 
-    // Create new worker
-    const worker = new Worker(
-      new URL('../workers/analysis-worker.ts', import.meta.url),
-      { type: 'module' }
-    )
+    // Create new worker — may fail in some Next.js environments
+    let worker: Worker
+    try {
+      worker = new Worker(
+        new URL('../workers/analysis-worker.ts', import.meta.url),
+        { type: 'module' }
+      )
+    } catch {
+      // Worker unavailable — timeout fallback will provide placeholder data
+      return
+    }
 
     workerRef.current = worker
 

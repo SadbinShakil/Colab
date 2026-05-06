@@ -5,6 +5,7 @@
   "scripts": {
     "copy-webviewer": "powershell -Command \"New-Item -ItemType Directory -Force -Path './public/lib/webviewer'; Copy-Item -Path './node_modules/@pdftron/webviewer/public/*' -Destination './public/lib/webviewer/' -Recurse -Force\"",
     "dev": "npm run copy-webviewer && node server.js",
+    "dev-turbo": "npm run copy-webviewer && next dev --turbopack",
     "dev-old": "npm run copy-webviewer && next dev --turbopack",
     "build": "npm run copy-webviewer && next build",
     "start": "next start",
@@ -72,6 +73,7 @@
     "@types/react-dom": "^19",
     "eslint": "^9",
     "eslint-config-next": "15.4.1",
+    "puppeteer": "^24.39.1",
     "tailwindcss": "^4",
     "typescript": "^5"
   }

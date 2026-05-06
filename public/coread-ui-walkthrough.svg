@@ -1,0 +1,348 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1680 440" width="1680" height="440"
+     font-family="'Inter','Segoe UI',system-ui,Arial,sans-serif">
+<defs>
+  <filter id="sh" x="-5%" y="-5%" width="115%" height="125%">
+    <feDropShadow dx="0" dy="3" stdDeviation="10" flood-color="#00000015"/>
+  </filter>
+  <filter id="sh2" x="-5%" y="-5%" width="115%" height="135%">
+    <feDropShadow dx="0" dy="4" stdDeviation="12" flood-color="#00000018"/>
+  </filter>
+  <linearGradient id="gI" x1="0" y1="0" x2="1" y2="0">
+    <stop offset="0%" stop-color="#6366F1"/>
+    <stop offset="100%" stop-color="#7C3AED"/>
+  </linearGradient>
+  <marker id="arr" markerWidth="8" markerHeight="6" refX="8" refY="3" orient="auto">
+    <polygon points="0,0 8,3 0,6" fill="#6366F1"/>
+  </marker>
+  <clipPath id="clipA">
+    <rect x="20" y="20" width="660" height="400" rx="12"/>
+  </clipPath>
+  <clipPath id="clipBhdr">
+    <rect x="710" y="20" width="420" height="50" rx="12"/>
+  </clipPath>
+  <clipPath id="clipC">
+    <rect x="1160" y="20" width="500" height="400" rx="12"/>
+  </clipPath>
+  <clipPath id="clipChdr">
+    <rect x="1160" y="20" width="500" height="54" rx="12"/>
+  </clipPath>
+</defs>
+
+<!-- Canvas background -->
+<rect width="1680" height="440" fill="#F0F2F5"/>
+
+<!-- ================================================================ -->
+<!-- PANEL A — Implicit help detected  x=20 y=20 w=660 h=400          -->
+<!-- ================================================================ -->
+<rect x="20" y="20" width="660" height="400" rx="12" fill="#FFFFFF" filter="url(#sh)"/>
+
+<!-- Top toolbar strip (clipped to panel) -->
+<rect x="20" y="20" width="660" height="32" rx="12" fill="#FAFAFA" clip-path="url(#clipA)"/>
+<rect x="20" y="32" width="660" height="20" fill="#FAFAFA" clip-path="url(#clipA)"/>
+<rect x="20" y="51" width="660" height="1" fill="#E8ECF0"/>
+
+<!-- Toolbar left -->
+<rect x="32" y="29" width="10" height="10" rx="2" fill="#6366F1"/>
+<text x="46" y="39" font-size="11" font-weight="700" fill="#374151">CoRead</text>
+<text x="100" y="39" font-size="10" fill="#CBD5E1">|</text>
+<text x="108" y="39" font-size="10" fill="#94A3B8">Reading Together: A Case Study in CSCL...</text>
+
+<!-- Toolbar right -->
+<circle cx="582" cy="36" r="4" fill="#CBD5E1"/>
+<circle cx="596" cy="36" r="4" fill="#CBD5E1"/>
+<circle cx="610" cy="36" r="4" fill="#CBD5E1"/>
+<circle cx="630" cy="36" r="5" fill="#22C55E"/>
+<text x="638" y="39" font-size="9" fill="#64748B">2 reading</text>
+
+<!-- PDF content area -->
+<rect x="20" y="52" width="660" height="368" fill="#F8FAFC" clip-path="url(#clipA)"/>
+
+<!-- White PDF page inset -->
+<rect x="40" y="64" width="450" height="270" rx="4" fill="#FFFFFF" stroke="#E8ECF0" stroke-width="1" filter="url(#sh)"/>
+
+<!-- Peer highlight rects — drawn BEFORE text -->
+<rect x="56" y="97"  width="390" height="48" rx="2" fill="#FCA5A5" opacity="0.28"/>
+<rect x="56" y="112" width="390" height="48" rx="2" fill="#93C5FD" opacity="0.22"/>
+<rect x="56" y="157" width="390" height="32" rx="2" fill="#6EE7B7" opacity="0.22"/>
+<rect x="56" y="187" width="390" height="48" rx="2" fill="#FDE68A" opacity="0.32"/>
+
+<!-- Section heading -->
+<text x="56" y="82" font-size="11" font-weight="700" fill="#1E293B">3.1.2  The activities flow (IRIS learning mode).</text>
+
+<!-- Body text -->
+<text x="56" y="100" font-size="10" fill="#374151">1. Individual preparation. Before the collaboration, learners</text>
+<text x="56" y="115" font-size="10" fill="#374151">need to prepare to construct knowledge individually. They can</text>
+<text x="56" y="130" font-size="10" fill="#374151">log in to the system, highlight and comment on the learning</text>
+<text x="56" y="145" font-size="10" fill="#374151">materials. Besides, they can see and comment on their peers&#x2019;</text>
+<text x="56" y="160" font-size="10" fill="#374151">annotations in real time. In general, learners have 2&#x2013;3 days</text>
+<text x="56" y="175" font-size="10" fill="#374151">to complete the reading assignment.</text>
+<text x="56" y="197" font-size="10" fill="#374151">2. Group reflection. Learning feedback can be an effective</text>
+<text x="56" y="212" font-size="10" fill="#374151">tool for reflection [15]. Therefore, we provide learning</text>
+<text x="56" y="227" font-size="10" fill="#374151">feedback on the group&#x2019;s performance of individual annotation.</text>
+
+<!-- Right-margin annotation dots -->
+<circle cx="500" cy="106" r="7" fill="#EF4444" opacity="0.85"/>
+<circle cx="500" cy="136" r="7" fill="#3B82F6" opacity="0.85"/>
+<circle cx="500" cy="197" r="7" fill="#F59E0B" opacity="0.85"/>
+
+<!-- Callout 1 — peer highlights -->
+<circle cx="520" cy="113" r="9" fill="#FFFFFF" stroke="#6366F1" stroke-width="1.5"/>
+<text x="520" y="117" font-size="9" font-weight="700" fill="#6366F1" text-anchor="middle">1</text>
+<line x1="511" y1="113" x2="508" y2="113" stroke="#6366F1" stroke-width="1" stroke-dasharray="3,2"/>
+<text x="528" y="128" font-size="8" fill="#6366F1">Peer</text>
+<text x="524" y="139" font-size="8" fill="#6366F1">highlights</text>
+
+<!-- A7 Implicit Help Card — floated over bottom of panel -->
+<!-- Card bg + border -->
+<rect x="30" y="268" width="618" height="142" rx="10" fill="#FFFFFF" stroke="#FDE68A" stroke-width="1.5" filter="url(#sh2)"/>
+<!-- Left amber accent bar -->
+<rect x="30" y="268" width="4" height="142" rx="2" fill="#F59E0B"/>
+
+<!-- Card row 1: icon + label + section + Ds pill -->
+<rect x="46" y="279" width="18" height="18" rx="4" fill="#6366F1"/>
+<text x="55" y="292" font-size="11" fill="#FFFFFF" text-anchor="middle">&#x2736;</text>
+<text x="68" y="292" font-size="9" font-weight="700" fill="#6366F1">COREAD &#xB7; A7</text>
+<text x="142" y="292" font-size="9" fill="#94A3B8">&#xA7; Page 5</text>
+<!-- Ds pill -->
+<rect x="542" y="281" width="72" height="16" rx="8" fill="#FEF3C7" stroke="#FDE68A" stroke-width="1"/>
+<text x="578" y="293" font-size="9" font-weight="700" fill="#B45309" text-anchor="middle">D_s 0.81</text>
+
+<!-- Card row 2: topic chips -->
+<rect x="46" y="300" width="44" height="15" rx="7" fill="#FFFFFF" stroke="#E2E8F0" stroke-width="1"/>
+<text x="68" y="311" font-size="8" fill="#374151" text-anchor="middle">Figure 4</text>
+<rect x="96" y="300" width="86" height="15" rx="7" fill="#FFFFFF" stroke="#E2E8F0" stroke-width="1"/>
+<text x="139" y="311" font-size="8" fill="#374151" text-anchor="middle">IRIS learning mode</text>
+<rect x="188" y="300" width="122" height="15" rx="7" fill="#FFFFFF" stroke="#E2E8F0" stroke-width="1"/>
+<text x="249" y="311" font-size="8" fill="#374151" text-anchor="middle">Peer annotation visibility</text>
+
+<!-- Card row 3: body text -->
+<text x="46" y="330" font-size="10" fill="#374151">The claim about peer annotation visibility affecting learning outcomes is tension-laden,</text>
+<text x="46" y="344" font-size="10" fill="#374151">as it lacks detailed evidence and is further explored in Study 3.</text>
+
+<!-- Card row 4: action buttons -->
+<rect x="46" y="354" width="100" height="26" rx="6" fill="#FFFFFF" stroke="#E2E8F0" stroke-width="1"/>
+<text x="96" y="371" font-size="9" fill="#374151" text-anchor="middle">Unpack mechanism</text>
+<rect x="152" y="354" width="86" height="26" rx="6" fill="#FFFFFF" stroke="#E2E8F0" stroke-width="1"/>
+<text x="195" y="371" font-size="9" fill="#374151" text-anchor="middle">Trace prior work</text>
+<rect x="244" y="354" width="82" height="26" rx="6" fill="#FFFFFF" stroke="#E2E8F0" stroke-width="1"/>
+<text x="285" y="371" font-size="9" fill="#374151" text-anchor="middle">Challenge this</text>
+<rect x="332" y="354" width="90" height="26" rx="6" fill="#F0FDF4" stroke="#BBF7D0" stroke-width="1"/>
+<text x="377" y="371" font-size="9" font-weight="700" fill="#15803D" text-anchor="middle">Ask a peer &#x2192;</text>
+
+<!-- Card row 5: input bar -->
+<rect x="46" y="388" width="590" height="20" rx="6" fill="#F8FAFC" stroke="#E2E8F0" stroke-width="1"/>
+<text x="54" y="402" font-size="9" fill="#94A3B8" font-style="italic">Ask a specific question about this section</text>
+
+<!-- Callout 2 — A7 implicit help -->
+<circle cx="46" cy="276" r="9" fill="#FFFFFF" stroke="#6366F1" stroke-width="1.5"/>
+<text x="46" y="280" font-size="9" font-weight="700" fill="#6366F1" text-anchor="middle">2</text>
+<text x="58" y="266" font-size="8" fill="#6366F1">A7 &#xB7; implicit help</text>
+
+<!-- Panel A label -->
+<circle cx="34" cy="34" r="13" fill="#6366F1"/>
+<text x="34" y="39" font-size="14" font-weight="700" fill="#FFFFFF" text-anchor="middle">A</text>
+
+
+<!-- ================================================================ -->
+<!-- ARROW A → B    x=682–708 y=220                                   -->
+<!-- ================================================================ -->
+<line x1="682" y1="220" x2="706" y2="220" stroke="#6366F1" stroke-width="2" marker-end="url(#arr)"/>
+<text x="694" y="213" font-size="9" font-weight="700" fill="#6366F1" text-anchor="middle">D_s &#x2265; &#x3C4;_fire</text>
+
+
+<!-- ================================================================ -->
+<!-- PANEL B — A6 depth analysis   x=710 y=20 w=420 h=400            -->
+<!-- ================================================================ -->
+<rect x="710" y="20" width="420" height="400" rx="12" fill="#FFFFFF" filter="url(#sh)"/>
+
+<!-- Header gradient (clipped to rounded top) -->
+<rect x="710" y="20" width="420" height="50" rx="12" fill="url(#gI)" clip-path="url(#clipBhdr)"/>
+<rect x="710" y="44" width="420" height="26" fill="url(#gI)"/>
+
+<!-- Header content -->
+<rect x="722" y="28" width="24" height="24" rx="6" fill="#FFFFFF" opacity="0.18"/>
+<text x="734" y="44" font-size="13" fill="#FFFFFF" text-anchor="middle">&#x2736;</text>
+<text x="752" y="38" font-size="11" font-weight="700" fill="#FFFFFF">COREAD &#xB7; A7</text>
+<text x="752" y="54" font-size="9" fill="#FFFFFF" opacity="0.8">&#xA7; Page 5 &#xB7; Section 3.1.2</text>
+
+<!-- Topic chips row -->
+<rect x="710" y="70" width="420" height="22" fill="#F9FAFB"/>
+<rect x="720" y="74" width="46" height="14" rx="7" fill="#EEF2FF" stroke="#C7D2FE" stroke-width="1"/>
+<circle cx="729" cy="81" r="3" fill="#6366F1"/>
+<text x="748" y="85" font-size="8" font-weight="600" fill="#6366F1" text-anchor="middle">Figure 4</text>
+<rect x="772" y="74" width="88" height="14" rx="7" fill="#FFFFFF" stroke="#E2E8F0" stroke-width="1"/>
+<text x="816" y="85" font-size="8" fill="#374151" text-anchor="middle">IRIS learning mode</text>
+<rect x="866" y="74" width="122" height="14" rx="7" fill="#FFFFFF" stroke="#E2E8F0" stroke-width="1"/>
+<text x="927" y="85" font-size="8" fill="#374151" text-anchor="middle">Peer annotation visibility</text>
+
+<!-- Body insight text -->
+<text x="722" y="108" font-size="10" fill="#374151">The claim about peer annotation visibility affecting</text>
+<text x="722" y="122" font-size="10" fill="#374151">learning outcomes is tension-laden, as it lacks</text>
+<text x="722" y="136" font-size="10" fill="#374151">detailed evidence and is further explored in Study 3.</text>
+
+<!-- A6 Figure Analysis sub-card -->
+<rect x="720" y="150" width="402" height="196" rx="10" fill="#F8FAFC" stroke="#E2E8F0" stroke-width="1"/>
+
+<!-- A6 sub-card header -->
+<text x="732" y="167" font-size="9" font-weight="700" fill="#6366F1">&#x2736; FIGURE ANALYSIS &#xB7; A6</text>
+<text x="1109" y="167" font-size="12" fill="#94A3B8" text-anchor="end">&#xD7;</text>
+
+<!-- Three analysis tabs -->
+<rect x="728" y="174" width="122" height="34" rx="8" fill="#FFFFFF" stroke="#E2E8F0" stroke-width="1"/>
+<text x="789" y="188" font-size="8" font-weight="600" fill="#374151" text-anchor="middle">Orient</text>
+<text x="789" y="201" font-size="8" fill="#94A3B8" text-anchor="middle">What is this?</text>
+
+<rect x="854" y="174" width="122" height="34" rx="8" fill="#FFFFFF" stroke="#E2E8F0" stroke-width="1"/>
+<text x="915" y="188" font-size="8" font-weight="600" fill="#374151" text-anchor="middle">Interrogate</text>
+<text x="915" y="201" font-size="8" fill="#94A3B8" text-anchor="middle">Does it hold up?</text>
+
+<rect x="980" y="174" width="134" height="34" rx="8" fill="#FEF3C7" stroke="#FDE68A" stroke-width="1.5"/>
+<text x="1047" y="188" font-size="8" font-weight="700" fill="#92400E" text-anchor="middle">Challenge</text>
+<text x="1047" y="201" font-size="8" fill="#B45309" text-anchor="middle">Where does it break?</text>
+
+<!-- Challenge content -->
+<text x="732" y="227" font-size="10" fill="#EF4444">&#x26A0;</text>
+<text x="746" y="227" font-size="9" font-weight="700" fill="#EF4444">ALTERNATIVE READ</text>
+<text x="732" y="243" font-size="10" fill="#374151">A sceptical reviewer might interpret the figure</text>
+<text x="732" y="257" font-size="10" fill="#374151">as merely conceptual, without empirical backing.</text>
+<text x="732" y="271" font-size="10" fill="#374151">They might argue the figure alone does not</text>
+<text x="732" y="285" font-size="10" fill="#374151">demonstrate effectiveness over existing methods.</text>
+
+<!-- Feedback row -->
+<text x="732" y="328" font-size="9" fill="#94A3B8">Useful?</text>
+<text x="770" y="328" font-size="10" fill="#94A3B8">&#x1F44D;</text>
+<text x="788" y="328" font-size="10" fill="#94A3B8">&#x1F44E;</text>
+
+<!-- Ask bar inside sub-card -->
+<rect x="728" y="335" width="386" height="24" rx="6" fill="#F8FAFC" stroke="#E2E8F0" stroke-width="1"/>
+<text x="738" y="351" font-size="9" fill="#94A3B8" font-style="italic">Ask a specific question about this section</text>
+<text x="1104" y="351" font-size="9" fill="#6366F1" text-anchor="end">&#xB7; &#xB7; &#xB7; &#xB7;</text>
+
+<!-- 2x2 action grid -->
+<rect x="720" y="356" width="198" height="40" rx="8" fill="#FFFFFF" stroke="#E2E8F0" stroke-width="1"/>
+<text x="730" y="371" font-size="9" font-weight="700" fill="#374151">Unpack mechanism</text>
+<text x="730" y="384" font-size="8" fill="#94A3B8">How does this actually work?</text>
+
+<rect x="924" y="356" width="196" height="40" rx="8" fill="#FFFFFF" stroke="#E2E8F0" stroke-width="1"/>
+<text x="934" y="371" font-size="9" font-weight="700" fill="#374151">Trace prior work</text>
+<text x="934" y="384" font-size="8" fill="#94A3B8">What does this build on?</text>
+
+<rect x="720" y="402" width="198" height="14" rx="7" fill="#FFFFFF" stroke="#E2E8F0" stroke-width="1"/>
+<text x="730" y="413" font-size="9" font-weight="700" fill="#374151">Challenge this</text>
+
+<rect x="924" y="402" width="196" height="14" rx="7" fill="#F0FDF4" stroke="#BBF7D0" stroke-width="1"/>
+<text x="934" y="413" font-size="9" font-weight="700" fill="#15803D">Ask a peer &#x2192;</text>
+
+<!-- Callout 3 — A6 depth analysis -->
+<circle cx="1118" cy="192" r="9" fill="#FFFFFF" stroke="#6366F1" stroke-width="1.5"/>
+<text x="1118" y="196" font-size="9" font-weight="700" fill="#6366F1" text-anchor="middle">3</text>
+<text x="1112" y="210" font-size="8" fill="#6366F1" text-anchor="middle">A6 &#xB7; depth</text>
+<text x="1112" y="221" font-size="8" fill="#6366F1" text-anchor="middle">analysis</text>
+
+<!-- Panel B label -->
+<circle cx="724" cy="34" r="13" fill="#6366F1"/>
+<text x="724" y="39" font-size="14" font-weight="700" fill="#FFFFFF" text-anchor="middle">B</text>
+
+
+<!-- ================================================================ -->
+<!-- ARROW B → C   x=1132–1156 y=220                                  -->
+<!-- ================================================================ -->
+<line x1="1132" y1="220" x2="1156" y2="220" stroke="#6366F1" stroke-width="2" marker-end="url(#arr)"/>
+<text x="1144" y="213" font-size="9" font-weight="700" fill="#6366F1" text-anchor="middle">A2 routing</text>
+
+
+<!-- ================================================================ -->
+<!-- PANEL C — Peer routed + discussion   x=1160 y=20 w=500 h=400     -->
+<!-- ================================================================ -->
+<rect x="1160" y="20" width="500" height="400" rx="12" fill="#FFFFFF" filter="url(#sh)"/>
+
+<!-- Header gradient (clipped) -->
+<rect x="1160" y="20" width="500" height="54" rx="12" fill="url(#gI)" clip-path="url(#clipChdr)"/>
+<rect x="1160" y="44" width="500" height="30" fill="url(#gI)"/>
+
+<!-- Avatar circle -->
+<circle cx="1182" cy="47" r="14" fill="#FFFFFF" opacity="0.22"/>
+<text x="1182" y="52" font-size="12" font-weight="700" fill="#FFFFFF" text-anchor="middle">D</text>
+
+<!-- Header text -->
+<text x="1202" y="41" font-size="12" font-weight="700" fill="#FFFFFF">Demo User</text>
+<text x="1202" y="57" font-size="9" fill="#FFFFFF" opacity="0.8">&#xA7; Page 5 &#xB7; Section 3.1.2</text>
+
+<!-- Close X -->
+<text x="1648" y="44" font-size="14" fill="#FFFFFF" text-anchor="end" opacity="0.75">&#xD7;</text>
+
+<!-- Green acceptance banner -->
+<rect x="1160" y="74" width="500" height="24" fill="#DCFCE7" clip-path="url(#clipC)"/>
+<rect x="1160" y="97" width="500" height="1" fill="#BBF7D0"/>
+<text x="1172" y="90" font-size="9" fill="#15803D">&#x2713;  Accepted peer invitation via A2 routing</text>
+
+<!-- Action bar -->
+<rect x="1160" y="98" width="500" height="32" fill="#FFFFFF" clip-path="url(#clipC)"/>
+<rect x="1160" y="129" width="500" height="1" fill="#F1F5F9"/>
+
+<rect x="1172" y="105" width="112" height="22" rx="6" fill="#FFFFFF" stroke="#C7D2FE" stroke-width="1"/>
+<text x="1228" y="120" font-size="9" fill="#6366F1" text-anchor="middle">&#x2295; Ask A6 together</text>
+
+<rect x="1292" y="105" width="92" height="22" rx="6" fill="#FFFFFF" stroke="#BBF7D0" stroke-width="1"/>
+<text x="1338" y="120" font-size="9" fill="#15803D" text-anchor="middle">&#x2713; Mark resolved</text>
+
+<text x="1648" y="120" font-size="8" fill="#94A3B8" text-anchor="end">@AI for scoped help</text>
+
+<!-- A3 Facilitator card -->
+<rect x="1170" y="138" width="472" height="178" rx="10" fill="#F8FAFC" stroke="#E2E8F0" stroke-width="1"/>
+
+<!-- A3 header -->
+<text x="1182" y="155" font-size="9" font-weight="700" fill="#6366F1">A3 &#xB7; Discussion Facilitator</text>
+<text x="1182" y="169" font-size="8" fill="#94A3B8" letter-spacing="0.5">START WITH ONE OF THESE</text>
+
+<!-- Q card 1 -->
+<rect x="1180" y="175" width="454" height="36" rx="8" fill="#FFFFFF" stroke="#E2E8F0" stroke-width="1"/>
+<text x="1192" y="189" font-size="10" font-weight="700" fill="#6366F1">1.</text>
+<text x="1206" y="189" font-size="10" fill="#1E293B">What is the load-bearing assumption in this section &#x2014;</text>
+<text x="1206" y="203" font-size="10" fill="#1E293B">the claim the entire argument depends on?</text>
+<text x="1621" y="196" font-size="11" fill="#CBD5E1" text-anchor="end">&#x2192;</text>
+
+<!-- Q card 2 -->
+<rect x="1180" y="217" width="454" height="36" rx="8" fill="#FFFFFF" stroke="#E2E8F0" stroke-width="1"/>
+<text x="1192" y="231" font-size="10" font-weight="700" fill="#6366F1">2.</text>
+<text x="1206" y="231" font-size="10" fill="#1E293B">Is the evidence presented sufficient to support the</text>
+<text x="1206" y="245" font-size="10" fill="#1E293B">conclusion, or is there an inferential leap being glossed over?</text>
+<text x="1621" y="238" font-size="11" fill="#CBD5E1" text-anchor="end">&#x2192;</text>
+
+<!-- Q card 3 -->
+<rect x="1180" y="259" width="454" height="36" rx="8" fill="#FFFFFF" stroke="#E2E8F0" stroke-width="1"/>
+<text x="1192" y="273" font-size="10" font-weight="700" fill="#6366F1">3.</text>
+<text x="1206" y="273" font-size="10" fill="#1E293B">What methodological choice would a reviewer most</text>
+<text x="1206" y="287" font-size="10" fill="#1E293B">likely push back on, and why?</text>
+<text x="1621" y="280" font-size="11" fill="#CBD5E1" text-anchor="end">&#x2192;</text>
+
+<!-- Callout 4 — A3 discussion prompts -->
+<circle cx="1634" cy="155" r="9" fill="#FFFFFF" stroke="#6366F1" stroke-width="1.5"/>
+<text x="1634" y="159" font-size="9" font-weight="700" fill="#6366F1" text-anchor="middle">4</text>
+<text x="1634" y="172" font-size="8" fill="#6366F1" text-anchor="middle">A3 &#xB7; discussion</text>
+<text x="1634" y="183" font-size="8" fill="#6366F1" text-anchor="middle">prompts</text>
+
+<!-- Shared confusion signal chip -->
+<rect x="1170" y="324" width="472" height="26" rx="13" fill="#6366F1"/>
+<text x="1186" y="341" font-size="9" fill="#FFFFFF">&#x2736;  Shared confusion signal detected</text>
+<!-- Coordinate button inside chip -->
+<rect x="1524" y="328" width="78" height="16" rx="6" fill="transparent" stroke="#FFFFFF" stroke-width="1"/>
+<text x="1563" y="340" font-size="8" font-weight="600" fill="#FFFFFF" text-anchor="middle">Coordinate</text>
+
+<!-- Peer calibration chip -->
+<rect x="1170" y="356" width="472" height="26" rx="13" fill="#FFFFFF" stroke="#E2E8F0" stroke-width="1"/>
+<text x="1186" y="373" font-size="9" fill="#374151">&#x1F91D;  Peer calibration (A2) &#xB7; Enables Agent 2 to route</text>
+<circle cx="1626" cy="369" r="7" fill="#6366F1"/>
+<text x="1626" y="373" font-size="9" fill="#FFFFFF" text-anchor="middle">&#x2736;</text>
+
+<!-- Message input -->
+<rect x="1170" y="388" width="472" height="28" rx="8" fill="#F8FAFC" stroke="#E2E8F0" stroke-width="1"/>
+<text x="1182" y="406" font-size="9" fill="#94A3B8" font-style="italic">Message Demo User&#x2026; or @AI</text>
+<circle cx="1630" cy="402" r="9" fill="#6366F1"/>
+<text x="1630" y="407" font-size="10" fill="#FFFFFF" text-anchor="middle">&#x2192;</text>
+
+<!-- Panel C label -->
+<circle cx="1174" cy="34" r="13" fill="#6366F1"/>
+<text x="1174" y="39" font-size="14" font-weight="700" fill="#FFFFFF" text-anchor="middle">C</text>
+
+</svg>

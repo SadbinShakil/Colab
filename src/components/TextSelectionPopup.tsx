@@ -15,10 +15,14 @@ import {
   GraduationCap,
   HelpCircle,
   ChevronRight,
-  Send
+  Send,
+  Sparkles,
+  BookMarked,
+  AlertTriangle,
 } from 'lucide-react'
 import { isTableContent } from '../utils/tableDetector'
 import { isImageContent } from '../utils/imageDetector'
+import { isMathematicalContent } from '../utils/contentDetector'
 
 interface TextSelectionPopupProps {
   selectedText: string
@@ -33,6 +37,9 @@ interface TextSelectionPopupProps {
   onPrerequisiteHelp?: () => void
   onStuckHelp?: () => void
   onCopy?: () => void
+  onAskAI?: () => void
+  onReaderNote?: () => void
+  onCritique?: () => void
   documentContext?: string
 }
 
@@ -57,6 +64,9 @@ export default function TextSelectionPopup({
   onPrerequisiteHelp,
   onStuckHelp,
   onCopy,
+  onAskAI,
+  onReaderNote,
+  onCritique,
 }: TextSelectionPopupProps) {
   const [view, setView] = useState<'toolbar' | 'highlight' | 'comment'>('toolbar')
   const [annotationText, setAnnotationText] = useState('')
@@ -106,6 +116,7 @@ export default function TextSelectionPopup({
 
   const showTable = isTableContent(selectedText)
   const showImage = isImageContent(selectedText)
+  const showMath = isMathematicalContent(selectedText)
 
   if (view === 'highlight') {
     return (
@@ -204,11 +215,21 @@ export default function TextSelectionPopup({
         <button onClick={() => setView('comment')} title="Comment" className="p-2 rounded-lg hover:bg-blue-50 transition-colors">
           <MessageSquare className="w-4 h-4 text-blue-600" />
         </button>
+        {onAskAI && (
+          <button
+            onClick={() => { onAskAI(); onClose() }}
+            title="Ask AI about this"
+            className="flex items-center gap-1 px-2 py-1.5 rounded-lg bg-indigo-50 hover:bg-indigo-100 transition-colors"
+          >
+            <Sparkles className="w-3.5 h-3.5 text-indigo-600" />
+            <span className="text-[11px] font-medium text-indigo-600">Ask AI</span>
+          </button>
+        )}
 
         <Divider />
 
         {/* AI actions */}
-        <ToolBtn icon={Calculator} label="Math" onClick={() => { onAIExplain?.(); onClose() }} color="text-indigo-600" bg="hover:bg-indigo-50" />
+        {showMath && <ToolBtn icon={Calculator} label="Math" onClick={() => { onAIExplain?.(); onClose() }} color="text-indigo-600" bg="hover:bg-indigo-50" />}
         <ToolBtn icon={BookOpen} label="Explain" onClick={() => { onGeneralExplain?.(); onClose() }} color="text-purple-600" bg="hover:bg-purple-50" />
         {showTable && <ToolBtn icon={Table2} label="Table" onClick={() => { onTableExplain?.(); onClose() }} color="text-orange-600" bg="hover:bg-orange-50" />}
         {showImage && <ToolBtn icon={ImageIcon} label="Image" onClick={() => { onImageExplain?.(); onClose() }} color="text-cyan-600" bg="hover:bg-cyan-50" />}
@@ -217,6 +238,15 @@ export default function TextSelectionPopup({
 
         <ToolBtn icon={GraduationCap} label="Prerequisites" onClick={() => { onPrerequisiteHelp?.(); onClose() }} color="text-green-600" bg="hover:bg-green-50" />
         <ToolBtn icon={HelpCircle} label="Stuck?" onClick={() => { onStuckHelp?.(); onClose() }} color="text-rose-600" bg="hover:bg-rose-50" />
+
+        <Divider />
+
+        {onReaderNote && (
+          <ToolBtn icon={BookMarked} label="Note" onClick={() => { onReaderNote(); onClose() }} color="text-violet-600" bg="hover:bg-violet-50" />
+        )}
+        {onCritique && (
+          <ToolBtn icon={AlertTriangle} label="Critique" onClick={() => { onCritique(); onClose() }} color="text-red-600" bg="hover:bg-red-50" />
+        )}
 
         <Divider />
 

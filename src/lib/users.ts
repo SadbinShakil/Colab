@@ -40,7 +40,7 @@ function loadUsers(): User[] {
       id: "1",
       firstName: "Sakil",
       lastName: "Sarker", 
-      email: "demo@litsense.com",
+      email: "demo@coread.app",
       password: "password123",
       institution: "Demo University",
       expertise: ["Computer Science"],

@@ -1,184 +1,146 @@
 import OpenAI from 'openai'
 import { NextRequest, NextResponse } from 'next/server'
 
-const openai = new OpenAI({ 
-  apiKey: process.env.OPENAI_API_KEY || 'dummy-key-for-development'
-})
+const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY })
 
+/**
+ * POST /api/math-explainer
+ *
+ * PhD-level mathematical analysis grounded in the paper's specific use of the equation.
+ * Not a generic math tutor — this traces how this equation functions in THIS paper's
+ * argument, what assumptions it encodes, what its derivation steps are, and where
+ * it can mislead a reader.
+ *
+ * Returns structured JSON:
+ *   - equationType: statistical model | loss function | probabilistic formula |
+ *                   optimization objective | graph-theoretic | information-theoretic |
+ *                   signal model | other
+ *   - role: what job this equation does in the paper's argument
+ *   - symbolTable: [{symbol, meaning, domain, paperDefinition}]
+ *   - assumptions: [{assumption, ifViolated}]
+ *   - derivationSteps: [plain-language steps from first principles to this form]
+ *   - paperSpecificUse: how the paper applies this equation, which section, to what data
+ *   - readingPitfall: the most common misreading of this equation in this paper
+ *   - connectionToMainClaim: how this equation connects to the paper's core contribution
+ *   - numericalIntuition: what concrete numbers or limits mean in the context of this paper
+ */
 export async function POST(request: NextRequest) {
   try {
-    // Check if we have a valid API key
-    if (!process.env.OPENAI_API_KEY || process.env.OPENAI_API_KEY === 'sk-your-openai-api-key-here') {
-      // Return mock response for testing when no real API key
-      const mockResponse = `## Mathematical Analysis (Demo Mode)
-
-### 🔢 **Step-by-Step Breakdown**
-This appears to be a mathematical concept or equation that would benefit from detailed analysis.
-
-### 📊 **Key Components**
-- **Variables**: Each symbol represents specific mathematical quantities
-- **Operations**: The mathematical operations connect different components
-- **Context**: This relates to the broader research methodology
-
-### 💡 **Intuitive Understanding**
-Think of this as a mathematical tool that helps researchers quantify and analyze their data.
-
-### 🎯 **Practical Application**
-This mathematical approach is commonly used in academic research to:
-- Model complex relationships
-- Quantify research findings
-- Validate theoretical frameworks
-
-### 🔬 **Research Context**
-Understanding this mathematics is crucial for comprehending the paper's methodology and conclusions.
-
-*Note: This is a demo response. Add your OpenAI API key to .env for detailed mathematical analysis.*`
-
-      return NextResponse.json({ 
-        success: true, 
-        explanation: mockResponse 
-      })
-    }
-
     const { equation, context, documentContent, question } = await request.json()
 
     if (!equation && !question) {
-      return NextResponse.json({ 
-        error: 'Equation or question is required' 
-      }, { status: 400 })
+      return NextResponse.json({ error: 'Equation or question is required' }, { status: 400 })
     }
 
-    // Create a comprehensive prompt for math explanation
-    let systemPrompt = `You are an expert mathematics and research paper tutor specializing in explaining complex mathematical concepts, equations, and research methodologies. Your role is to help researchers understand mathematical content in academic papers.
-
-Key Responsibilities:
-1. Break down complex equations step-by-step
-2. Explain what each variable and symbol means
-3. Provide context for why the equation is used
-4. Give practical examples when possible
-5. Connect mathematical concepts to real-world applications
-6. Explain the derivation and assumptions behind equations
-7. Help understand the relationship between different mathematical components
-
-Guidelines:
-- Always start with a high-level overview of what the equation represents
-- Break down complex equations into smaller, understandable parts
-- Define every variable and symbol clearly
-- Explain the mathematical operations step-by-step
-- Provide context about where this equation comes from and why it's important
-- Use analogies and examples when helpful
-- Mention any assumptions or limitations
-- Connect to the broader research context when possible
-
-Format your response in clear sections with headers.`
-
-    let userPrompt = ''
-
-    if (equation) {
-      userPrompt = `Please explain this mathematical equation or concept in detail:
-
-EQUATION/CONCEPT: ${equation}
-
-CONTEXT: ${context || 'This equation appears in a research paper'}
-
-DOCUMENT CONTENT (for additional context): ${documentContent || 'No additional context provided'}
-
-Please provide:
-1. A high-level overview of what this equation represents
-2. Step-by-step breakdown of each component
-3. Definition of all variables and symbols
-4. Explanation of the mathematical operations
-5. Context about why this equation is important
-6. Any assumptions or limitations
-7. Practical examples or analogies if helpful
-
-Make the explanation accessible to researchers who may not be experts in this specific mathematical area.`
-    } else if (question) {
-      userPrompt = `Please answer this mathematical question in detail:
-
-QUESTION: ${question}
-
-CONTEXT: ${context || 'This question relates to mathematical content in a research paper'}
-
-DOCUMENT CONTENT (for additional context): ${documentContent || 'No additional context provided'}
-
-Please provide a comprehensive, step-by-step explanation that helps researchers understand the mathematical concepts involved.`
+    if (!process.env.OPENAI_API_KEY) {
+      return NextResponse.json({ error: 'OpenAI API key not configured' }, { status: 503 })
     }
+
+    const systemPrompt = `You are a senior researcher with deep mathematical training conducting a PhD-level equation analysis.
+
+Your job is NOT to give a generic textbook explanation. Your job is to:
+1. Identify exactly what type of mathematical object this equation is — and why that type matters for how to read it
+2. Enumerate every assumption the equation silently encodes — the ones a reader can miss on first read
+3. Trace the derivation steps from first principles in plain language — not symbolic manipulation, but the reasoning chain
+4. Locate this equation inside the paper's argument — which claim does it support, which figure does it connect to, which result depends on it?
+5. Find the most dangerous misreading — what does a rushed reader get wrong about this equation?
+6. Ground numerical values or bounds to the paper's specific data, not generic examples
+
+Equation types:
+- "statistical model" — defines probability distribution, regression, or generative process
+- "loss function" — optimization objective; name what is being minimised/maximised and why
+- "probabilistic formula" — Bayesian update, conditional probability, marginalisation
+- "optimization objective" — constrained or unconstrained optimisation; identify what the solution means
+- "graph-theoretic" — graph measure, traversal, centrality, or adjacency relation
+- "information-theoretic" — entropy, KL divergence, mutual information, or channel capacity
+- "signal model" — time-series, frequency-domain, sensor fusion, or detection threshold
+- "other" — geometric, algebraic, or combinatorial formulas that don't fit above
+
+Be direct. Name specific sections, figures, and tables from the paper text. Do not hedge.
+
+Return JSON only.`
+
+    const target = equation || question
+    const paperText = documentContent ? documentContent.substring(0, 6000) : null
+
+    const userPrompt = `Analyze this mathematical element at PhD level:
+
+EQUATION / QUESTION: "${target}"
+
+LOCAL CONTEXT (surrounding text in the paper): "${context || 'not provided'}"
+
+${paperText
+  ? `PAPER TEXT (use this to ground your analysis in the paper's specific argument):\n${paperText}`
+  : 'No full paper text provided — analyze based on the equation and local context alone, and state this limitation.'
+}
+
+Return JSON:
+{
+  "equationType": "statistical model | loss function | probabilistic formula | optimization objective | graph-theoretic | information-theoretic | signal model | other",
+  "role": "the specific job this equation performs in the paper's argument — one sentence, grounded",
+  "symbolTable": [
+    {
+      "symbol": "exact symbol as written",
+      "meaning": "what it represents in this paper — not the generic meaning",
+      "domain": "the value range or type (e.g. ℝ, {0,1}, 0–1, positive integer)",
+      "paperDefinition": "verbatim definition from the paper if available, else null"
+    }
+  ],
+  "assumptions": [
+    {
+      "assumption": "exact assumption the equation encodes — be specific",
+      "ifViolated": "what breaks in the paper's argument or derivation if this assumption does not hold"
+    }
+  ],
+  "derivationSteps": [
+    "step 1 in plain language — the reasoning, not the algebra",
+    "step 2 ...",
+    "..."
+  ],
+  "paperSpecificUse": "how the paper applies this equation — which section, what input data, what the output means for the paper's claim",
+  "readingPitfall": "the single most dangerous misreading of this equation in this paper's context — what a reader gets wrong and why",
+  "connectionToMainClaim": "how this equation connects to the paper's core contribution or main result — be explicit",
+  "numericalIntuition": "if the equation produces a number or threshold, what does a high/low/extreme value mean in the context of this paper's specific data or experiment"
+}`
 
     const completion = await openai.chat.completions.create({
       model: 'gpt-4o',
       messages: [
         { role: 'system', content: systemPrompt },
-        { role: 'user', content: userPrompt }
+        { role: 'user', content: userPrompt },
       ],
-      temperature: 0.3,
-      max_tokens: 3000,
-      top_p: 0.9,
-      frequency_penalty: 0.1,
-      presence_penalty: 0.1
+      max_tokens: 1800,
+      temperature: 0.1,
+      response_format: { type: 'json_object' },
     })
 
-    const explanation = completion.choices[0]?.message?.content || 'No explanation generated'
-
-    // Parse the explanation to extract structured information
-    const structuredExplanation = parseExplanation(explanation)
+    const raw = completion.choices[0]?.message?.content || '{}'
+    let result: any = {}
+    try {
+      result = JSON.parse(raw)
+    } catch {
+      result = {
+        equationType: 'other',
+        role: raw.substring(0, 200),
+        symbolTable: [],
+        assumptions: [],
+        derivationSteps: ['Response parsing failed — raw response truncated above.'],
+        paperSpecificUse: 'Parsing failed.',
+        readingPitfall: null,
+        connectionToMainClaim: null,
+        numericalIntuition: null,
+      }
+    }
 
     return NextResponse.json({
       success: true,
-      explanation: explanation,
-      structured: structuredExplanation,
-      model: 'gpt-4',
-      timestamp: new Date().toISOString()
+      equation: target,
+      ...result,
+      timestamp: new Date().toISOString(),
     })
 
   } catch (err: any) {
-    console.error('[MATH EXPLAINER] OpenAI API error:', err)
-    return NextResponse.json({ 
-      error: 'Failed to generate math explanation', 
-      details: String(err) 
-    }, { status: 500 })
+    console.error('[MATH EXPLAINER]', err)
+    return NextResponse.json({ error: 'Math analysis failed', details: String(err) }, { status: 500 })
   }
 }
-
-// Helper function to parse the explanation into structured format
-function parseExplanation(explanation: string) {
-  const sections: Record<string, string> = {
-    overview: '',
-    breakdown: '',
-    variables: '',
-    operations: '',
-    context: '',
-    assumptions: '',
-    examples: ''
-  }
-
-  // Extract sections based on common patterns
-  const lines = explanation.split('\n')
-  let currentSection = 'overview'
-  
-  for (const line of lines) {
-    const trimmedLine = line.trim().toLowerCase()
-    
-    if (trimmedLine.includes('overview') || trimmedLine.includes('represents') || trimmedLine.includes('concept')) {
-      currentSection = 'overview'
-    } else if (trimmedLine.includes('breakdown') || trimmedLine.includes('component') || trimmedLine.includes('step')) {
-      currentSection = 'breakdown'
-    } else if (trimmedLine.includes('variable') || trimmedLine.includes('symbol') || trimmedLine.includes('define')) {
-      currentSection = 'variables'
-    } else if (trimmedLine.includes('operation') || trimmedLine.includes('mathematical') || trimmedLine.includes('calculation')) {
-      currentSection = 'operations'
-    } else if (trimmedLine.includes('context') || trimmedLine.includes('important') || trimmedLine.includes('why')) {
-      currentSection = 'context'
-    } else if (trimmedLine.includes('assumption') || trimmedLine.includes('limitation') || trimmedLine.includes('constraint')) {
-      currentSection = 'assumptions'
-    } else if (trimmedLine.includes('example') || trimmedLine.includes('analogy') || trimmedLine.includes('practical')) {
-      currentSection = 'examples'
-    }
-    
-    if (line.trim() && !line.trim().startsWith('#')) {
-      sections[currentSection] += (sections[currentSection] ? '\n' : '') + line
-    }
-  }
-
-  return sections
-} 

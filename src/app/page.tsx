@@ -49,7 +49,7 @@ export default function HomePage() {
               <div className="w-7 h-7 bg-blue-600 rounded-lg flex items-center justify-center text-white shadow-sm">
                 <FileText size={16} fill="currentColor" className="text-white/90" />
               </div>
-              <span className="text-lg font-bold tracking-tight text-gray-900">LitSense</span>
+              <span className="text-lg font-bold tracking-tight text-gray-900">CoRead</span>
             </Link>
 
             <div className="flex items-center gap-2">
@@ -126,7 +126,7 @@ export default function HomePage() {
                   Understand complex papers in seconds.
                 </h2>
                 <p className="text-lg !text-gray-300 mb-6 leading-relaxed">
-                  LitSense AI reads with you. Highlight text to get instant explanations and methodology critiques.
+                  CoRead AI reads with you. Highlight text to get instant explanations and methodology critiques.
                 </p>
                 <Button variant="secondary" className="rounded-full font-bold">Try AI Assistant</Button>
               </div>
@@ -170,7 +170,7 @@ export default function HomePage() {
             <div className="w-6 h-6 bg-gray-900 rounded-md flex items-center justify-center text-white">
               <FileText size={12} fill="currentColor" />
             </div>
-            <span className="font-bold text-gray-900">LitSense</span>
+            <span className="font-bold text-gray-900">CoRead</span>
             <span className="mx-2">•</span>
             <span>© 2024</span>
           </div>

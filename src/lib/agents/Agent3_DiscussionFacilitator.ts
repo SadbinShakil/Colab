@@ -32,6 +32,7 @@ export interface ConversationStarter {
   type: 'clarification' | 'explanation' | 'comparison' | 'elaboration'
   context: string
   priority: number
+  groundingQuote?: string
 }
 
 export interface DiscussionMetrics {
@@ -77,9 +78,15 @@ class Agent3_DiscussionFacilitator {
   // CHANNEL MANAGEMENT
   // ============================================================================
 
-  openPeerChat(user1Id: string, user2Id: string, sectionId: string): string {
+  openPeerChat(
+    user1Id: string,
+    user2Id: string,
+    sectionId: string,
+    sectionText = '',
+    sectionName = sectionId
+  ): string {
     const channelId = `peer-${user1Id}-${user2Id}-${Date.now()}`
-    
+
     const channel: ChatChannel = {
       channelId,
       type: 'peer-to-peer',
@@ -88,20 +95,20 @@ class Agent3_DiscussionFacilitator {
       startTime: Date.now(),
       lastActivity: Date.now(),
       messageCount: 0,
-      active: true
+      active: true,
     }
-    
+
     this.activeChannels.set(channelId, channel)
     this.conversationHistory.set(channelId, [])
-    
-    console.log(`🤖 [Agent 3] Peer chat opened: ${channelId}`)
-    
-    // Generate conversation starters
-    const starters = this.generateConversationStarters(sectionId, 'peer-to-peer')
-    
-    // Emit event
-    this.emitEvent('chat-opened', { channelId, channel, starters })
-    
+
+    console.log(`🤖 [A3] Peer chat opened: ${channelId}`)
+
+    // Generate grounded starters async — emit event when ready
+    this.generateConversationStartersFromText(sectionId, sectionName, sectionText, 'peer-to-peer', 2)
+      .then(starters => {
+        this.emitEvent('chat-opened', { channelId, channel, starters })
+      })
+
     return channelId
   }
 
@@ -151,64 +158,115 @@ class Agent3_DiscussionFacilitator {
   // CONVERSATION STARTERS
   // ============================================================================
 
+  /**
+   * Generate section-grounded discussion prompts via GPT-4o.
+   * Falls back to generic starters if sectionText is not available.
+   */
+  async generateConversationStartersFromText(
+    sectionId: string,
+    sectionName: string,
+    sectionText: string,
+    chatType: 'peer-to-peer' | 'group',
+    participantCount: number,
+    confusionContext?: { confusionHighlights: number; stuckMarkers: number; avgDsScore: number }
+  ): Promise<ConversationStarter[]> {
+    if (!sectionText || sectionText.length < 50) {
+      return this.generateConversationStarters(sectionId, chatType === 'peer-to-peer' ? 'peer-to-peer' : 'ai-chat')
+    }
+
+    try {
+      const res = await fetch('/api/a3-discussion', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          sectionText,
+          sectionName,
+          chatType,
+          participantCount,
+          confusionContext,
+        }),
+      })
+
+      if (!res.ok) throw new Error(`A3 API ${res.status}`)
+
+      const { prompts } = await res.json()
+
+      const starters: ConversationStarter[] = (prompts || []).map((p: any) => ({
+        text: p.text,
+        type: p.type as ConversationStarter['type'],
+        context: sectionId,
+        priority: p.priority,
+        groundingQuote: p.groundingQuote,
+      }))
+
+      console.log(`🤖 [A3] Generated ${starters.length} grounded discussion starters for "${sectionName}"`)
+      this.emitEvent('starters-generated', { sectionId, sectionName, count: starters.length, chatType })
+
+      return starters
+    } catch (err) {
+      console.warn('[A3] API call failed, using fallback starters:', err)
+      return this.generateConversationStarters(sectionId, chatType === 'peer-to-peer' ? 'peer-to-peer' : 'ai-chat')
+    }
+  }
+
+  /** Synchronous fallback — PhD-level starters when no section text is available */
   generateConversationStarters(sectionId: string, chatType: 'peer-to-peer' | 'ai-chat'): ConversationStarter[] {
     const starters: ConversationStarter[] = []
-    
+
     if (chatType === 'peer-to-peer') {
       starters.push(
         {
-          text: "Can you explain what you found confusing about this section?",
+          text: "What is the load-bearing assumption in this section — the claim the entire argument depends on?",
           type: 'clarification',
           context: sectionId,
-          priority: 1
+          priority: 1,
         },
         {
-          text: "How did you approach understanding this part?",
-          type: 'explanation',
+          text: "Is the evidence presented sufficient to support the conclusion, or is there an inferential leap the authors are glossing over?",
+          type: 'comparison',
           context: sectionId,
-          priority: 2
+          priority: 2,
         },
         {
-          text: "What helped you get past the tricky parts?",
+          text: "What methodological choice in this section would a reviewer most likely push back on, and why?",
           type: 'elaboration',
           context: sectionId,
-          priority: 3
+          priority: 3,
         }
       )
     } else {
       starters.push(
         {
-          text: "Can you explain this concept in simpler terms?",
+          text: "What is the weakest link in the argument presented here — the claim that least follows from the evidence?",
           type: 'clarification',
           context: sectionId,
-          priority: 1
+          priority: 1,
         },
         {
-          text: "What's the main idea I should focus on?",
+          text: "Trace the causal chain: what mechanism connects the key variables, and where does the paper leave it implicit?",
           type: 'explanation',
           context: sectionId,
-          priority: 2
+          priority: 2,
         },
         {
-          text: "Can you give me an example or analogy?",
-          type: 'elaboration',
+          text: "Which prior work does this most directly challenge or build on, and how does the contribution change if that prior work is wrong?",
+          type: 'comparison',
           context: sectionId,
-          priority: 3
+          priority: 3,
         }
       )
     }
-    
+
     return starters
   }
 
   private generateAIOpening(context: any): string {
-    // Generate contextual opening for AI chat based on user's struggle
     if (context.confusionHighlights > 2) {
-      return "I see you're finding this section challenging. Let's break it down together. What specific part is unclear?"
+      return "Multiple confusion signals detected in this section. What specifically is the claim or mechanism that isn't holding together?"
     } else if (context.stuckMarkers > 0) {
-      return "I noticed you marked this as difficult. I'm here to help! What would you like me to explain?"
+      return "You flagged this section. What is the specific assumption or step that isn't working — is it the method, the evidence, or the framing?"
     } else {
-      return "Hi! I'm here to help you understand this section. What would you like to discuss?"
+      return "What do you want to interrogate here — the mechanism, the evidence quality, or the relationship to prior work?"
     }
   }
 
@@ -292,27 +350,27 @@ class Agent3_DiscussionFacilitator {
 
   suggestDiscussionTopics(channelId: string, currentContext: any): string[] {
     const suggestions: string[] = []
-    
-    // Based on confusion points
+
     if (currentContext.confusionHighlights > 0) {
-      suggestions.push("Discuss the parts that were marked as confusing")
+      suggestions.push("Identify which highlighted passage has the weakest connection between its claim and its supporting evidence")
     }
-    
-    // Based on annotations
+
     if (currentContext.annotations > 0) {
-      suggestions.push("Review the notes and comments you both made")
+      suggestions.push("Compare annotations: where do your interpretations diverge, and what does that divergence reveal about the argument's ambiguity?")
     }
-    
-    // Based on time
+
+    if (currentContext.stuckMarkers > 1) {
+      suggestions.push("What is the shared confusion point — is it the notation, the mechanism, the evidence standard, or the framing?")
+    }
+
     if (currentContext.timeSpent > 300000) { // 5 minutes
-      suggestions.push("Summarize what you've learned so far")
+      suggestions.push("Reconstruct the argument from memory: what have you each retained, and where do the reconstructions differ?")
     }
-    
-    // Default
+
     if (suggestions.length === 0) {
-      suggestions.push("Walk through the main concepts step by step")
+      suggestions.push("What is the single most contestable claim in this section, and what would falsify it?")
     }
-    
+
     return suggestions
   }
 
@@ -359,7 +417,7 @@ class Agent3_DiscussionFacilitator {
 
   getDiscussionStats() {
     const channels = Array.from(this.activeChannels.values())
-    
+
     return {
       totalChannels: channels.length,
       activeChannels: channels.filter(c => c.active).length,
@@ -369,6 +427,102 @@ class Agent3_DiscussionFacilitator {
         ? Math.round(channels.reduce((sum, c) => sum + c.messageCount, 0) / channels.length)
         : 0
     }
+  }
+
+  // ============================================================================
+  // STRUCTURED DEBATE (A3-facilitated — new in deep collaboration build)
+  // ============================================================================
+
+  /**
+   * Trigger a structured debate session from a divergence signal.
+   * Generates a paper-grounded debate prompt and returns a debateId.
+   * Logs the activation as an intervention event.
+   *
+   * @param divergenceSignal - the passage and competing interpretations
+   * @param sectionText - C_s context for grounding the prompt
+   * @param participants - userId/userName pairs in the session
+   * @returns debateId (string) and debate prompt (string)
+   */
+  async triggerStructuredDebate(
+    divergenceSignal: {
+      sharedPassage: string
+      localReason: string
+      peerReason: string
+      localUserName: string
+      peerUserName: string
+      sectionId: string
+    },
+    sectionText: string,
+    participants: Array<{ userId: string; userName: string }>
+  ): Promise<{ debateId: string; prompt: string; groundingQuote: string }> {
+    const debateId = `debate-${Date.now()}-${Math.random().toString(36).substr(2, 6)}`
+
+    // Generate grounded debate prompt via annotation-divergence API
+    try {
+      const res = await fetch('/api/annotation-divergence', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          passage: divergenceSignal.sharedPassage,
+          userAName: divergenceSignal.localUserName,
+          userAReason: divergenceSignal.localReason,
+          userBName: divergenceSignal.peerUserName,
+          userBReason: divergenceSignal.peerReason,
+          sectionText: sectionText.slice(0, 4000),
+        }),
+      })
+
+      if (res.ok) {
+        const data = await res.json()
+        const prompt = data.discussionPrompt || this._fallbackDebatePrompt(divergenceSignal)
+        const groundingQuote = data.groundingQuote || divergenceSignal.sharedPassage.slice(0, 120)
+
+        console.log(`🤖 [A3] Structured debate triggered: ${debateId}`)
+        this.emitEvent('debate-triggered', { debateId, prompt, groundingQuote, sectionId: divergenceSignal.sectionId, participants })
+
+        return { debateId, prompt, groundingQuote }
+      }
+    } catch (err) {
+      console.warn('[A3] triggerStructuredDebate API call failed:', err)
+    }
+
+    // Fallback prompt when API fails
+    const prompt = this._fallbackDebatePrompt(divergenceSignal)
+    return { debateId, prompt, groundingQuote: divergenceSignal.sharedPassage.slice(0, 120) }
+  }
+
+  private _fallbackDebatePrompt(sig: {
+    sharedPassage: string; localReason: string; peerReason: string;
+    localUserName: string; peerUserName: string
+  }): string {
+    return `${sig.localUserName} flagged this passage as "${sig.localReason}" while ${sig.peerUserName} marked it as "${sig.peerReason}". What does the divergence reveal — is this an ambiguity in the text, a difference in reading frame, or a substantive disagreement about what the authors are claiming?`
+  }
+
+  /**
+   * Record the outcome of a structured debate into the agent's state.
+   * Called when synthesis is locked (sent to Collective Knowledge Base).
+   */
+  recordDebateOutcome(
+    debateId: string,
+    outcome: {
+      convergenceState: 'converging' | 'diverging' | 'stable-tension' | 'resolved'
+      collectiveKnowledgeEntry: string
+      sectionId: string
+      participantCount: number
+    }
+  ): void {
+    console.log(`🤖 [A3] Debate outcome recorded: ${debateId} → ${outcome.convergenceState}`)
+    this.emitEvent('debate-outcome-recorded', { debateId, ...outcome })
+
+    // Track in conversation history as a synthetic message
+    const history = this.conversationHistory.get(debateId) || []
+    history.push({
+      type: 'debate-synthesis',
+      convergenceState: outcome.convergenceState,
+      collectiveKnowledgeEntry: outcome.collectiveKnowledgeEntry,
+      timestamp: Date.now(),
+    })
+    this.conversationHistory.set(debateId, history)
   }
 }
 

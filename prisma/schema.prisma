@@ -29,8 +29,13 @@ model User {
   reactions         Reaction[]
   notes             QuickNote[]
   messages          ChatMessage[]
-  stuckHelps        StuckHelp[]
-  stuckHelpResponses StuckHelpResponse[]
+  stuckHelps           StuckHelp[]
+  stuckHelpResponses   StuckHelpResponse[]
+  helpeeSessions       PeerExplanationCapture[] @relation("HelpeeCaptures")
+  helperSessions       PeerExplanationCapture[] @relation("HelperCaptures")
+  conceptConfusions    ConceptConfusion[]
+  critiqueAnnotations  CritiqueAnnotation[]
+  readingPaceLogs      ReadingPaceLog[]
 
   @@map("users")
 }
@@ -53,6 +58,13 @@ model Paper {
   chatMessages     ChatMessage[]
   stuckHelps       StuckHelp[]
   summaries        AISummary[]
+  peerExplanationCaptures PeerExplanationCapture[]
+  consensusCheckpoints    ConsensusCheckpoint[]
+  conceptConfusions       ConceptConfusion[]
+  knowledgeDependencies   KnowledgeDependency[]
+  critiqueAnnotations     CritiqueAnnotation[]
+  sectionComplexities     SectionComplexity[]
+  readingPaceLogs         ReadingPaceLog[]
 
   @@map("papers")
 }
@@ -256,4 +268,232 @@ enum HelpStatus {
   IN_PROGRESS
   RESOLVED
   EXPERT_NEEDED
-} 
+}
+
+// Peer explanation capture — records what was explained + D_s pre/post for effectiveness measurement
+model PeerExplanationCapture {
+  id              String   @id @default(cuid())
+  paperId         String
+  sectionId       String
+  sectionName     String
+  helpeeId        String
+  helpeeName      String
+  helperId        String
+  helperName      String
+  dsAtStart       Float    // D_s score when peer routing fired
+  dsAtEnd         Float?   // D_s score 10 min after explanation (null = not yet measured)
+  resolved        Boolean? // null = pending follow-up, true/false = user-reported
+  helperSummary   String?  // brief description of what was explained (helper fills)
+  helpeeRating    Int?     // 1-5 helpfulness rating from helpee
+  sessionId       String
+  createdAt       DateTime @default(now())
+  resolvedAt      DateTime?
+
+  paper   Paper @relation(fields: [paperId], references: [id], onDelete: Cascade)
+  helpee  User  @relation("HelpeeCaptures", fields: [helpeeId], references: [id])
+  helper  User  @relation("HelperCaptures", fields: [helperId], references: [id])
+
+  @@index([paperId, sectionId])
+  @@index([helperId])
+  @@map("peer_explanation_captures")
+}
+
+// Consensus checkpoints — what a group agreed a passage means, stored in Collective Knowledge Base
+model ConsensusCheckpoint {
+  id              String   @id @default(cuid())
+  paperId         String
+  sectionId       String
+  sectionName     String
+  passageText     String   // The passage the agreement is about
+  agreedMeaning   String   // What the group agreed it means
+  contributors    String   // JSON array of { userId, userName }
+  confidence      Float    // 0.0-1.0 — proportion of group who agreed
+  sessionId       String
+  createdAt       DateTime @default(now())
+
+  paper Paper @relation(fields: [paperId], references: [id], onDelete: Cascade)
+
+  @@index([paperId, sectionId])
+  @@map("consensus_checkpoints")
+}
+
+// Concept confusion map — per-reader, per-paper concept-level understanding tracking
+model ConceptConfusion {
+  id           String   @id @default(cuid())
+  paperId      String
+  userId       String
+  userName     String
+  sectionId    String
+  sectionName  String
+  conceptLabel String   // "temperature-scaled softmax in Eq. 3"
+  passageText  String   // the exact highlighted text
+  pageNumber   Int
+  resolved     Boolean  @default(false)
+  createdAt    DateTime @default(now())
+
+  paper Paper @relation(fields: [paperId], references: [id], onDelete: Cascade)
+  user  User  @relation(fields: [userId], references: [id])
+
+  @@index([paperId, sectionId])
+  @@index([paperId, conceptLabel])
+  @@map("concept_confusions")
+}
+
+// Knowledge dependency graph — per-paper, generated once on upload
+// Encodes which concepts/sections depend on earlier ones
+model KnowledgeDependency {
+  id             String   @id @default(cuid())
+  paperId        String
+  fromSectionId  String   // earlier section that defines the concept
+  fromSectionName String
+  toSectionId    String   // later section that builds on it
+  toSectionName  String
+  conceptBridge  String   // "the definition of τ in Section 2.3 is used in Section 5's loss function"
+  createdAt      DateTime @default(now())
+
+  paper Paper @relation(fields: [paperId], references: [id], onDelete: Cascade)
+
+  @@unique([paperId, fromSectionId, toSectionId])
+  @@index([paperId, toSectionId])
+  @@map("knowledge_dependencies")
+}
+
+// Async marginal annotations — passage-anchored notes for future readers
+model MarginalNote {
+  id           String   @id @default(cuid())
+  paperId      String   // plain string — no FK (Paper table may not exist for all docs)
+  authorId     String   // plain string — no FK (flat-file auth system)
+  authorName   String
+  content      String
+  passageText  String
+  pageNumber   Int
+  sectionName  String?
+  createdAt    DateTime @default(now())
+  epistemicTag String?
+  replies      MarginalNoteReply[]
+
+  @@index([paperId, pageNumber])
+  @@map("marginal_notes")
+}
+
+// Threaded replies on marginal notes — enables async scholarly dialogue
+model MarginalNoteReply {
+  id         String   @id @default(cuid())
+  noteId     String
+  authorId   String   // plain string — not FK-constrained
+  authorName String
+  content    String
+  createdAt  DateTime @default(now())
+
+  note   MarginalNote @relation(fields: [noteId], references: [id], onDelete: Cascade)
+
+  @@index([noteId])
+  @@map("marginal_note_replies")
+}
+
+// Structured debate sessions — A3-facilitated position tracking
+model DebateSession {
+  id           String   @id @default(cuid())
+  documentId   String
+  sectionId    String
+  sectionName  String
+  prompt       String
+  groundingQuote String
+  sessionId    String
+  startedAt    DateTime @default(now())
+  completedAt  DateTime?
+  convergenceState String? // 'converging' | 'diverging' | 'unresolved'
+  sharedUnderstanding String?
+  persistentTension   String?
+
+  positions    DebatePosition[]
+
+  @@index([documentId, sectionId])
+  @@map("debate_sessions")
+}
+
+// Individual position statements within a debate
+model DebatePosition {
+  id          String   @id @default(cuid())
+  debateId    String
+  userId      String
+  userName    String
+  statement   String
+  stance      String   // 'support' | 'challenge' | 'qualify' | 'extend'
+  quality     Float    @default(0.0)  // AI-assessed 0-1
+  createdAt   DateTime @default(now())
+
+  debate DebateSession @relation(fields: [debateId], references: [id], onDelete: Cascade)
+
+  @@index([debateId])
+  @@map("debate_positions")
+}
+
+// Critique annotations — researcher pushback on paper claims
+// "I think this conclusion is overstated", "Contradicts Foo et al. 2023"
+model CritiqueAnnotation {
+  id           String   @id @default(cuid())
+  paperId      String
+  authorId     String
+  authorName   String
+  passageText  String   // The exact claim being critiqued
+  pageNumber   Int
+  sectionName  String?
+  critiqueText String   // The researcher's critique
+  critiqueType String   // "overstatement" | "contradiction" | "methodology" | "assumption" | "missing-citation" | "other"
+  severity     String   @default("medium") // "minor" | "medium" | "major"
+  upvotes      Int      @default(0)
+  resolved     Boolean  @default(false)
+  resolvedNote String?  // how the group resolved this disagreement
+  createdAt    DateTime @default(now())
+
+  paper  Paper @relation(fields: [paperId], references: [id], onDelete: Cascade)
+  author User  @relation(fields: [authorId], references: [id])
+
+  @@index([paperId, pageNumber])
+  @@index([paperId, critiqueType])
+  @@map("critique_annotations")
+}
+
+// Section complexity profiles — cached per paper section
+// Used to trigger deeper proactive AI help for dense math/figure sections
+model SectionComplexity {
+  id              String   @id @default(cuid())
+  paperId         String
+  sectionId       String
+  sectionName     String
+  complexityScore Float    // 0.0 - 1.0
+  hasMath         Boolean  @default(false)
+  hasFigures      Boolean  @default(false)
+  hasTables       Boolean  @default(false)
+  hasAlgorithms   Boolean  @default(false)
+  mathDensity     Float    @default(0.0)  // equations per 100 words
+  technicalTerms  String?  // JSON array of key technical terms detected
+  readingTimeMin  Float    @default(0.0)  // estimated reading time for this complexity
+  createdAt       DateTime @default(now())
+
+  paper Paper @relation(fields: [paperId], references: [id], onDelete: Cascade)
+
+  @@unique([paperId, sectionId])
+  @@map("section_complexities")
+}
+
+// Reading pace log — per-section pacing data for cohort benchmarks
+model ReadingPaceLog {
+  id          String   @id @default(cuid())
+  paperId     String
+  userId      String
+  sectionId   String
+  sectionName String
+  timeSpentMs Int      // actual time spent in ms
+  wordCount   Int      // section word count
+  complexity  Float    // section complexity at time of reading
+  pageCount   Int      // pages in section
+  createdAt   DateTime @default(now())
+
+  paper Paper @relation(fields: [paperId], references: [id], onDelete: Cascade)
+  user  User  @relation(fields: [userId], references: [id])
+
+  @@index([paperId, sectionId])
+  @@map("reading_pace_logs")
+}

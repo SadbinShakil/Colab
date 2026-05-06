@@ -2,9 +2,10 @@
 
 import { useState, useEffect, useRef } from 'react'
 import {
-  X, ChevronRight, AlertTriangle, CheckCircle,
-  Brain, AlertCircle, RefreshCw,
-  ChevronDown, ChevronUp, GraduationCap, ArrowUpRight, Sparkles, Zap,
+  X, AlertTriangle, CheckCircle, Brain, AlertCircle, RefreshCw,
+  ChevronDown, ChevronUp, ArrowUpRight, Sparkles, Zap,
+  Scale, FlaskConical, ShieldAlert, Crosshair, BookOpen,
+  GraduationCap, Target, ChevronRight, FileSearch,
 } from 'lucide-react'
 
 /* ─────────────────────────────── types ─────────────────────────────── */
@@ -12,9 +13,17 @@ import {
 interface GlanceData {
   oneSentence: string
   problemGap: string
+  problemGapPage?: number
+  problemGapQuote?: string
   coreClaim: string
+  coreClaimPage?: number
+  coreClaimQuote?: string
   howTheyTestIt: string
+  howTheyTestItPage?: number
+  howTheyTestItQuote?: string
   keyResult: string
+  keyResultPage?: number
+  keyResultQuote?: string
   isItForYou: { yes: string[]; no: string[] }
   readingDifficulty: { level: 'Accessible' | 'Moderate' | 'Dense' | 'Very Dense'; reason: string }
   venueSignal: string
@@ -27,11 +36,14 @@ interface PrereqData {
     whatBreaks: string
     oneLiner: string
     howToGetIt: string
+    sourcePage?: number
+    sourceQuote?: string
   }>
   mustReadFirst: Array<{
     title: string
     authors: string
     year: string
+    coreClaim: string
     whyBlocking: string
     whatToExtract: string
   }>
@@ -39,17 +51,41 @@ interface PrereqData {
     startAt: string
     why: string
     beforeOpening: string
+    startAtPage?: number
   }
   pitfalls: Array<{
     where: string
     misreading: string
     correction: string
+    sourcePage?: number
+    sourceQuote?: string
   }>
   termsThatTripPeople: Array<{
     term: string
     paperMeans: string
     notToConfuseWith: string
+    sourcePage?: number
+    sourceQuote?: string
   }>
+}
+
+interface CritiqueData {
+  methodologicalWeaknesses: Array<{
+    weakness: string
+    whyItMatters: string
+    questionToAsk: string
+    sourcePage?: number
+    sourceQuote?: string
+  }>
+  claimEvidenceMap: Array<{
+    claim: string
+    evidenceStrength: 'strong' | 'moderate' | 'weak' | 'unsupported'
+    rationale: string
+    sourcePage?: number
+    sourceQuote?: string
+  }>
+  whatThisPaperDoesNotProve: string
+  readingAngle: string
 }
 
 export interface ReaderSetup {
@@ -71,104 +107,108 @@ interface PaperOrientationPanelProps {
   documentId: string
 }
 
-/* ─────────────────────────────── difficulty ────────────────────────── */
+/* ─────────────────────────────── difficulty config ─────────────────── */
 
-const DIFFICULTY_CONFIG: Record<string, { pill: string; bar: string; width: string; glow: string }> = {
-  'Accessible': { pill: 'bg-emerald-100 text-emerald-700',  bar: 'bg-emerald-500', width: 'w-1/4', glow: 'shadow-emerald-200' },
-  'Moderate':   { pill: 'bg-amber-100 text-amber-700',      bar: 'bg-amber-500',   width: 'w-2/4', glow: 'shadow-amber-200' },
-  'Dense':      { pill: 'bg-orange-100 text-orange-700',    bar: 'bg-orange-500',  width: 'w-3/4', glow: 'shadow-orange-200' },
-  'Very Dense': { pill: 'bg-red-100 text-red-700',          bar: 'bg-red-500',     width: 'w-full', glow: 'shadow-red-200' },
+const DIFFICULTY_CONFIG: Record<string, {
+  pill: string; track: string; fill: string; pct: number
+}> = {
+  'Accessible': { pill: 'bg-emerald-100 text-emerald-700 border-emerald-200', track: 'bg-emerald-100', fill: 'bg-emerald-500', pct: 25 },
+  'Moderate':   { pill: 'bg-amber-100  text-amber-700  border-amber-200',  track: 'bg-amber-100',  fill: 'bg-amber-500',  pct: 50 },
+  'Dense':      { pill: 'bg-orange-100 text-orange-700 border-orange-200', track: 'bg-orange-100', fill: 'bg-orange-500', pct: 75 },
+  'Very Dense': { pill: 'bg-red-100    text-red-700    border-red-200',    track: 'bg-red-100',    fill: 'bg-red-500',    pct: 100 },
 }
 
-/* ─────────────────────────────── animation hook ────────────────────── */
+/* ─────────────────────────────── evidence strength ─────────────────── */
 
-// Returns true after `delay` ms — used to stagger section reveals
-function useReveal(delay: number, gate = true) {
-  const [visible, setVisible] = useState(false)
-  useEffect(() => {
-    if (!gate) return
-    const t = setTimeout(() => setVisible(true), delay)
-    return () => clearTimeout(t)
-  }, [delay, gate])
-  return visible
+const EVIDENCE_CFG: Record<string, {
+  label: string; dot: string; bar: string; track: string; pct: number
+  labelColor: string; border: string; headerBg: string
+}> = {
+  strong:      { label: 'Strong',      dot: 'bg-emerald-500', bar: 'bg-emerald-500', track: 'bg-emerald-100', pct: 100, labelColor: 'text-emerald-700', border: 'border-emerald-100', headerBg: 'bg-emerald-50' },
+  moderate:    { label: 'Moderate',    dot: 'bg-blue-500',    bar: 'bg-blue-500',    track: 'bg-blue-100',    pct: 66,  labelColor: 'text-blue-700',    border: 'border-blue-100',    headerBg: 'bg-blue-50'    },
+  weak:        { label: 'Weak',        dot: 'bg-amber-500',   bar: 'bg-amber-500',   track: 'bg-amber-100',   pct: 33,  labelColor: 'text-amber-700',   border: 'border-amber-100',   headerBg: 'bg-amber-50'   },
+  unsupported: { label: 'Unsupported', dot: 'bg-red-500',     bar: 'bg-red-500',     track: 'bg-red-100',     pct: 8,   labelColor: 'text-red-700',     border: 'border-red-100',     headerBg: 'bg-red-50'     },
 }
 
-/* ─────────────────────────────── sub-components ────────────────────── */
+/* ─────────────────────────────── micro components ──────────────────── */
 
-function SectionHeading({ label, color, index = 0 }: { label: string; color: string; index?: number }) {
-  const visible = useReveal(index * 80)
+function Label({ children }: { children: React.ReactNode }) {
   return (
-    <div
-      className="flex items-center gap-2.5 mb-3 mt-1 transition-all duration-500"
-      style={{
-        opacity: visible ? 1 : 0,
-        transform: visible ? 'translateX(0)' : 'translateX(-8px)',
-      }}
-    >
-      <div className={`w-1 h-5 rounded-full ${color}`} />
-      <p className="text-sm font-bold text-slate-800 tracking-tight">{label}</p>
-    </div>
+    <p className="text-[10px] font-semibold uppercase tracking-widest text-slate-500 mb-1 border-l-2 border-indigo-300 pl-2">
+      {children}
+    </p>
   )
 }
 
-function RevealCard({
-  children,
-  className = '',
-  delay = 0,
-}: {
-  children: React.ReactNode
-  className?: string
-  delay?: number
-}) {
-  const visible = useReveal(delay)
+function Card({ children, className = '' }: { children: React.ReactNode; className?: string }) {
   return (
-    <div
-      className={`bg-white border border-slate-100 rounded-2xl shadow-sm transition-all duration-500 ${className}`}
-      style={{
-        opacity: visible ? 1 : 0,
-        transform: visible ? 'translateY(0)' : 'translateY(12px)',
-      }}
-    >
+    <div className={`bg-white border border-slate-100 rounded-xl shadow-sm ${className}`}>
       {children}
     </div>
   )
 }
 
-function FieldLabel({ children }: { children: React.ReactNode }) {
-  return <p className="text-[11px] font-semibold uppercase tracking-widest text-slate-400 mb-1.5">{children}</p>
+/**
+ * Jump-to-page button. Dispatches 'coread:go-to-page' so PDFViewerCore / Apryse
+ * scrolls to the correct page, then 'coread:highlight-passage' so the viewer
+ * searches for the source quote and overlays an amber highlight on it.
+ */
+function FindInPaper({ page, quote, summary, label }: { page: number | undefined; quote?: string; summary?: string; label?: string }) {
+  if (!page || page < 1) return null
+  return (
+    <button
+      onClick={() => {
+        window.dispatchEvent(new CustomEvent('coread:go-to-page', { detail: { page } }))
+        window.dispatchEvent(new CustomEvent('coread:highlight-passage', {
+          detail: { text: quote?.trim() || undefined, summary: summary?.trim() || undefined, label: label?.trim() || undefined, page }
+        }))
+      }}
+      className="inline-flex items-center gap-1 text-[10px] font-semibold text-indigo-500 hover:text-indigo-700 hover:bg-indigo-50 px-1.5 py-0.5 rounded transition-colors border border-indigo-100 hover:border-indigo-300 shrink-0"
+      title={`Go to page ${page} · highlights relevant passage`}
+    >
+      <FileSearch className="w-2.5 h-2.5" />
+      Find in paper · p.{page}
+    </button>
+  )
 }
 
-function Accordion({ title, badge, children, defaultOpen = false, delay = 0 }: {
-  title: string; badge?: string; children: React.ReactNode; defaultOpen?: boolean; delay?: number
+function SectionTitle({ icon: Icon, label, color }: {
+  icon: React.ElementType; label: string; color: string
+}) {
+  return (
+    <div className="flex items-center gap-2 mb-3">
+      <div className={`w-6 h-6 rounded-lg flex items-center justify-center shrink-0 ${color}`}>
+        <Icon className="w-3.5 h-3.5" />
+      </div>
+      <p className="text-[11px] font-bold uppercase tracking-widest text-slate-500">{label}</p>
+    </div>
+  )
+}
+
+function Accordion({ title, badge, children, defaultOpen = false }: {
+  title: string; badge?: string; children: React.ReactNode; defaultOpen?: boolean
 }) {
   const [open, setOpen] = useState(defaultOpen)
-  const visible = useReveal(delay)
   return (
-    <div
-      className="border border-slate-100 rounded-xl overflow-hidden bg-white shadow-sm transition-all duration-500"
-      style={{
-        opacity: visible ? 1 : 0,
-        transform: visible ? 'translateY(0)' : 'translateY(10px)',
-      }}
-    >
+    <div className="border border-slate-100 rounded-xl overflow-hidden bg-white shadow-sm">
       <button
         onClick={() => setOpen(o => !o)}
         className="w-full flex items-center justify-between px-4 py-3 text-left hover:bg-slate-50 transition-colors"
       >
         <div className="flex items-center gap-2 min-w-0">
-          <span className="text-sm font-semibold text-slate-800 truncate">{title}</span>
+          <span className="text-sm font-semibold text-slate-800 leading-snug">{title}</span>
           {badge && (
-            <span className="shrink-0 text-[10px] font-semibold bg-violet-100 text-violet-600 px-2 py-0.5 rounded-full">
+            <span className="shrink-0 text-[10px] font-semibold bg-slate-100 text-slate-500 px-2 py-0.5 rounded-full">
               {badge}
             </span>
           )}
         </div>
         {open
-          ? <ChevronUp className="w-4 h-4 text-slate-400 shrink-0" />
-          : <ChevronDown className="w-4 h-4 text-slate-400 shrink-0" />}
+          ? <ChevronUp className="w-3.5 h-3.5 text-slate-400 shrink-0" />
+          : <ChevronDown className="w-3.5 h-3.5 text-slate-400 shrink-0" />}
       </button>
       {open && (
-        <div className="px-4 pb-4 pt-1 border-t border-slate-100 bg-slate-50/50">
+        <div className="px-4 pb-4 pt-1 border-t border-slate-100">
           {children}
         </div>
       )}
@@ -176,184 +216,481 @@ function Accordion({ title, badge, children, defaultOpen = false, delay = 0 }: {
   )
 }
 
-function Sep() {
-  return <div className="border-t border-slate-100 my-5" />
-}
-
-/* ─────────────────────────────── thinking steps ─────────────────────── */
+/* ─────────────────────────────── loading state ─────────────────────── */
 
 const THINKING_STEPS = [
-  { label: 'Reading abstract & intro…',     duration: 900 },
-  { label: 'Mapping core claims…',          duration: 1800 },
-  { label: 'Checking prerequisite depth…',  duration: 2800 },
-  { label: 'Calibrating for your session…', duration: 3600 },
+  { label: 'Reading abstract & introduction…' },
+  { label: 'Mapping core claims and evidence…' },
+  { label: 'Checking prerequisite depth…' },
+  { label: 'Identifying methodological limits…' },
 ]
 
 function ThinkingLoader() {
   const [step, setStep] = useState(0)
-  const [dotCount, setDotCount] = useState(1)
 
   useEffect(() => {
-    const stepTimers = THINKING_STEPS.map((s, i) =>
-      setTimeout(() => setStep(i), s.duration)
+    const timers = [900, 1800, 2800, 3600].map((d, i) =>
+      setTimeout(() => setStep(i), d)
     )
-    const dotTimer = setInterval(() => setDotCount(d => (d % 3) + 1), 500)
-    return () => {
-      stepTimers.forEach(clearTimeout)
-      clearInterval(dotTimer)
-    }
+    return () => timers.forEach(clearTimeout)
   }, [])
 
   return (
     <div className="flex flex-col items-center justify-center py-16 px-6 gap-8">
-
-      {/* Animated orb */}
-      <div className="relative w-20 h-20">
-        {/* Outer pulse ring */}
-        <div className="absolute inset-0 rounded-full bg-indigo-100 animate-ping opacity-30" />
-        {/* Rotating ring */}
-        <div className="absolute inset-1 rounded-full border-[3px] border-indigo-200 border-t-indigo-600 animate-spin" />
-        {/* Inner glow */}
-        <div className="absolute inset-3 rounded-full bg-gradient-to-br from-indigo-500 to-violet-600 flex items-center justify-center shadow-lg shadow-indigo-200">
-          <Brain className="w-5 h-5 text-white" />
+      <div className="relative w-16 h-16">
+        <div className="absolute inset-0 rounded-full bg-indigo-100 animate-ping opacity-25" />
+        <div className="absolute inset-1 rounded-full border-2 border-indigo-200 border-t-indigo-600 animate-spin" />
+        <div className="absolute inset-2.5 rounded-full bg-indigo-600 flex items-center justify-center">
+          <Brain className="w-4.5 h-4.5 text-white" />
         </div>
-        {/* Orbiting dot */}
-        <div
-          className="absolute w-2.5 h-2.5 bg-violet-400 rounded-full shadow-sm"
-          style={{
-            top: '50%',
-            left: '50%',
-            transformOrigin: '0 0',
-            animation: 'orbit 1.8s linear infinite',
-            marginLeft: '-5px',
-            marginTop: '-32px',
-          }}
-        />
       </div>
 
-      {/* Status line */}
-      <div className="text-center space-y-1.5">
-        <p className="text-sm font-semibold text-slate-800">
-          CoRead is reading this paper
-          {'.'.repeat(dotCount)}
-        </p>
-        <p
-          key={step}
-          className="text-xs text-indigo-600 font-medium transition-all duration-400"
-          style={{ animation: 'fadeSlideIn 0.4s ease' }}
-        >
-          {THINKING_STEPS[step]?.label}
-        </p>
-      </div>
-
-      {/* Progress steps */}
-      <div className="w-full space-y-2.5">
+      <div className="w-full space-y-3">
         {THINKING_STEPS.map((s, i) => (
           <div key={i} className="flex items-center gap-3">
-            <div
-              className={`w-5 h-5 rounded-full flex items-center justify-center shrink-0 transition-all duration-500 ${
-                i < step
-                  ? 'bg-indigo-600 shadow-sm shadow-indigo-200'
-                  : i === step
-                  ? 'bg-indigo-100 ring-2 ring-indigo-400 ring-offset-1'
-                  : 'bg-slate-100'
-              }`}
-            >
-              {i < step ? (
-                <CheckCircle className="w-3 h-3 text-white" />
-              ) : i === step ? (
-                <div className="w-1.5 h-1.5 bg-indigo-500 rounded-full animate-pulse" />
-              ) : (
-                <div className="w-1.5 h-1.5 bg-slate-300 rounded-full" />
-              )}
+            <div className={`w-5 h-5 rounded-full flex items-center justify-center shrink-0 transition-all duration-500 ${
+              i < step ? 'bg-indigo-600' : i === step ? 'bg-indigo-100 ring-2 ring-indigo-400 ring-offset-1' : 'bg-slate-100'
+            }`}>
+              {i < step
+                ? <CheckCircle className="w-3 h-3 text-white" />
+                : i === step
+                ? <div className="w-1.5 h-1.5 bg-indigo-500 rounded-full animate-pulse" />
+                : <div className="w-1.5 h-1.5 bg-slate-300 rounded-full" />}
             </div>
-            <div className="flex-1">
-              <div
-                className={`h-1 rounded-full overflow-hidden transition-all duration-700 ${
-                  i < step ? 'bg-indigo-100' : 'bg-slate-100'
-                }`}
-              >
-                <div
-                  className="h-full bg-indigo-500 rounded-full transition-all duration-1000 ease-out"
-                  style={{ width: i < step ? '100%' : i === step ? '60%' : '0%' }}
-                />
-              </div>
-            </div>
-            <span
-              className={`text-[10px] font-medium shrink-0 w-36 transition-colors duration-300 ${
-                i < step ? 'text-indigo-500' : i === step ? 'text-slate-700' : 'text-slate-300'
-              }`}
-            >
-              {s.label}
-            </span>
+            <span className={`text-xs transition-colors duration-300 ${
+              i < step ? 'text-indigo-500 font-medium' : i === step ? 'text-slate-700 font-semibold' : 'text-slate-300'
+            }`}>{s.label}</span>
           </div>
         ))}
       </div>
-
-      <style>{`
-        @keyframes orbit {
-          from { transform: rotate(0deg) translateY(-32px) rotate(0deg); }
-          to   { transform: rotate(360deg) translateY(-32px) rotate(-360deg); }
-        }
-        @keyframes fadeSlideIn {
-          from { opacity: 0; transform: translateY(4px); }
-          to   { opacity: 1; transform: translateY(0); }
-        }
-        @keyframes shimmer {
-          0%   { background-position: -200% center; }
-          100% { background-position: 200% center; }
-        }
-        .shimmer-text {
-          background: linear-gradient(90deg, #fff 0%, rgba(255,255,255,0.6) 40%, #fff 60%, rgba(255,255,255,0.6) 80%, #fff 100%);
-          background-size: 200% auto;
-          -webkit-background-clip: text;
-          animation: shimmer 2.5s linear infinite;
-        }
-      `}</style>
     </div>
   )
 }
 
-/* ─────────────────────────────── main panel ─────────────────────────── */
+/* ─────────────────────────────── tab: glance ───────────────────────── */
+
+function GlanceTab({ glance }: { glance: GlanceData }) {
+  const diff = glance.readingDifficulty
+  const diffCfg = DIFFICULTY_CONFIG[diff?.level] ?? DIFFICULTY_CONFIG['Moderate']
+
+  return (
+    <div className="space-y-5 pb-6">
+
+      {/* ── Core thesis ── */}
+      <div>
+        <SectionTitle icon={Zap} label="Core thesis" color="bg-indigo-100 text-indigo-600" />
+        <Card className="p-4">
+          <p className="text-[15px] font-semibold text-slate-900 leading-relaxed">
+            {glance.oneSentence}
+          </p>
+        </Card>
+      </div>
+
+      {/* ── Gap + Claim side by side summary ── */}
+      <div className="space-y-2.5">
+        <Card className="p-4">
+          <div className="flex items-start justify-between gap-2 mb-1">
+            <Label>The gap it fills</Label>
+            {glance.problemGapPage && <FindInPaper page={glance.problemGapPage} quote={glance.problemGapQuote} summary={glance.problemGap} label="the gap in prior work that motivated this paper" />}
+          </div>
+          <p className="text-sm text-slate-700 leading-relaxed">{glance.problemGap}</p>
+        </Card>
+
+        <Card className="p-4">
+          <div className="flex items-start justify-between gap-2 mb-1">
+            <Label>Central claim</Label>
+            {glance.coreClaimPage && <FindInPaper page={glance.coreClaimPage} quote={glance.coreClaimQuote} summary={glance.coreClaim} label="the central claim or main contribution of this paper" />}
+          </div>
+          <p className="text-sm font-semibold text-slate-800 leading-relaxed">{glance.coreClaim}</p>
+        </Card>
+      </div>
+
+      {/* ── Evaluation + headline result ── */}
+      <div className="grid grid-cols-1 gap-2.5">
+        <Card className="p-4">
+          <div className="flex items-start justify-between gap-2 mb-1">
+            <Label>How they validate it</Label>
+            {glance.howTheyTestItPage && <FindInPaper page={glance.howTheyTestItPage} quote={glance.howTheyTestItQuote} summary={glance.howTheyTestIt} label="how the authors evaluate or validate their approach" />}
+          </div>
+          <p className="text-sm text-slate-700 leading-relaxed">{glance.howTheyTestIt}</p>
+        </Card>
+
+        <Card className="p-4 border-emerald-100 bg-emerald-50/40">
+          <div className="flex items-start justify-between gap-2 mb-1">
+            <Label>Headline result</Label>
+            {glance.keyResultPage && <FindInPaper page={glance.keyResultPage} quote={glance.keyResultQuote} summary={glance.keyResult} label="the headline result or key finding" />}
+          </div>
+          <p className="text-sm font-semibold text-emerald-800 leading-relaxed">{glance.keyResult}</p>
+        </Card>
+      </div>
+
+      {/* ── Difficulty ── */}
+      {diff && (
+        <Card className="p-4">
+          <div className="flex items-center justify-between mb-2.5">
+            <Label>Reading difficulty</Label>
+            <span className={`text-[11px] font-bold px-2.5 py-0.5 rounded-full border ${diffCfg.pill}`}>
+              {diff.level}
+            </span>
+          </div>
+          <div className={`h-1.5 ${diffCfg.track} rounded-full overflow-hidden mb-2`}>
+            <div
+              className={`h-full ${diffCfg.fill} rounded-full`}
+              style={{ width: `${diffCfg.pct}%`, transition: 'width 0.8s cubic-bezier(0.22,1,0.36,1)' }}
+            />
+          </div>
+          <p className="text-xs text-slate-500 leading-relaxed">{diff.reason}</p>
+        </Card>
+      )}
+
+      {/* ── Is it for you? ── */}
+      {(glance.isItForYou?.yes?.length > 0 || glance.isItForYou?.no?.length > 0) && (
+        <div>
+          <SectionTitle icon={Target} label="Relevance" color="bg-slate-100 text-slate-500" />
+          <div className="space-y-2">
+            {glance.isItForYou?.yes?.length > 0 && (
+              <Card className="overflow-hidden">
+                <div className="px-4 py-2.5 bg-emerald-50 border-b border-emerald-100 flex items-center gap-2">
+                  <CheckCircle className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
+                  <p className="text-[11px] font-bold text-emerald-700 uppercase tracking-wider">Directly useful if you…</p>
+                </div>
+                <div className="px-4 py-3 space-y-2">
+                  {glance.isItForYou.yes.map((s, i) => (
+                    <div key={i} className="flex items-start gap-2.5">
+                      <div className="w-1.5 h-1.5 bg-emerald-400 rounded-full shrink-0 mt-1.5" />
+                      <p className="text-sm text-slate-700 leading-relaxed">{s}</p>
+                    </div>
+                  ))}
+                </div>
+              </Card>
+            )}
+            {glance.isItForYou?.no?.length > 0 && (
+              <Card className="overflow-hidden">
+                <div className="px-4 py-2.5 bg-slate-50 border-b border-slate-100 flex items-center gap-2">
+                  <AlertTriangle className="w-3.5 h-3.5 text-slate-400 shrink-0" />
+                  <p className="text-[11px] font-bold text-slate-500 uppercase tracking-wider">Less relevant if you…</p>
+                </div>
+                <div className="px-4 py-3 space-y-2">
+                  {glance.isItForYou.no.map((s, i) => (
+                    <div key={i} className="flex items-start gap-2.5">
+                      <div className="w-1.5 h-1.5 bg-slate-300 rounded-full shrink-0 mt-1.5" />
+                      <p className="text-sm text-slate-500 leading-relaxed">{s}</p>
+                    </div>
+                  ))}
+                </div>
+              </Card>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* ── Venue signal ── */}
+      {glance.venueSignal && (
+        <Card className="p-4 border-slate-100">
+          <Label>Venue signal</Label>
+          <p className="text-sm text-slate-600 leading-relaxed">{glance.venueSignal}</p>
+        </Card>
+      )}
+    </div>
+  )
+}
+
+/* ─────────────────────────────── tab: prepare ──────────────────────── */
+
+function PrepareTab({ prereqs, critique }: { prereqs: PrereqData; critique: CritiqueData | null }) {
+  return (
+    <div className="space-y-6 pb-6">
+
+      {/* ── Entry point ── */}
+      {prereqs.entryPoint && (
+        <div>
+          <SectionTitle icon={BookOpen} label="How to enter this paper" color="bg-teal-100 text-teal-600" />
+          <div className="space-y-2.5">
+            <Card className="p-4 border-teal-100 bg-teal-50/30">
+              <Label>Do this before opening it</Label>
+              <p className="text-sm font-semibold text-slate-800 leading-relaxed">{prereqs.entryPoint.beforeOpening}</p>
+            </Card>
+            <Card className="p-4">
+              <div className="flex items-start justify-between gap-2 mb-1">
+                <Label>Start reading at</Label>
+                {prereqs.entryPoint.startAtPage && <FindInPaper page={prereqs.entryPoint.startAtPage} summary={prereqs.entryPoint.startAt} label="the recommended entry point or starting section" />}
+              </div>
+              <p className="text-sm font-semibold text-slate-800 mb-1">{prereqs.entryPoint.startAt}</p>
+              <p className="text-sm text-slate-600 leading-relaxed">{prereqs.entryPoint.why}</p>
+            </Card>
+          </div>
+        </div>
+      )}
+
+      {/* ── Blocking concepts ── */}
+      {!!prereqs.blockingConcepts?.length && (
+        <div>
+          <SectionTitle icon={AlertCircle} label="Blocking concepts" color="bg-violet-100 text-violet-600" />
+          <p className="text-xs text-slate-500 mb-3 leading-relaxed">
+            Each of these is tied to a specific section. Missing one will cause a specific misread.
+          </p>
+          <div className="space-y-2">
+            {prereqs.blockingConcepts.map((c, i) => (
+              <Accordion key={i} title={c.concept} badge={c.section} defaultOpen={i === 0}>
+                <div className="space-y-3 pt-2">
+                  <div className="flex items-start justify-between gap-2">
+                    <p className="text-sm text-slate-700 leading-relaxed">{c.oneLiner}</p>
+                    {c.sourcePage && <FindInPaper page={c.sourcePage} quote={c.sourceQuote} summary={c.oneLiner} label={`the concept "${c.concept}" as used in this paper`} />}
+                  </div>
+                  <div className="bg-red-50 border border-red-100 rounded-xl px-3.5 py-2.5">
+                    <p className="text-[10px] font-bold text-red-600 uppercase tracking-wider mb-1">If you skip this</p>
+                    <p className="text-sm text-slate-700 leading-relaxed">{c.whatBreaks}</p>
+                  </div>
+                  <div className="bg-slate-50 border border-slate-100 rounded-xl px-3.5 py-2.5 flex items-start gap-2">
+                    <ChevronRight className="w-3.5 h-3.5 text-slate-500 shrink-0 mt-0.5" />
+                    <p className="text-sm text-slate-600 leading-relaxed">{c.howToGetIt}</p>
+                  </div>
+                </div>
+              </Accordion>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* ── Must-read first ── */}
+      {!!prereqs.mustReadFirst?.length && (
+        <div>
+          <SectionTitle icon={GraduationCap} label="Read these first" color="bg-blue-100 text-blue-600" />
+          <p className="text-xs text-slate-500 mb-3 leading-relaxed">
+            Prerequisite papers — specific sections depend on them.
+          </p>
+          <div className="space-y-2.5">
+            {prereqs.mustReadFirst.map((p, i) => (
+              <Card key={i} className="overflow-hidden">
+                <div className="flex items-start justify-between gap-2 px-4 py-3 border-b border-slate-100">
+                  <div className="min-w-0">
+                    <p className="text-sm font-semibold text-slate-800 leading-snug">{p.title}</p>
+                    <p className="text-[11px] text-slate-400 mt-0.5">{p.authors} · {p.year}</p>
+                  </div>
+                  <button
+                    onClick={() => window.open(`https://scholar.google.com/scholar?q=${encodeURIComponent(p.title)}`, '_blank')}
+                    className="shrink-0 p-1.5 hover:bg-slate-100 rounded-lg transition-colors text-slate-400 hover:text-slate-600"
+                    title="Search on Google Scholar"
+                  >
+                    <ArrowUpRight className="w-3.5 h-3.5" />
+                  </button>
+                </div>
+                <div className="px-4 py-3 space-y-3">
+                  {p.coreClaim && (
+                    <div>
+                      <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">What it argues</p>
+                      <p className="text-sm font-medium text-slate-800 leading-relaxed">{p.coreClaim}</p>
+                    </div>
+                  )}
+                  <div>
+                    <p className="text-[10px] font-bold text-red-500 uppercase tracking-wider mb-1">Why it blocks you</p>
+                    <p className="text-sm text-slate-700 leading-relaxed">{p.whyBlocking}</p>
+                  </div>
+                  <div className="bg-blue-50 border border-blue-100 rounded-xl px-3.5 py-2.5">
+                    <p className="text-[10px] font-bold text-blue-600 uppercase tracking-wider mb-1">Minimum to extract</p>
+                    <p className="text-sm text-slate-700 leading-relaxed">{p.whatToExtract}</p>
+                  </div>
+                </div>
+              </Card>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* ── Terms used differently ── */}
+      {!!prereqs.termsThatTripPeople?.length && (
+        <div>
+          <SectionTitle icon={AlertTriangle} label="Terms used differently here" color="bg-amber-100 text-amber-600" />
+          <p className="text-xs text-slate-500 mb-3 leading-relaxed">
+            Where this paper's usage diverges from common understanding.
+          </p>
+          <div className="space-y-2">
+            {prereqs.termsThatTripPeople.map((t, i) => (
+              <Card key={i} className="p-4">
+                <div className="flex items-start justify-between gap-2 mb-1">
+                  <p className="text-sm font-bold text-slate-800">{t.term}</p>
+                  {t.sourcePage && <FindInPaper page={t.sourcePage} quote={t.sourceQuote} summary={t.paperMeans} label={`the term "${t.term}" and what it means in this paper`} />}
+                </div>
+                <p className="text-sm text-slate-600 italic leading-relaxed mb-2.5">
+                  "{t.paperMeans}"
+                </p>
+                {t.notToConfuseWith && (
+                  <div className="flex items-start gap-2 bg-amber-50 border border-amber-100 rounded-xl px-3 py-2.5">
+                    <AlertTriangle className="w-3 h-3 text-amber-500 shrink-0 mt-0.5" />
+                    <p className="text-xs text-slate-600 leading-relaxed">{t.notToConfuseWith}</p>
+                  </div>
+                )}
+              </Card>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* ── Common misreadings ── */}
+      {!!prereqs.pitfalls?.length && (
+        <div>
+          <SectionTitle icon={ShieldAlert} label="Common misreadings" color="bg-rose-100 text-rose-600" />
+          <p className="text-xs text-slate-500 mb-3 leading-relaxed">
+            Interpretations that look right but aren't.
+          </p>
+          <div className="space-y-2">
+            {prereqs.pitfalls.map((p, i) => (
+              <Card key={i} className="overflow-hidden">
+                <div className="px-4 py-2.5 bg-slate-50 border-b border-slate-100 flex items-center justify-between gap-2">
+                  <p className="text-[11px] font-semibold text-slate-500">{p.where}</p>
+                  {p.sourcePage && <FindInPaper page={p.sourcePage} quote={p.sourceQuote} summary={p.misreading} label={`the pitfall or common misreading at "${p.where}"`} />}
+                </div>
+                <div className="px-4 py-3 space-y-2.5">
+                  <div>
+                    <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">Wrong read</p>
+                    <p className="text-sm text-slate-500 italic leading-relaxed">"{p.misreading}"</p>
+                  </div>
+                  <div className="flex items-start gap-2 bg-emerald-50 border border-emerald-100 rounded-xl px-3.5 py-2.5">
+                    <CheckCircle className="w-3.5 h-3.5 text-emerald-600 shrink-0 mt-0.5" />
+                    <p className="text-sm text-slate-700 leading-relaxed">{p.correction}</p>
+                  </div>
+                </div>
+              </Card>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* ── Critical reading layer ── */}
+      {critique && (
+        <div>
+          <SectionTitle icon={Crosshair} label="Critical reading layer" color="bg-rose-100 text-rose-600" />
+
+          {/* Reading angle — the single most important thing */}
+          {critique.readingAngle && (
+            <Card className="p-4 mb-3 border-rose-100 bg-rose-50/30">
+              <Label>Your reading angle</Label>
+              <p className="text-sm font-semibold text-slate-900 leading-relaxed">{critique.readingAngle}</p>
+            </Card>
+          )}
+
+          {/* What this paper does NOT prove */}
+          {critique.whatThisPaperDoesNotProve && (
+            <Card className="overflow-hidden mb-3">
+              <div className="px-4 py-2.5 bg-slate-50 border-b border-slate-100 flex items-center gap-2">
+                <FlaskConical className="w-3.5 h-3.5 text-slate-500 shrink-0" />
+                <p className="text-[11px] font-bold text-slate-600 uppercase tracking-wider">What this paper does not prove</p>
+              </div>
+              <div className="px-4 py-3.5">
+                <p className="text-sm text-slate-700 leading-relaxed">{critique.whatThisPaperDoesNotProve}</p>
+              </div>
+            </Card>
+          )}
+
+          {/* Claim–evidence map */}
+          {!!critique.claimEvidenceMap?.length && (
+            <div className="mb-4">
+              <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-2.5">
+                Claim–evidence map
+              </p>
+              <div className="space-y-2">
+                {critique.claimEvidenceMap.map((item, i) => {
+                  const cfg = EVIDENCE_CFG[item.evidenceStrength] ?? EVIDENCE_CFG.moderate
+                  return (
+                    <Card key={i} className={`overflow-hidden border-slate-100`}>
+                      <div className={`px-4 py-2.5 ${cfg.headerBg} border-b ${cfg.border} flex items-center justify-between gap-3`}>
+                        <div className="flex items-center gap-2">
+                          <div className={`w-2 h-2 rounded-full shrink-0 ${cfg.dot}`} />
+                          <Scale className={`w-3 h-3 shrink-0 ${cfg.labelColor}`} />
+                          <p className={`text-[10px] font-bold uppercase tracking-wider ${cfg.labelColor}`}>
+                            {cfg.label}
+                          </p>
+                        </div>
+                        <div className={`w-16 h-1.5 rounded-full overflow-hidden ${cfg.track}`}>
+                          <div className={`h-full rounded-full ${cfg.bar}`} style={{ width: `${cfg.pct}%` }} />
+                        </div>
+                      </div>
+                      <div className="px-4 py-3 space-y-1.5">
+                        <div className="flex items-start justify-between gap-2">
+                          <p className="text-sm font-semibold text-slate-800 leading-snug">"{item.claim}"</p>
+                          {item.sourcePage && <FindInPaper page={item.sourcePage} quote={item.sourceQuote} summary={item.claim} label="a key claim and the evidence supporting it" />}
+                        </div>
+                        <p className="text-xs text-slate-500 leading-relaxed">{item.rationale}</p>
+                      </div>
+                    </Card>
+                  )
+                })}
+              </div>
+            </div>
+          )}
+
+          {/* Methodological weaknesses */}
+          {!!critique.methodologicalWeaknesses?.length && (
+            <div>
+              <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-2.5">
+                Methodological weaknesses
+              </p>
+              <div className="space-y-2">
+                {critique.methodologicalWeaknesses.map((w, i) => (
+                  <Accordion key={i} title={w.weakness} badge="Methodology">
+                    <div className="space-y-3 pt-2">
+                      <div className="flex items-start justify-between gap-2">
+                        <div className="flex-1">
+                          <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">Why it matters</p>
+                          <p className="text-sm text-slate-700 leading-relaxed">{w.whyItMatters}</p>
+                        </div>
+                        {w.sourcePage && <FindInPaper page={w.sourcePage} quote={w.sourceQuote} summary={w.weakness} label={`a methodological weakness: "${w.weakness}"`} />}
+                      </div>
+                      <div className="bg-indigo-50 border border-indigo-100 rounded-xl px-3.5 py-2.5">
+                        <p className="text-[10px] font-bold text-indigo-600 uppercase tracking-wider mb-1">Reviewer question</p>
+                        <p className="text-sm text-slate-700 italic leading-relaxed">"{w.questionToAsk}"</p>
+                      </div>
+                    </div>
+                  </Accordion>
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  )
+}
+
+/* ─────────────────────────────── main component ────────────────────── */
 
 export default function PaperOrientationPanel({
   isOpen, onClose, onSetupComplete,
   paperText, paperTitle, paperAuthors, paperVenue, paperYear, documentId
 }: PaperOrientationPanelProps) {
 
-  const [glance, setGlance]   = useState<GlanceData | null>(null)
-  const [prereqs, setPrereqs] = useState<PrereqData | null>(null)
-  const [loading, setLoading] = useState(false)
-  const [error, setError]     = useState<string | null>(null)
-  const [panelReady, setPanelReady] = useState(false)
+  const [glance, setGlance]     = useState<GlanceData | null>(null)
+  const [prereqs, setPrereqs]   = useState<PrereqData | null>(null)
+  const [critique, setCritique] = useState<CritiqueData | null>(null)
+  const [loading, setLoading]   = useState(false)
+  const [error, setError]       = useState<string | null>(null)
+  const [activeTab, setActiveTab] = useState<'glance' | 'prepare'>('glance')
 
   const hasFetched = useRef(false)
+  const glanceRef = useRef<GlanceData | null>(null)
 
-  // Reset fetch gate when document changes
+  useEffect(() => { glanceRef.current = glance }, [glance])
+
   useEffect(() => {
     hasFetched.current = false
-    setGlance(null)
-    setPrereqs(null)
-    setError(null)
-    setPanelReady(false)
+    setGlance(null); setPrereqs(null); setCritique(null)
+    setError(null); setActiveTab('glance')
   }, [documentId])
 
-  // Panel entrance delay — lets the slide-in complete before content appears
   useEffect(() => {
-    if (!isOpen) { setPanelReady(false); return }
-    const t = setTimeout(() => setPanelReady(true), 120)
-    return () => clearTimeout(t)
-  }, [isOpen])
-
-  useEffect(() => {
-    if (!isOpen || hasFetched.current || !paperText || paperText.length < 100) return
+    if (!isOpen || !paperText || paperText.length < 100) return
+    if (hasFetched.current) {
+      // Re-fetch if cached data predates the sourcePage upgrade
+      const g = glanceRef.current
+      if (g && !g.coreClaimPage && !g.keyResultPage) hasFetched.current = false
+      else return
+    }
     hasFetched.current = true
     fetchAnalysis()
   }, [isOpen, paperText])
 
   const fetchAnalysis = async () => {
-    setLoading(true)
-    setError(null)
+    setLoading(true); setError(null)
     try {
       const res = await fetch('/api/paper-orientation', {
         method: 'POST',
@@ -364,6 +701,7 @@ export default function PaperOrientationPanel({
       if (!res.ok) throw new Error(data.error || 'Analysis failed')
       setGlance(data.glance)
       setPrereqs(data.prereqs)
+      setCritique(data.critique ?? null)
     } catch (e: any) {
       setError(e.message)
     } finally {
@@ -373,117 +711,99 @@ export default function PaperOrientationPanel({
 
   if (!isOpen) return null
 
-  const diff = glance?.readingDifficulty
-  const diffCfg = diff ? (DIFFICULTY_CONFIG[diff.level] ?? DIFFICULTY_CONFIG['Moderate']) : null
   const hasContent = !loading && !error && (glance || prereqs)
 
+  // Count prep items to badge the tab
+  const prepCount = (prereqs?.blockingConcepts?.length ?? 0) +
+    (prereqs?.mustReadFirst?.length ?? 0) +
+    (prereqs?.pitfalls?.length ?? 0) +
+    (critique?.methodologicalWeaknesses?.length ?? 0)
+
   return (
-    <div
-      className="w-full h-full flex flex-col overflow-hidden"
-      style={{
-        background: 'linear-gradient(180deg, #f8f7ff 0%, #f8fafc 60%)',
-        borderLeft: '1px solid #e2e0f0',
-        boxShadow: '-8px 0 32px -8px rgba(99,102,241,0.08)',
-        opacity: panelReady ? 1 : 0,
-        transform: panelReady ? 'translateX(0)' : 'translateX(16px)',
-        transition: 'opacity 0.35s ease, transform 0.35s cubic-bezier(0.22,1,0.36,1)',
-      }}
-    >
+    <div className="w-full h-full flex flex-col overflow-hidden bg-white" style={{ borderLeft: '1px solid #e5e7eb' }}>
 
       {/* ── Header ── */}
-      <div
-        className="shrink-0 px-5 pt-4 pb-4 border-b border-indigo-100/60"
-        style={{
-          background: 'linear-gradient(135deg, #eef2ff 0%, #f5f3ff 100%)',
-          opacity: panelReady ? 1 : 0,
-          transform: panelReady ? 'translateY(0)' : 'translateY(-8px)',
-          transition: 'opacity 0.4s ease 0.1s, transform 0.4s cubic-bezier(0.22,1,0.36,1) 0.1s',
-        }}
-      >
-        <div className="flex items-start justify-between gap-3">
+      <div className="shrink-0 px-4 pt-4 pb-3 border-b border-slate-100">
+        <div className="flex items-start justify-between gap-3 mb-3">
           <div className="flex items-center gap-2.5 min-w-0">
-
-            {/* Animated icon */}
-            <div
-              className="w-9 h-9 rounded-xl flex items-center justify-center shrink-0 shadow-md"
-              style={{
-                background: 'linear-gradient(135deg, #6366f1, #8b5cf6)',
-                boxShadow: '0 4px 12px rgba(99,102,241,0.3)',
-                animation: loading ? 'none' : 'iconPop 0.5s cubic-bezier(0.34,1.56,0.64,1) 0.2s both',
-              }}
-            >
+            <div className="w-8 h-8 rounded-lg bg-indigo-600 flex items-center justify-center shrink-0 shadow-sm">
               {loading
-                ? <Brain className="w-4.5 h-4.5 text-white animate-pulse" />
+                ? <Brain className="w-4 h-4 text-white animate-pulse" />
                 : <Sparkles className="w-4 h-4 text-white" />}
             </div>
-
             <div className="min-w-0">
-              <div className="flex items-center gap-1.5">
+              <div className="flex items-center gap-1.5 mb-0.5">
                 <p className="text-[10px] font-bold uppercase tracking-widest text-indigo-600">Paper Briefing</p>
-                <span className="text-[10px] text-indigo-300">·</span>
-                <p className="text-[10px] text-indigo-400 font-medium">Phase I</p>
+                <span className="text-[10px] text-slate-300">·</span>
+                <p className="text-[10px] text-slate-400 font-medium">Phase I</p>
               </div>
-              <p className="text-sm font-bold text-slate-900 leading-snug line-clamp-1 mt-0.5">
+              <p className="text-sm font-bold text-slate-900 leading-snug line-clamp-1">
                 {paperTitle || 'Untitled Paper'}
               </p>
             </div>
           </div>
-          <button
-            onClick={onClose}
-            className="shrink-0 p-1.5 text-slate-400 hover:text-slate-600 hover:bg-white/80 rounded-lg transition-all mt-0.5"
-          >
-            <X className="w-4 h-4" />
-          </button>
+          <div className="flex items-center gap-1">
+            {!loading && (
+              <button
+                onClick={() => { hasFetched.current = false; fetchAnalysis() }}
+                className="shrink-0 p-1.5 text-slate-400 hover:text-slate-600 hover:bg-slate-100 rounded-lg transition-all"
+                title="Refresh briefing"
+              >
+                <RefreshCw className="w-3.5 h-3.5" />
+              </button>
+            )}
+            <button
+              onClick={onClose}
+              className="shrink-0 p-1.5 text-slate-400 hover:text-slate-600 hover:bg-slate-100 rounded-lg transition-all"
+            >
+              <X className="w-4 h-4" />
+            </button>
+          </div>
         </div>
 
         {(paperAuthors || paperYear) && (
-          <p className="text-[11px] text-indigo-400/80 mt-1.5 ml-[46px] truncate font-medium">
+          <p className="text-[11px] text-slate-400 mb-3 truncate">
             {[paperAuthors, paperYear, paperVenue].filter(Boolean).join(' · ')}
           </p>
         )}
 
-        {/* Difficulty bar — animates width when it arrives */}
-        {diff && diffCfg && (
-          <div className="mt-3.5 ml-[46px]">
-            <div className="flex items-center justify-between mb-1.5">
-              <p className="text-[10px] text-indigo-400 font-semibold uppercase tracking-wider">Reading difficulty</p>
-              <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${diffCfg.pill}`}>
-                {diff.level}
-              </span>
-            </div>
-            <div className="h-1.5 bg-indigo-100 rounded-full overflow-hidden">
-              <div
-                className={`h-full rounded-full ${diffCfg.bar}`}
-                style={{
-                  width: 0,
-                  animation: `barFill 0.8s cubic-bezier(0.22,1,0.36,1) 0.6s both`,
-                  animationFillMode: 'forwards',
-                  ['--bar-width' as any]: diffCfg.width === 'w-1/4' ? '25%'
-                    : diffCfg.width === 'w-2/4' ? '50%'
-                    : diffCfg.width === 'w-3/4' ? '75%'
-                    : '100%',
-                }}
-              />
-            </div>
-            {diff.reason && (
-              <p className="text-[10px] text-indigo-400/70 mt-1.5 leading-relaxed">{diff.reason}</p>
-            )}
+        {/* Tab bar — only shown when content is ready */}
+        {hasContent && (
+          <div className="flex gap-1 bg-slate-100 rounded-lg p-1">
+            {([
+              { id: 'glance',  label: 'At a Glance',   badge: null },
+              { id: 'prepare', label: 'Prepare to Read', badge: prepCount > 0 ? prepCount : null },
+            ] as const).map(tab => (
+              <button
+                key={tab.id}
+                onClick={() => setActiveTab(tab.id)}
+                className={`flex-1 flex items-center justify-center gap-1.5 py-1.5 rounded-md text-xs font-semibold transition-all ${
+                  activeTab === tab.id
+                    ? 'bg-white text-slate-800 shadow-sm'
+                    : 'text-slate-500 hover:text-slate-700'
+                }`}
+              >
+                {tab.label}
+                {tab.badge !== null && (
+                  <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded-full ${
+                    activeTab === tab.id ? 'bg-indigo-100 text-indigo-600' : 'bg-slate-200 text-slate-500'
+                  }`}>
+                    {tab.badge}
+                  </span>
+                )}
+              </button>
+            ))}
           </div>
         )}
       </div>
 
       {/* ── Body ── */}
-      <div className="flex-1 overflow-y-auto px-4 py-4 space-y-1">
+      <div className="flex-1 overflow-y-auto px-4 py-4">
 
-        {/* Loading */}
         {loading && <ThinkingLoader />}
 
-        {/* Error */}
         {error && !loading && (
-          <div
-            className="flex flex-col items-center justify-center py-14 gap-4 text-center"
-            style={{ animation: 'fadeSlideUp 0.4s ease' }}
-          >
+          <div className="flex flex-col items-center justify-center py-14 gap-4 text-center">
             <div className="w-12 h-12 bg-red-50 border border-red-100 rounded-2xl flex items-center justify-center">
               <AlertCircle className="w-6 h-6 text-red-400" />
             </div>
@@ -497,278 +817,24 @@ export default function PaperOrientationPanel({
           </div>
         )}
 
-        {/* Content — each section staggers in */}
-        {hasContent && (
-          <div className="space-y-1 pb-4">
-
-            {/* ── 1. What This Paper Does ── */}
-            {glance && (
-              <div className="space-y-3 pb-2">
-                <SectionHeading label="What this paper does" color="bg-violet-500" index={0} />
-
-                {/* Hero sentence — arrives with shimmer */}
-                <div
-                  className="rounded-2xl p-4 shadow-lg"
-                  style={{
-                    background: 'linear-gradient(135deg, #4f46e5 0%, #7c3aed 100%)',
-                    boxShadow: '0 8px 24px rgba(99,102,241,0.25)',
-                    animation: 'heroArrive 0.6s cubic-bezier(0.22,1,0.36,1) 0.1s both',
-                  }}
-                >
-                  <div className="flex items-center gap-1.5 mb-2">
-                    <Zap className="w-3 h-3 text-indigo-200" />
-                    <p className="text-[10px] font-bold uppercase tracking-widest text-indigo-200">Core thesis</p>
-                  </div>
-                  <p className="text-sm text-white font-medium leading-relaxed">{glance.oneSentence}</p>
-                </div>
-
-                <RevealCard className="p-4" delay={200}>
-                  <FieldLabel>The gap it fills</FieldLabel>
-                  <p className="text-sm text-slate-700 leading-relaxed">{glance.problemGap}</p>
-                </RevealCard>
-
-                <RevealCard className="p-4" delay={300}>
-                  <FieldLabel>Core claim</FieldLabel>
-                  <p className="text-sm text-slate-800 font-medium leading-relaxed">{glance.coreClaim}</p>
-                </RevealCard>
-
-                <RevealCard className="p-4 border-emerald-100 bg-gradient-to-br from-emerald-50 to-teal-50" delay={400}>
-                  <FieldLabel>Headline result</FieldLabel>
-                  <p className="text-sm text-emerald-800 font-semibold leading-relaxed">{glance.keyResult}</p>
-                </RevealCard>
-
-                <RevealCard className="p-4" delay={500}>
-                  <FieldLabel>How they test it</FieldLabel>
-                  <p className="text-sm text-slate-700 leading-relaxed">{glance.howTheyTestIt}</p>
-                </RevealCard>
-
-                {glance.venueSignal && (
-                  <RevealCard className="p-4" delay={580}>
-                    <FieldLabel>Venue signal</FieldLabel>
-                    <p className="text-sm text-slate-600 italic leading-relaxed">{glance.venueSignal}</p>
-                  </RevealCard>
-                )}
-              </div>
-            )}
-
-            {/* ── 2. Is It For You? ── */}
-            {glance && (glance.isItForYou?.yes?.length > 0 || glance.isItForYou?.no?.length > 0) && (
-              <div className="space-y-3 py-2">
-                <Sep />
-                <SectionHeading label="Is it for you?" color="bg-blue-500" index={1} />
-
-                {glance.isItForYou?.yes?.length > 0 && (
-                  <RevealCard className="overflow-hidden" delay={680}>
-                    <div className="bg-emerald-50 px-4 py-2.5 border-b border-emerald-100 flex items-center gap-2">
-                      <CheckCircle className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
-                      <p className="text-[11px] font-semibold text-emerald-700 uppercase tracking-wider">Directly relevant if you…</p>
-                    </div>
-                    <div className="px-4 py-3 space-y-2">
-                      {glance.isItForYou.yes.map((s, i) => (
-                        <div key={i} className="flex items-start gap-2"
-                          style={{ animation: `fadeSlideUp 0.35s ease ${700 + i * 60}ms both` }}>
-                          <span className="w-1.5 h-1.5 bg-emerald-400 rounded-full shrink-0 mt-1.5" />
-                          <p className="text-sm text-slate-700 leading-relaxed">{s}</p>
-                        </div>
-                      ))}
-                    </div>
-                  </RevealCard>
-                )}
-
-                {glance.isItForYou?.no?.length > 0 && (
-                  <RevealCard className="overflow-hidden" delay={780}>
-                    <div className="bg-red-50 px-4 py-2.5 border-b border-red-100 flex items-center gap-2">
-                      <AlertTriangle className="w-3.5 h-3.5 text-red-500 shrink-0" />
-                      <p className="text-[11px] font-semibold text-red-600 uppercase tracking-wider">Less relevant if you…</p>
-                    </div>
-                    <div className="px-4 py-3 space-y-2">
-                      {glance.isItForYou.no.map((s, i) => (
-                        <div key={i} className="flex items-start gap-2"
-                          style={{ animation: `fadeSlideUp 0.35s ease ${800 + i * 60}ms both` }}>
-                          <span className="w-1.5 h-1.5 bg-red-300 rounded-full shrink-0 mt-1.5" />
-                          <p className="text-sm text-slate-600 leading-relaxed">{s}</p>
-                        </div>
-                      ))}
-                    </div>
-                  </RevealCard>
-                )}
-              </div>
-            )}
-
-            {/* ── 3. Before You Start ── */}
-            {prereqs?.entryPoint && (
-              <div className="space-y-3 py-2">
-                <Sep />
-                <SectionHeading label="Before you start" color="bg-teal-500" index={2} />
-
-                <div
-                  className="rounded-2xl p-4 shadow-md"
-                  style={{
-                    background: 'linear-gradient(135deg, #0d9488 0%, #0891b2 100%)',
-                    boxShadow: '0 6px 20px rgba(13,148,136,0.2)',
-                    animation: 'heroArrive 0.6s cubic-bezier(0.22,1,0.36,1) 0.9s both',
-                  }}
-                >
-                  <p className="text-[11px] font-semibold text-teal-200 uppercase tracking-wider mb-2">Do this first</p>
-                  <p className="text-sm text-white font-medium leading-relaxed">{prereqs.entryPoint.beforeOpening}</p>
-                </div>
-
-                <RevealCard className="p-4" delay={980}>
-                  <FieldLabel>Where to start reading</FieldLabel>
-                  <p className="text-sm font-semibold text-slate-800 mb-1">{prereqs.entryPoint.startAt}</p>
-                  <p className="text-sm text-slate-600 leading-relaxed">{prereqs.entryPoint.why}</p>
-                </RevealCard>
-              </div>
-            )}
-
-            {/* ── 4. Blocking Concepts ── */}
-            {!!prereqs?.blockingConcepts?.length && (
-              <div className="space-y-3 py-2">
-                <Sep />
-                <SectionHeading label="Blocking concepts" color="bg-violet-500" index={3} />
-                <p
-                  className="text-xs text-slate-500 leading-relaxed -mt-1"
-                  style={{ animation: 'fadeSlideUp 0.4s ease 1.1s both' }}
-                >
-                  These will stop you cold — each is tied to a specific section.
-                </p>
-                <div className="space-y-2">
-                  {prereqs!.blockingConcepts.map((c, i) => (
-                    <Accordion key={i} title={c.concept} badge={c.section} defaultOpen={i === 0} delay={1150 + i * 80}>
-                      <div className="space-y-2.5 pt-2">
-                        <p className="text-sm text-slate-700 leading-relaxed">{c.oneLiner}</p>
-                        <div className="bg-red-50 border border-red-100 rounded-xl px-3.5 py-2.5">
-                          <p className="text-[11px] font-semibold text-red-600 uppercase tracking-wider mb-1">If you skip this</p>
-                          <p className="text-sm text-slate-700">{c.whatBreaks}</p>
-                        </div>
-                        <div className="bg-emerald-50 border border-emerald-100 rounded-xl px-3.5 py-2.5 flex items-start gap-2">
-                          <ChevronRight className="w-4 h-4 text-emerald-600 shrink-0 mt-0.5" />
-                          <p className="text-sm text-slate-700">{c.howToGetIt}</p>
-                        </div>
-                      </div>
-                    </Accordion>
-                  ))}
-                </div>
-              </div>
-            )}
-
-            {/* ── 5. Read These First ── */}
-            {!!prereqs?.mustReadFirst?.length && (
-              <div className="space-y-3 py-2">
-                <Sep />
-                <SectionHeading label="Read these first" color="bg-blue-500" index={4} />
-                <p
-                  className="text-xs text-slate-500 leading-relaxed -mt-1"
-                  style={{ animation: 'fadeSlideUp 0.4s ease 1.3s both' }}
-                >
-                  Prerequisite papers — you need these before specific sections.
-                </p>
-                <div className="space-y-2">
-                  {prereqs!.mustReadFirst.map((p, i) => (
-                    <RevealCard key={i} className="overflow-hidden" delay={1350 + i * 100}>
-                      <div className="flex items-start justify-between gap-2 px-4 py-3 bg-slate-50 border-b border-slate-100">
-                        <div className="min-w-0">
-                          <p className="text-sm font-semibold text-slate-800 leading-snug line-clamp-2">{p.title}</p>
-                          <p className="text-[11px] text-slate-400 mt-0.5">{p.authors} · {p.year}</p>
-                        </div>
-                        <button
-                          onClick={() => window.open(`https://scholar.google.com/scholar?q=${encodeURIComponent(p.title)}`, '_blank')}
-                          className="shrink-0 p-1.5 hover:bg-slate-200 rounded-lg transition-colors text-slate-400 hover:text-slate-600"
-                          title="Find on Google Scholar"
-                        >
-                          <ArrowUpRight className="w-4 h-4" />
-                        </button>
-                      </div>
-                      <div className="px-4 py-3 space-y-2.5">
-                        <div>
-                          <p className="text-[11px] font-semibold text-red-500 uppercase tracking-wider mb-1">Why it blocks you</p>
-                          <p className="text-sm text-slate-700 leading-relaxed">{p.whyBlocking}</p>
-                        </div>
-                        <div className="bg-blue-50 border border-blue-100 rounded-xl px-3.5 py-2.5">
-                          <p className="text-[11px] font-semibold text-blue-600 uppercase tracking-wider mb-1">Minimum to extract</p>
-                          <p className="text-sm text-slate-700">{p.whatToExtract}</p>
-                        </div>
-                      </div>
-                    </RevealCard>
-                  ))}
-                </div>
-              </div>
-            )}
-
-            {/* ── 6. Terms Used Differently ── */}
-            {!!prereqs?.termsThatTripPeople?.length && (
-              <div className="space-y-3 py-2">
-                <Sep />
-                <SectionHeading label="Terms used differently" color="bg-amber-500" index={5} />
-                <p
-                  className="text-xs text-slate-500 leading-relaxed -mt-1"
-                  style={{ animation: 'fadeSlideUp 0.4s ease 1.5s both' }}
-                >
-                  Where this paper's meaning diverges from common usage.
-                </p>
-                <div className="space-y-2">
-                  {prereqs!.termsThatTripPeople.map((t, i) => (
-                    <RevealCard key={i} className="p-4" delay={1550 + i * 80}>
-                      <p className="text-sm font-bold text-indigo-600 mb-2">{t.term}</p>
-                      <p className="text-sm text-slate-700 italic leading-relaxed mb-2.5">"{t.paperMeans}"</p>
-                      {t.notToConfuseWith && (
-                        <div className="flex items-start gap-2 bg-amber-50 border border-amber-100 rounded-xl px-3.5 py-2.5">
-                          <AlertTriangle className="w-3.5 h-3.5 text-amber-500 shrink-0 mt-0.5" />
-                          <p className="text-sm text-slate-700">{t.notToConfuseWith}</p>
-                        </div>
-                      )}
-                    </RevealCard>
-                  ))}
-                </div>
-              </div>
-            )}
-
-          </div>
+        {hasContent && activeTab === 'glance' && glance && (
+          <GlanceTab glance={glance} />
         )}
 
-        {/* Empty — waiting for text */}
+        {hasContent && activeTab === 'prepare' && prereqs && (
+          <PrepareTab prereqs={prereqs} critique={critique} />
+        )}
+
         {!loading && !error && !glance && !prereqs && (
-          <div
-            className="flex flex-col items-center justify-center py-20 gap-4 text-center"
-            style={{ animation: 'fadeSlideUp 0.5s ease 0.3s both' }}
-          >
+          <div className="flex flex-col items-center justify-center py-20 gap-4 text-center">
             <div className="w-12 h-12 bg-indigo-50 border border-indigo-100 rounded-2xl flex items-center justify-center">
-              <Brain className="w-6 h-6 text-indigo-400" />
+              <Brain className="w-6 h-6 text-indigo-300" />
             </div>
             <p className="text-sm font-medium text-slate-500">Waiting for document…</p>
             <p className="text-xs text-slate-400">Analysis starts automatically once the PDF is ready.</p>
           </div>
         )}
-
       </div>
-
-      {/* Global keyframes */}
-      <style>{`
-        @keyframes iconPop {
-          from { opacity: 0; transform: scale(0.6) rotate(-10deg); }
-          to   { opacity: 1; transform: scale(1) rotate(0deg); }
-        }
-        @keyframes heroArrive {
-          from { opacity: 0; transform: translateY(16px) scale(0.97); }
-          to   { opacity: 1; transform: translateY(0) scale(1); }
-        }
-        @keyframes fadeSlideUp {
-          from { opacity: 0; transform: translateY(8px); }
-          to   { opacity: 1; transform: translateY(0); }
-        }
-        @keyframes barFill {
-          from { width: 0%; }
-          to   { width: var(--bar-width, 50%); }
-        }
-        @keyframes orbit {
-          from { transform: rotate(0deg) translateY(-32px) rotate(0deg); }
-          to   { transform: rotate(360deg) translateY(-32px) rotate(-360deg); }
-        }
-        @keyframes fadeSlideIn {
-          from { opacity: 0; transform: translateY(4px); }
-          to   { opacity: 1; transform: translateY(0); }
-        }
-      `}</style>
     </div>
   )
 }

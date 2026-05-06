@@ -1,10 +1,29 @@
 import { NextRequest, NextResponse } from 'next/server'
 import OpenAI from 'openai'
 
-const openai = new OpenAI({
-  apiKey: process.env.OPENAI_API_KEY,
-})
+const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY })
 
+/**
+ * POST /api/data-analysis
+ *
+ * PhD-level statistical and empirical analysis grounded in the paper's specific data.
+ * Not a generic "what do these numbers mean" explainer — this distinguishes statistical
+ * significance from practical significance, identifies validity threats, flags
+ * multiplicity issues, and maps what the data establish vs. what the paper claims.
+ *
+ * Returns structured JSON:
+ *   - dataType: experiment | survey | observational | simulation | meta-analysis |
+ *               benchmark | ablation | user-study | other
+ *   - whatDataEstablishes: the narrowest accurate claim the data actually support
+ *   - whatPaperClaims: what the authors claim — may exceed what the data establish
+ *   - inferentialGap: the delta between the two
+ *   - statisticalBreakdown: [{metric, value, interpretation, context}]
+ *   - effectSizeVsPracticalSignificance: whether the statistical finding matters in practice
+ *   - validityThreats: [{threat, severity, whyItMatters}]
+ *   - multiplicityRisk: whether multiple comparisons inflate false positives (null if N/A)
+ *   - alternativeExplanation: how a sceptical reviewer would explain the same result
+ *   - whatWouldStrengthTheCase: what additional evidence would be needed to close the inferential gap
+ */
 export async function POST(request: NextRequest) {
   try {
     const {
@@ -13,7 +32,6 @@ export async function POST(request: NextRequest) {
       question,
       documentTitle,
       documentContent,
-      analysisType = 'comprehensive'
     } = await request.json()
 
     if (!tableData && !caption && !question) {
@@ -21,73 +39,108 @@ export async function POST(request: NextRequest) {
     }
 
     if (!process.env.OPENAI_API_KEY) {
-      return NextResponse.json({ error: 'AI not configured' }, { status: 500 })
+      return NextResponse.json({ error: 'OpenAI API key not configured' }, { status: 503 })
     }
 
-    const systemPrompt = `You are a data scientist and research statistician specializing in interpreting tables, figures, and quantitative data in academic papers.
+    const systemPrompt = `You are a rigorous empirical researcher and statistician conducting a PhD-level data audit for a peer review.
 
-Your role is to:
-- Explain what the data shows in plain language
-- Identify key trends, patterns, and outliers
-- Interpret statistical significance and effect sizes
-- Connect data findings to the paper's research questions
-- Highlight what the numbers actually mean in context
+Your job is NOT to explain what numbers mean generically. Your job is to:
+1. Separate what the data mathematically establish from what the paper interprets or claims
+2. Assess whether reported statistical significance (p-values, confidence intervals) translates to practical significance — they are not the same thing
+3. Identify validity threats: internal (confounds, selection bias, instrumentation), external (generalisability, ecological validity), statistical (power, multiple comparisons, assumption violations)
+4. Flag multiplicity: when a paper tests multiple hypotheses or comparisons without correction, false positive rates inflate
+5. Surface the most credible alternative explanation for the observed result — what else could explain this pattern?
+6. Name exactly what additional evidence would be needed to close the gap between what the data show and what the paper concludes
 
-Be specific about numbers. Do not be vague. If you see p < 0.05, explain what that means. If you see accuracy percentages, compare them. Be a research collaborator, not just a descriptor.`
+Effect size guidance:
+- A statistically significant result can be practically irrelevant (d=0.1 with N=10000)
+- A non-significant result can matter if the study was underpowered
+- Always distinguish "the effect is real" from "the effect matters"
 
-    let userPrompt = `Analyze this data from the paper "${documentTitle || 'Unknown'}".`
+Verdict types:
+- "data type" — experiment (randomised, controlled), survey (self-report, selection bias), observational (no manipulation, confounds), simulation (generalisability limited by model), benchmark (performance depends on benchmark choice), ablation (internal only), user-study (ecological validity), meta-analysis (depends on included studies)
 
-    if (caption) {
-      userPrompt += `\n\nTable/Figure Caption: ${caption}`
+Be direct. Name specific figures, tables, and sections. Do not soften conclusions. Return JSON only.`
+
+    const paperCtx = documentContent ? documentContent.substring(0, 4000) : null
+
+    const userPrompt = `Conduct a PhD-level data audit for this paper.
+
+PAPER: "${documentTitle || 'Unknown'}"
+
+${caption ? `TABLE/FIGURE CAPTION: ${caption}` : ''}
+
+${tableData ? `DATA CONTENT:\n${tableData.substring(0, 5000)}` : ''}
+
+${paperCtx ? `PAPER CONTEXT (use to ground interpretation in the paper's specific claims):\n${paperCtx}` : ''}
+
+${question ? `SPECIFIC QUESTION: ${question}` : ''}
+
+Return JSON:
+{
+  "dataType": "experiment | survey | observational | simulation | benchmark | ablation | user-study | meta-analysis | other",
+  "whatDataEstablishes": "the narrowest accurate claim the data mathematically support — no interpretive stretch, just what the numbers show",
+  "whatPaperClaims": "what the authors conclude or imply from this data — quote or closely paraphrase",
+  "inferentialGap": "the specific delta between the two above — what the paper claims that the data do not establish, or null if fully aligned",
+  "statisticalBreakdown": [
+    {
+      "metric": "the specific number, p-value, effect size, accuracy, F-statistic — name exactly",
+      "value": "the exact value as reported",
+      "interpretation": "what this number means in statistical terms — be precise",
+      "context": "what this means for the paper's argument — does it help, hurt, or complicate the main claim?"
     }
-
-    if (tableData) {
-      userPrompt += `\n\nData Content:\n${tableData.substring(0, 5000)}`
+  ],
+  "effectSizeVsPracticalSignificance": "is the reported effect statistically significant AND practically meaningful? Explain the distinction for this specific finding — name the effect size and what it means in context",
+  "validityThreats": [
+    {
+      "threat": "specific threat to validity — name it precisely (e.g. 'selection bias in participant recruitment', 'demand characteristics in self-report measure')",
+      "severity": "high | medium | low",
+      "whyItMatters": "how this threat specifically affects the conclusions the paper draws from this data"
     }
-
-    if (documentContent) {
-      userPrompt += `\n\nPaper Context (for interpretation):\n${documentContent.substring(0, 3000)}`
-    }
-
-    if (question) {
-      userPrompt += `\n\nSpecific Question: ${question}`
-    } else {
-      if (analysisType === 'comprehensive') {
-        userPrompt += `\n\nProvide a comprehensive analysis covering:
-1. What the data shows (key values, trends, patterns)
-2. Statistical interpretation (if applicable)
-3. Main findings and what they mean for the research
-4. Comparisons between groups/conditions/methods
-5. Practical significance of the results`
-      } else {
-        userPrompt += `\n\nProvide a brief explanation of what this data shows and what it means for the paper's conclusions.`
-      }
-    }
+  ],
+  "multiplicityRisk": "if the paper runs multiple comparisons, tests, or conditions: explain the multiplicity risk and whether corrections were applied — null if single comparison",
+  "alternativeExplanation": "the most credible competing explanation for the observed result that the paper's design cannot rule out",
+  "whatWouldStrengthenTheCase": "the specific additional evidence, design change, or statistical test that would close the inferential gap — be concrete"
+}`
 
     const completion = await openai.chat.completions.create({
       model: 'gpt-4o',
       messages: [
         { role: 'system', content: systemPrompt },
-        { role: 'user', content: userPrompt }
+        { role: 'user', content: userPrompt },
       ],
-      max_tokens: analysisType === 'comprehensive' ? 1500 : 600,
-      temperature: 0.3,
+      max_tokens: 2000,
+      temperature: 0.1,
+      response_format: { type: 'json_object' },
     })
 
-    const answer = completion.choices[0]?.message?.content || 'No analysis generated'
+    const raw = completion.choices[0]?.message?.content || '{}'
+    let result: any = {}
+    try {
+      result = JSON.parse(raw)
+    } catch {
+      result = {
+        dataType: 'other',
+        whatDataEstablishes: raw.substring(0, 300),
+        whatPaperClaims: 'Parsing failed.',
+        inferentialGap: null,
+        statisticalBreakdown: [],
+        effectSizeVsPracticalSignificance: 'Response parsing failed.',
+        validityThreats: [],
+        multiplicityRisk: null,
+        alternativeExplanation: 'Parsing failed.',
+        whatWouldStrengthenTheCase: null,
+      }
+    }
 
     return NextResponse.json({
       success: true,
-      analysis: answer,
-      analysisType,
-      timestamp: new Date().toISOString()
+      ...result,
+      timestamp: new Date().toISOString(),
     })
 
   } catch (error: any) {
-    console.error('[DATA ANALYSIS] Error:', error)
-    return NextResponse.json(
-      { error: 'Data analysis failed', details: String(error) },
-      { status: 500 }
-    )
+    console.error('[DATA ANALYSIS]', error)
+    return NextResponse.json({ error: 'Data analysis failed', details: String(error) }, { status: 500 })
   }
 }

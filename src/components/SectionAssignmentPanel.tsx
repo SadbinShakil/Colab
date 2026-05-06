@@ -19,10 +19,17 @@ import {
   AlertCircle,
   Sparkles,
   Award,
-  Bot
+  Bot,
+  Brain,
+  HelpCircle,
+  AlertOctagon,
+  MessageSquare,
+  Lightbulb,
+  Loader2,
 } from 'lucide-react'
 import type { PDFSection } from '@/lib/pdfHeadingExtractor'
 import { aiCoordinationCore } from '@/lib/agents/aiCoordinationCore'
+import type { RoleAssignment } from '@/lib/agents/Agent10_RoleAllocation'
 
 interface SectionAssignmentPanelProps {
   sections: PDFSection[]
@@ -33,6 +40,7 @@ interface SectionAssignmentPanelProps {
   }>
   currentUserId: string
   documentId: string
+  documentTitle?: string
   socket: any
   onAssignmentChange: (assignments: SectionAssignment[]) => void
   onJumpToSection: (section: PDFSection) => void
@@ -40,6 +48,8 @@ interface SectionAssignmentPanelProps {
   ghostHighlights?: any[]
   onShowJourneyReplay?: (sectionId: string, sectionName: string) => void
   reflections?: Map<string, { type: string, content: string, userName: string }>
+  /** A10 Phase I allocation result — pre-seeds assignments when available */
+  a10Assignments?: Array<{ sectionId: string; sectionName: string; assignedTo: string; assignedName: string; isAI: boolean }>
 }
 
 
@@ -70,75 +80,162 @@ export default function SectionAssignmentPanel({
   collaborators,
   currentUserId,
   documentId,
+  documentTitle,
   onAssignmentChange,
   onJumpToSection,
   socket,
   glowingSections = new Set(),
   ghostHighlights = [],
   onShowJourneyReplay,
-  reflections = new Map()
+  reflections = new Map(),
+  a10Assignments,
 }: SectionAssignmentPanelProps) {
   const [assignments, setAssignments] = useState<SectionAssignment[]>([])
+  const [seededFromA10, setSeededFromA10] = useState(false)
   const [expandedSections, setExpandedSections] = useState<Set<string>>(new Set())
   const [showAssignDropdown, setShowAssignDropdown] = useState<string | null>(null)
   const [hoveredSection, setHoveredSection] = useState<string | null>(null)
   const dropdownRef = useRef<HTMLDivElement>(null)
   const [showSummaryModal, setShowSummaryModal] = useState<string | null>(null)
   const [summaryText, setSummaryText] = useState('')
+  /** Rationale + AI briefs from A10 — keyed by sectionId */
+  const [roleDetails, setRoleDetails] = useState<Map<string, RoleAssignment>>(new Map())
+  const [expandedRationale, setExpandedRationale] = useState<Set<string>>(new Set())
+  // Knowledge cards — keyed by sectionId
+  const [knowledgeCards, setKnowledgeCards] = useState<Map<string, {
+    loading: boolean
+    error?: string
+    mainArgument?: string
+    keyTerms?: string[]
+    criticalQuestions?: string[]
+    confusionSignal?: string | null
+  }>>(new Map())
+  const [expandedKnowledge, setExpandedKnowledge] = useState<Set<string>>(new Set())
+
+  const fetchKnowledgeCard = async (section: PDFSection) => {
+    const id = section.heading.id
+    // Prevent duplicate fetches (but allow retry on error)
+    const existing = knowledgeCards.get(id)
+    if (existing && !existing.error && !existing.loading) return
+
+    setKnowledgeCards(prev => new Map(prev).set(id, { loading: true }))
+    setExpandedKnowledge(prev => new Set(prev).add(id))
+
+    try {
+      const subsectionNames = section.subsections.map(s => s.text).join(', ')
+      const sectionDesc = subsectionNames ? `${section.heading.text} (subsections: ${subsectionNames})` : section.heading.text
+
+      const res = await fetch('/api/ai-help', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          question: `Generate a structured knowledge card for the section "${sectionDesc}" from this paper. Return ONLY valid JSON with these fields: {"mainArgument": "one-sentence core claim of this section", "keyTerms": ["term1","term2","term3"], "criticalQuestions": ["question1","question2"]}. No markdown, no preamble.`,
+          documentTitle: documentTitle || 'Research Paper',
+          sectionName: section.heading.text,
+          documentContent: `Section: ${sectionDesc}\nPaper: ${documentTitle || 'Research Paper'}`,
+        }),
+      })
+      if (!res.ok) throw new Error('API error')
+      const data = await res.json()
+
+      // The ai-help endpoint returns { answer: '...' }
+      // Try to parse the answer as JSON; fall back to using it as mainArgument
+      let card: { mainArgument?: string; keyTerms?: string[]; criticalQuestions?: string[]; confusionSignal?: string | null } = {}
+      const raw = data.answer || data.content || ''
+      try {
+        // Strip any markdown fences if present
+        const cleaned = raw.replace(/```json?\n?/g, '').replace(/```/g, '').trim()
+        const parsed = JSON.parse(cleaned)
+        card = {
+          mainArgument: parsed.mainArgument || raw,
+          keyTerms: Array.isArray(parsed.keyTerms) ? parsed.keyTerms : [],
+          criticalQuestions: Array.isArray(parsed.criticalQuestions) ? parsed.criticalQuestions : [],
+          confusionSignal: null,
+        }
+      } catch {
+        // GPT returned prose — use it as the main argument
+        card = {
+          mainArgument: raw.replace(/^\*\*Analysis:\*\*\s*/i, '').split('**Tension:')[0].trim(),
+          keyTerms: [],
+          criticalQuestions: [],
+          confusionSignal: null,
+        }
+      }
+
+      setKnowledgeCards(prev => new Map(prev).set(id, { loading: false, ...card }))
+    } catch {
+      setKnowledgeCards(prev => new Map(prev).set(id, {
+        loading: false,
+        error: 'Could not load knowledge card — check connection.',
+      }))
+    }
+  }
+
+  const toggleKnowledgeCard = (section: PDFSection) => {
+    const id = section.heading.id
+    const isOpen = expandedKnowledge.has(id)
+    if (isOpen) {
+      setExpandedKnowledge(prev => { const n = new Set(prev); n.delete(id); return n })
+    } else {
+      fetchKnowledgeCard(section)
+    }
+  }
 
   const handleAIAllocation = async () => {
     if (!reflections || reflections.size === 0) {
-      toast.error('No reflections available for AI analysis yet.')
+      toast.error('Submit your pre-session reflection first — A10 needs it to assign sections.')
       return
     }
 
-    const currentUserName = collaborators.find(c => c.id === currentUserId)?.name || 'User'
-
     toast.promise(
       async () => {
-        // Run Agent 10 through Coordination Core
-        const roles = aiCoordinationCore.requestSmartAllocation(sections, reflections, currentUserId, currentUserName)
+        // A10 — semantic allocation via GPT-4o
+        const roles = await aiCoordinationCore.requestSmartAllocation(
+          sections,
+          reflections,
+          documentTitle
+        )
 
-        // Map RoleAssignments to SectionAssignments
+        // Store full role detail for UI rendering
+        const detailMap = new Map<string, RoleAssignment>()
+        roles.forEach(r => detailMap.set(r.sectionId, r))
+        setRoleDetails(detailMap)
+
+        // Map to SectionAssignment shape used by the rest of the system
         const newAssignments: SectionAssignment[] = roles.map(r => ({
           sectionId: r.sectionId,
           userId: r.userId,
           userName: r.userName,
           status: 'assigned',
           progress: 0,
-          assignedAt: new Date().toISOString()
+          assignedAt: new Date().toISOString(),
         }))
 
         setAssignments(newAssignments)
         onAssignmentChange(newAssignments)
 
-        // Save and Broadcast
-        try {
-          await fetch('/api/socket', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              action: 'section-assigned',
-              documentId,
-              assignments: newAssignments
-            })
-          })
+        // Persist and broadcast
+        await fetch('/api/socket', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ action: 'section-assigned', documentId, assignments: newAssignments }),
+        })
 
-          if (socket?.connected) {
-            socket.emit('assignment-changed', {
-              documentId,
-              assignments: newAssignments,
-              userName: 'Agent 10: Role Allocation'
-            })
-          }
-        } catch (err) {
-          console.error(err)
+        if (socket?.connected) {
+          socket.emit('assignment-changed', {
+            documentId,
+            assignments: newAssignments,
+            userName: 'A10: Role Allocation',
+          })
         }
+
+        // Auto-expand all sections so rationale is visible
+        setExpandedSections(new Set(sections.map(s => s.heading.id)))
       },
       {
-        loading: 'Agent 10 is analyzing cognitive profiles...',
-        success: 'Roles allocated based on expertise gaps!',
-        error: 'Allocation failed.'
+        loading: 'A10 reading reflections and matching to sections…',
+        success: 'Sections assigned — rationale shown below each section',
+        error: 'Allocation failed — check connection',
       }
     )
   }
@@ -147,7 +244,24 @@ export default function SectionAssignmentPanel({
   useEffect(() => {
     console.log('📄 Document changed, clearing assignments')
     setAssignments([])
+    setSeededFromA10(false)
   }, [documentId])
+
+  // Seed assignments from A10 Phase I result when it arrives
+  useEffect(() => {
+    if (!a10Assignments?.length || seededFromA10) return
+    const seeded: SectionAssignment[] = a10Assignments.map(a => ({
+      sectionId: a.sectionId,
+      userId: a.assignedTo,
+      userName: a.assignedName,
+      status: 'assigned' as const,
+      progress: 0,
+      assignedAt: new Date().toISOString(),
+    }))
+    setAssignments(seeded)
+    setSeededFromA10(true)
+    onAssignmentChange(seeded)
+  }, [a10Assignments, seededFromA10, onAssignmentChange])
   // Listen for assignment updates from other users
   useEffect(() => {
     if (!documentId) return
@@ -611,6 +725,26 @@ export default function SectionAssignmentPanel({
 
 
 
+  // Inline SVG progress ring — 20px outer, 6px stroke
+  const ProgressRing = ({ progress, status }: { progress: number; status: SectionAssignment['status'] }) => {
+    const r = 7
+    const circ = 2 * Math.PI * r
+    const stroke = status === 'completed' ? '#10b981' : status === 'reading' ? '#38bdf8' : '#cbd5e1'
+    const filled = circ * (progress / 100)
+    return (
+      <svg width="20" height="20" viewBox="0 0 20 20" className="shrink-0" style={{ transform: 'rotate(-90deg)' }}>
+        <circle cx="10" cy="10" r={r} fill="none" stroke="#e2e8f0" strokeWidth="2.5" />
+        <circle
+          cx="10" cy="10" r={r} fill="none"
+          stroke={stroke} strokeWidth="2.5"
+          strokeDasharray={`${filled} ${circ - filled}`}
+          strokeLinecap="round"
+          style={{ transition: 'stroke-dasharray 0.5s ease' }}
+        />
+      </svg>
+    )
+  }
+
   const completedCount = assignments.filter(a => a.status === 'completed').length
   const readingCount = assignments.filter(a => a.status === 'reading').length
   const assignedCount = assignments.filter(a => a.status === 'assigned').length
@@ -653,537 +787,447 @@ export default function SectionAssignmentPanel({
     )
   }
 
+  // Helper: initials avatar colour — stable per userId
+  const avatarColor = (userId: string) => {
+    const palette = ['#4f46e5', '#0891b2', '#059669', '#d97706', '#dc2626', '#7c3aed']
+    let h = 0
+    for (let i = 0; i < userId.length; i++) h = (h * 31 + userId.charCodeAt(i)) & 0xffff
+    return palette[h % palette.length]
+  }
+  const initials = (name: string) =>
+    name.split(' ').map(p => p[0]).join('').slice(0, 2).toUpperCase()
+
+  // Decide which list to render: fallback (A10 only) or full pdfSections
+  const useFallback = sections.length === 0 && seededFromA10 && !!a10Assignments?.length
+
   return (
-    <div className="flex flex-col h-full">
-      <div className="bg-gradient-to-r from-rose-50 to-pink-50 border-b border-rose-200 p-4">
-        <div className="flex items-center justify-between mb-3">
-          <div className="flex items-center gap-2">
-            <div className="bg-rose-100 p-2 rounded-lg">
-              <BookOpen className="w-5 h-5 text-rose-600" />
-            </div>
-            <div>
-              <h3 className="font-bold text-lg text-rose-900">Section Assignments</h3>
-              <p className="text-xs text-rose-600">{sections.length} sections found</p>
-            </div>
-          </div>
-          <Badge variant="outline" className="bg-white border-rose-300 text-rose-700">
-            {assignments.length} / {sections.length} assigned
-          </Badge>
+    <div className="flex flex-col h-full bg-white">
+
+      {/* ── Header ─────────────────────────────────────────────── */}
+      <div className="px-4 pt-4 pb-3 border-b border-slate-100">
+        <div className="flex items-center justify-between mb-1">
+          <h3 className="text-[13px] font-semibold text-slate-800 tracking-tight">Reading roles</h3>
+          <span className="text-[11px] text-slate-400 font-medium tabular-nums">
+            {assignments.length}/{useFallback ? a10Assignments!.length : sections.length} assigned
+          </span>
         </div>
 
-        {assignments.length > 0 && (
-          <div className="space-y-2">
-            <div className="flex justify-between text-xs text-rose-700">
-              <span>Progress</span>
-              <span className="font-semibold">{completionPercentage}%</span>
-            </div>
-            <div className="w-full bg-rose-200 rounded-full h-2 overflow-hidden">
-              <div
-                className="bg-gradient-to-r from-rose-500 to-pink-500 h-full transition-all duration-500 ease-out"
-                style={{ width: `${completionPercentage}%` }}
-              />
-            </div>
+        {seededFromA10 ? (
+          <div className="flex items-center gap-1.5">
+            <Brain className="w-3 h-3 text-indigo-500 shrink-0" />
+            <p className="text-[11px] text-indigo-600">
+              Assigned by A10 from pre-session reflections
+            </p>
+          </div>
+        ) : (
+          <div className="flex items-center gap-2">
+            <button
+              onClick={handleAIAllocation}
+              disabled={!reflections || reflections.size === 0}
+              className="flex items-center gap-1.5 px-2.5 py-1 rounded-md bg-indigo-600 hover:bg-indigo-700 disabled:bg-slate-100 disabled:text-slate-400 text-white text-[11px] font-semibold transition-colors"
+            >
+              <Brain className="w-3 h-3" />
+              Assign by reflection
+            </button>
+            {(!reflections || reflections.size === 0) && (
+              <span className="text-[11px] text-slate-400">Waiting for reflections…</span>
+            )}
+          </div>
+        )}
+      </div>
 
-            <div className="flex gap-2 flex-wrap mt-2">
-              {completedCount > 0 && (
-                <div className="flex items-center gap-1 bg-green-100 px-2 py-1 rounded-full text-xs">
-                  <CheckCircle className="w-3 h-3 text-green-600" />
-                  <span className="text-green-700 font-medium">{completedCount} done</span>
+      {/* ── Section list ───────────────────────────────────────── */}
+      <div className="flex-1 overflow-y-auto">
+
+        {/* Fallback: pdfSections not extracted yet, show A10 result directly */}
+        {useFallback && (
+          <div className="divide-y divide-slate-100">
+            {a10Assignments!.map((a, index) => {
+              const isMe = a.assignedTo === currentUserId
+              const color = a.isAI ? '#6366f1' : avatarColor(a.assignedTo)
+              return (
+                <div key={a.sectionId} className={`px-4 py-3 ${isMe ? 'bg-indigo-50/40' : 'bg-white'}`}>
+                  <div className="flex items-start gap-3">
+                    {/* Section number */}
+                    <span className="text-[10px] font-mono text-slate-400 mt-0.5 w-5 shrink-0 text-right">
+                      §{index + 1}
+                    </span>
+                    <div className="flex-1 min-w-0">
+                      <p className="text-[13px] font-semibold text-slate-800 leading-snug">{a.sectionName}</p>
+                      <div className="flex items-center gap-1.5 mt-1.5">
+                        {a.isAI ? (
+                          <div className="w-5 h-5 rounded-full bg-indigo-100 flex items-center justify-center shrink-0">
+                            <Bot className="w-3 h-3 text-indigo-500" />
+                          </div>
+                        ) : (
+                          <div
+                            className="w-5 h-5 rounded-full flex items-center justify-center shrink-0 text-[9px] font-bold text-white"
+                            style={{ backgroundColor: color }}
+                          >
+                            {initials(a.assignedName)}
+                          </div>
+                        )}
+                        <span className={`text-[11px] font-medium ${isMe ? 'text-indigo-700' : 'text-slate-600'}`}>
+                          {a.assignedName}{isMe ? ' · you' : ''}
+                        </span>
+                      </div>
+                    </div>
+                  </div>
                 </div>
-              )}
-              {readingCount > 0 && (
-                <div className="flex items-center gap-1 bg-blue-100 px-2 py-1 rounded-full text-xs">
-                  <Eye className="w-3 h-3 text-blue-600" />
-                  <span className="text-blue-700 font-medium">{readingCount} reading</span>
-                </div>
-              )}
-              {assignedCount > 0 && (
-                <div className="flex items-center gap-1 bg-amber-100 px-2 py-1 rounded-full text-xs">
-                  <AlertCircle className="w-3 h-3 text-amber-600" />
-                  <span className="text-amber-700 font-medium">{assignedCount} pending</span>
-                </div>
-              )}
-            </div>
+              )
+            })}
           </div>
         )}
 
-        <div className="mt-3 flex gap-2">
-          <Button
-            onClick={autoAssignSections}
-            variant="outline"
-            size="sm"
-            className="text-xs"
-          >
-            <Sparkles className="w-3 h-3 mr-1" />
-            Fair Distribute
-          </Button>
+        {/* Full view: pdfSections extracted */}
+        {!useFallback && (
+          <div className="divide-y divide-slate-100">
+            {sections.map((section, index) => {
+              const assignment = getAssignment(section.heading.id)
+              const isExpanded = expandedSections.has(section.heading.id)
+              const isDropdownOpen = showAssignDropdown === section.heading.id
+              const isGlowing = glowingSections.has(section.heading.id)
+              const ghostHighlight = getGhostHighlight(section.heading.id)
+              const roleDetail = roleDetails.get(section.heading.id)
+              const rationaleOpen = expandedRationale.has(section.heading.id)
+              const isMe = assignment?.userId === currentUserId
 
-          <Button
-            onClick={handleAIAllocation}
-            variant="secondary"
-            size="sm"
-            className="text-xs bg-indigo-600 hover:bg-indigo-700 text-white border-none shadow-sm"
-          >
-            <Bot className="w-3 h-3 mr-1" />
-            Smart AI Allocation
-          </Button>
-        </div>
-      </div>
-
-      <div className="px-4 py-3 bg-white border-b">
-        <div className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">
-          Team Members
-        </div>
-        <div className="flex flex-wrap gap-2">
-          {collaborators && collaborators.length > 0 ? (
-            collaborators.map(collab => {
-              const assignedSections = assignments.filter(a => a.userId === collab.id).length
               return (
                 <div
-                  key={collab.id}
-                  className="flex items-center gap-2 bg-gray-50 px-3 py-1.5 rounded-lg border border-gray-200"
+                  key={section.heading.id}
+                  className={`relative ${isGlowing ? 'ring-1 ring-inset ring-amber-300' : ''}`}
+                  style={{ zIndex: isDropdownOpen ? 999 : 'auto' }}
                 >
-                  <div
-                    className="w-3 h-3 rounded-full ring-2 ring-white shadow-sm"
-                    style={{ backgroundColor: collab.color }}
-                  />
-                  <span className="text-sm font-medium text-gray-700">{collab.name}</span>
-                  {assignedSections > 0 && (
-                    <Badge variant="secondary" className="h-5 text-xs">
-                      {assignedSections}
-                    </Badge>
-                  )}
-                </div>
-              )
-            })
-          ) : (
-            <div className="text-sm text-gray-500 italic">No collaborators available</div>
-          )}
-        </div>
-      </div>
-      {/* 👇 PUT WORKLOAD VISUALIZATION HERE */}
-      <div className="px-4 py-3 bg-gradient-to-br from-blue-50 to-indigo-50 border-b">
-        <div className="text-xs font-semibold text-gray-700 uppercase tracking-wide mb-3">
-          Team Workload
-        </div>
+                  <div className={`px-4 py-3 ${isMe ? 'bg-indigo-50/30' : 'bg-white'}`}>
+                    <div className="flex items-start gap-3">
 
-        {getWorkloadStats().map(stat => (
-          <div key={stat.user.id} className="mb-3 last:mb-0">
-            <div className="flex items-center justify-between mb-1">
-              <span className="text-sm font-medium text-gray-700">{stat.user.name}</span>
-              <span className="text-xs text-gray-500">
-                {stat.completed}/{stat.total} sections
-              </span>
-            </div>
-
-            <div className="w-full bg-gray-200 rounded-full h-2">
-              <div
-                className="h-full rounded-full transition-all"
-                style={{
-                  width: `${stat.percentage}%`,
-                  backgroundColor: stat.user.color
-                }}
-              />
-            </div>
-
-            {stat.total > sections.length / collaborators.length + 1 && (
-              <p className="text-xs text-amber-600 mt-1">⚠️ Overloaded</p>
-            )}
-          </div>
-        ))}
-      </div>
-      {/* 👆 WORKLOAD VISUALIZATION ENDS HERE */}
-      <div className="flex-1 px-4 py-3" style={{ overflow: 'visible' }}>
-        <div className="space-y-2">
-          {sections.map((section, index) => {
-            const assignment = getAssignment(section.heading.id)
-            const isExpanded = expandedSections.has(section.heading.id)
-            const isDropdownOpen = showAssignDropdown === section.heading.id
-            const isHovered = hoveredSection === section.heading.id
-            const isGlowing = glowingSections.has(section.heading.id)
-            const ghostHighlight = getGhostHighlight(section.heading.id)
-
-            return (
-              <div
-                key={section.heading.id}
-                className={`border rounded-lg overflow-visible relative transition-all duration-200 ${assignment ? 'border-blue-300 bg-blue-50/30' : 'border-gray-200 bg-white'
-                  } ${isHovered ? 'shadow-md scale-[1.01]' : 'shadow-sm'} ${isGlowing ? 'ai-section-glow ring-2 ring-amber-400' : ''
-                  }`}
-                style={{ zIndex: isDropdownOpen ? 999 : 1 }}
-                onMouseEnter={() => setHoveredSection(section.heading.id)}
-                onMouseLeave={() => setHoveredSection(null)}
-              >
-                <div className="p-3">
-                  <div className="flex items-start justify-between gap-3">
-                    <div
-                      className="flex items-start gap-2 flex-1 cursor-pointer group"
-                      onClick={() => toggleSection(section.heading.id)}
-                    >
-                      {section.subsections.length > 0 && (
-                        <div className="flex-shrink-0 mt-0.5">
-                          {isExpanded ? (
-                            <ChevronDown className="w-4 h-4 text-gray-400 group-hover:text-gray-600" />
-                          ) : (
-                            <ChevronRight className="w-4 h-4 text-gray-400 group-hover:text-gray-600" />
-                          )}
-                        </div>
-                      )}
-
-                      <div className="flex-1 min-w-0">
-                        <div className="flex items-center gap-2 mb-1">
-                          <Badge variant="outline" className="text-xs font-mono shrink-0">
-                            §{index + 1}
-                          </Badge>
-                          <h4 className="font-semibold text-sm text-gray-900 group-hover:text-rose-600 transition-colors">
-                            {section.heading.text}
-                          </h4>
-                        </div>
-
-                        <div className="flex items-center gap-3 text-xs text-gray-500">
-                          <span className="flex items-center gap-1">
-                            <span className="font-medium">Page</span> {section.startPage}
-                            {section.endPage !== section.startPage && ` - ${section.endPage}`}
-                          </span>
-                          {section.heading.level && (
-                            <span className="flex items-center gap-1">
-                              <span className="font-medium">Level</span> {section.heading.level}
-                            </span>
-                          )}
-                          {section.subsections.length > 0 && (
-                            <span className="text-blue-600">
-                              {section.subsections.length} subsection{section.subsections.length > 1 ? 's' : ''}
-                            </span>
-                          )}
-                        </div>
-
-                        {ghostHighlight && (
-                          <div className="mt-2 mb-1">
-                            <div className="group/ghost relative inline-block">
-                              <Badge
-                                variant="outline"
-                                className="bg-orange-50 text-orange-700 border-orange-200 cursor-help flex items-center gap-1.5"
-                              >
-                                👻 {ghostHighlight.aggregatedData.totalUsers} struggled
-                                <span className="text-[10px] opacity-75">
-                                  (~{Math.round(ghostHighlight.aggregatedData.averageDuration / 60000)}m)
-                                </span>
-                              </Badge>
-
-                              {/* Tooltip */}
-                              <div className="absolute left-0 bottom-full mb-2 w-64 bg-white rounded-lg shadow-xl border p-3 hidden group-hover/ghost:block z-50 animate-in fade-in zoom-in-95 duration-200">
-                                <div className="text-xs space-y-2">
-                                  <div className="flex justify-between items-center border-b pb-1">
-                                    <span className="font-semibold text-orange-700">Historical Struggles</span>
-                                    <span className="bg-orange-100 text-orange-800 px-1.5 py-0.5 rounded-full text-[10px]">
-                                      {ghostHighlight.aggregatedData.totalUsers} users
-                                    </span>
-                                  </div>
-
-                                  <div className="space-y-1">
-                                    <p className="text-gray-600">Common patterns:</p>
-                                    <div className="flex flex-wrap gap-1">
-                                      {ghostHighlight.aggregatedData.commonPatterns.slice(0, 3).map((p: string, i: number) => (
-                                        <span key={i} className="bg-gray-100 px-1.5 py-0.5 rounded text-[10px]">
-                                          {p.replace('-', ' ')}
-                                        </span>
-                                      ))}
-                                    </div>
-                                  </div>
-
-                                  {ghostHighlight.aggregatedData.helpfulResources.length > 0 && (
-                                    <div className="space-y-1 pt-1 border-t">
-                                      <p className="text-green-700 font-medium">✨ Most helpful:</p>
-                                      <ul className="list-disc list-inside text-gray-600">
-                                        {ghostHighlight.aggregatedData.helpfulResources.slice(0, 2).map((r: string, i: number) => (
-                                          <li key={i}>{r}</li>
-                                        ))}
-                                      </ul>
-                                    </div>
-                                  )}
-
-                                  <Button
-                                    size="sm"
-                                    variant="outline"
-                                    className="w-full text-xs h-6 mt-2 border-orange-200 text-orange-700 hover:bg-orange-50"
-                                    onClick={(e) => {
-                                      e.stopPropagation()
-                                      onShowJourneyReplay?.(section.heading.id, section.heading.text)
-                                    }}
-                                  >
-                                    🎬 Replay Journey
-                                  </Button>
-                                </div>
-                                {/* Arrow */}
-                                <div className="absolute left-4 top-full w-2 h-2 bg-white border-b border-r transform rotate-45 -mt-1"></div>
-                              </div>
-                            </div>
-                          </div>
-                        )}
-
+                      {/* Section number + progress ring */}
+                      <div className="flex flex-col items-center gap-0.5 shrink-0 w-5 mt-0.5">
+                        <span className="text-[10px] font-mono text-slate-400 text-right w-full">
+                          §{index + 1}
+                        </span>
                         {assignment && (
-                          <div className="mt-2 space-y-2">
-                            <div className="flex items-center gap-2">
-                              <Badge
-                                style={{
-                                  backgroundColor: assignment.userId === 'lit-sense-ai' ? '#4f46e5' : getUserColor(assignment.userId),
-                                  color: 'white',
-                                  fontSize: '11px'
-                                }}
-                                className={`flex items-center gap-1 shadow-sm ${assignment.userId === 'lit-sense-ai' ? 'animate-pulse' : ''}`}
-                              >
-                                {assignment.userId === 'lit-sense-ai' ? <Bot className="w-3 h-3" /> : <span>👤</span>}
-                                {assignment.userName}
-                              </Badge>
-
-                              {assignment.status === 'completed' && (
-                                <>
-                                  <CheckCircle className="w-4 h-4" />
-                                  Completed
-                                  <Button
-                                    size="sm"
-                                    variant="ghost"
-                                    onClick={() => setShowSummaryModal(section.heading.id)}
-                                    className="ml-2 text-xs"
-                                  >
-                                    Share Summary
-                                  </Button>
-                                </>
-                              )}
-                              {assignment.status === 'reading' && (
-                                <Badge variant="outline" className="bg-blue-50 text-blue-700 border-blue-300 text-xs">
-                                  <Eye className="w-3 h-3 mr-1" />
-                                  Reading
-                                </Badge>
-                              )}
-                              {assignment.status === 'assigned' && (
-                                <Badge variant="outline" className="bg-amber-50 text-amber-700 border-amber-300 text-xs">
-                                  <AlertCircle className="w-3 h-3 mr-1" />
-                                  Assigned
-                                </Badge>
-                              )}
-                            </div>
-
-                            {/* Progress Bar */}
-                            <div className="flex items-center gap-2">
-                              <div className="flex-1 bg-gray-200 rounded-full h-2 overflow-hidden">
-                                <div
-                                  className={`h-full transition-all duration-500 ${assignment.status === 'completed' ? 'bg-green-500' :
-                                    assignment.status === 'reading' ? 'bg-blue-500' :
-                                      'bg-amber-400'
-                                    }`}
-                                  style={{ width: `${assignment.progress}%` }}
-                                />
-                              </div>
-                              <span className="text-xs font-medium text-gray-600 min-w-[35px]">
-                                {assignment.progress}%
-                              </span>
-                            </div>
-                          </div>
+                          <ProgressRing progress={assignment.progress} status={assignment.status} />
                         )}
                       </div>
-                    </div>
 
-                    <div className="flex-shrink-0 flex items-start gap-2">
-                      {!assignment ? (
-                        <div className="relative" ref={isDropdownOpen ? dropdownRef : null}>
-                          <Button
-                            variant="outline"
-                            size="sm"
-                            onClick={(e) => {
-                              e.stopPropagation()
-                              setShowAssignDropdown(isDropdownOpen ? null : section.heading.id)
-                            }}
-                            className="whitespace-nowrap hover:bg-rose-50 hover:border-rose-300 hover:text-rose-700"
+                      {/* Main content */}
+                      <div className="flex-1 min-w-0">
+                        {/* Title row */}
+                        <div className="flex items-start justify-between gap-2">
+                          <button
+                            className="text-left flex-1 min-w-0"
+                            onClick={() => onJumpToSection(section)}
                           >
-                            <UserPlus className="w-4 h-4 mr-1" />
-                            Assign
-                          </Button>
+                            <p className="text-[13px] font-semibold text-slate-800 leading-snug hover:text-indigo-700 transition-colors">
+                              {section.heading.text}
+                            </p>
+                            <p className="text-[11px] text-slate-400 mt-0.5">
+                              p.{section.startPage}{section.endPage !== section.startPage ? `–${section.endPage}` : ''}
+                              {section.subsections.length > 0 && ` · ${section.subsections.length} subsections`}
+                            </p>
+                          </button>
 
-                          {isDropdownOpen && (
-                            <div
-                              className="absolute right-0 mt-2 w-56 bg-white border border-gray-200 rounded-lg shadow-2xl overflow-hidden"
-                              style={{ zIndex: 999999 }}
-                            >
-                              <div className="p-2 bg-gray-50 border-b border-gray-200">
-                                <p className="text-xs font-semibold text-gray-700">Assign to:</p>
-                              </div>
-                              <div className="max-h-64 overflow-y-auto">
-                                {collaborators && collaborators.length > 0 ? (
-                                  collaborators.map(collab => (
-                                    <button
-                                      key={collab.id}
-                                      className="w-full text-left px-3 py-2.5 hover:bg-gray-50 flex items-center gap-3 transition-colors border-b border-gray-100 last:border-b-0"
-                                      onClick={(e) => {
-                                        e.stopPropagation()
-                                        assignSection(section.heading.id, collab.id, collab.name)
-                                      }}
-                                    >
-                                      <div
-                                        className="w-4 h-4 rounded-full flex-shrink-0 ring-2 ring-white shadow-sm"
-                                        style={{ backgroundColor: collab.color }}
-                                      />
-                                      <div className="flex-1">
-                                        <p className="text-sm font-medium text-gray-900">{collab.name}</p>
-                                        <p className="text-xs text-gray-500">
-                                          {assignments.filter(a => a.userId === collab.id).length} sections assigned
-                                        </p>
-                                      </div>
-                                    </button>
-                                  ))
+                          {/* Assignee avatar or assign button */}
+                          <div className="shrink-0 flex items-center gap-1.5">
+                            {assignment ? (
+                              <div className="flex items-center gap-1.5">
+                                {assignment.userId === 'coread-ai' || assignment.userId === 'ai' ? (
+                                  <div className="w-6 h-6 rounded-full bg-indigo-100 flex items-center justify-center">
+                                    <Bot className="w-3.5 h-3.5 text-indigo-500" />
+                                  </div>
                                 ) : (
-                                  <div className="px-3 py-4 text-center text-sm text-gray-500">
-                                    No collaborators available
+                                  <div
+                                    className="w-6 h-6 rounded-full flex items-center justify-center text-[10px] font-bold text-white"
+                                    style={{ backgroundColor: avatarColor(assignment.userId) }}
+                                    title={assignment.userName}
+                                  >
+                                    {initials(assignment.userName)}
+                                  </div>
+                                )}
+                                {/* Status dot */}
+                                <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${
+                                  assignment.status === 'completed' ? 'bg-emerald-500' :
+                                  assignment.status === 'reading'   ? 'bg-sky-500' :
+                                  'bg-slate-300'
+                                }`} title={assignment.status} />
+                              </div>
+                            ) : (
+                              <div className="relative" ref={isDropdownOpen ? dropdownRef : null}>
+                                <button
+                                  onClick={(e) => {
+                                    e.stopPropagation()
+                                    setShowAssignDropdown(isDropdownOpen ? null : section.heading.id)
+                                  }}
+                                  className="flex items-center gap-1 px-2 py-1 rounded-md border border-slate-200 hover:border-indigo-300 hover:bg-indigo-50 text-[11px] text-slate-500 hover:text-indigo-600 transition-colors font-medium"
+                                >
+                                  <UserPlus className="w-3 h-3" />
+                                  Assign
+                                </button>
+                                {isDropdownOpen && (
+                                  <div
+                                    className="absolute right-0 mt-1.5 w-52 bg-white border border-slate-200 rounded-xl shadow-xl overflow-hidden"
+                                    style={{ zIndex: 999999 }}
+                                  >
+                                    <p className="px-3 py-2 text-[10px] font-semibold text-slate-400 uppercase tracking-wider border-b border-slate-100">
+                                      Assign to
+                                    </p>
+                                    {collaborators.map(collab => (
+                                      <button
+                                        key={collab.id}
+                                        className="w-full flex items-center gap-2.5 px-3 py-2 hover:bg-slate-50 transition-colors text-left"
+                                        onClick={(e) => {
+                                          e.stopPropagation()
+                                          assignSection(section.heading.id, collab.id, collab.name)
+                                        }}
+                                      >
+                                        <div
+                                          className="w-5 h-5 rounded-full flex items-center justify-center text-[9px] font-bold text-white shrink-0"
+                                          style={{ backgroundColor: avatarColor(collab.id) }}
+                                        >
+                                          {initials(collab.name)}
+                                        </div>
+                                        <div className="flex-1 min-w-0">
+                                          <p className="text-[12px] font-medium text-slate-800">{collab.name}</p>
+                                          <p className="text-[10px] text-slate-400">
+                                            {assignments.filter(a => a.userId === collab.id).length} sections
+                                          </p>
+                                        </div>
+                                      </button>
+                                    ))}
                                   </div>
                                 )}
                               </div>
-                            </div>
-                          )}
-                        </div>
-                      ) : (
-                        /* Only show buttons if this is YOUR assignment */
-                        assignment.userId === currentUserId ? (
-                          <div className="flex gap-1">
-                            {assignment.status === 'assigned' && (
-                              <Button
-                                variant="ghost"
-                                size="sm"
-                                onClick={(e) => {
-                                  e.stopPropagation()
-                                  markAsReading(section.heading.id)
-                                }}
-                                className="hover:bg-blue-50 hover:text-blue-700"
-                                title="Mark as Reading"
-                              >
-                                <Eye className="w-4 h-4" />
-                              </Button>
                             )}
+                          </div>
+                        </div>
 
-                            {assignment.status === 'reading' && (
+                        {/* Assignee name + actions (only when assigned) */}
+                        {assignment && (
+                          <div className="flex items-center gap-2 mt-2">
+                            <span className="text-[11px] text-slate-600 font-medium">
+                              {assignment.userName}{isMe ? ' · you' : ''}
+                            </span>
+                            <span className="text-slate-200">·</span>
+                            {isMe && assignment.status === 'assigned' && (
+                              <button
+                                onClick={(e) => { e.stopPropagation(); markAsReading(section.heading.id) }}
+                                className="text-[11px] text-sky-600 hover:text-sky-700 font-medium transition-colors"
+                              >
+                                Start reading
+                              </button>
+                            )}
+                            {isMe && assignment.status === 'reading' && (
+                              <button
+                                onClick={(e) => { e.stopPropagation(); markAsCompleted(section.heading.id) }}
+                                className="text-[11px] text-emerald-600 hover:text-emerald-700 font-medium transition-colors"
+                              >
+                                Mark done
+                              </button>
+                            )}
+                            {assignment.status === 'completed' && (
+                              <span className="text-[11px] text-emerald-600 font-medium flex items-center gap-1">
+                                <CheckCircle className="w-3 h-3" /> Done
+                              </span>
+                            )}
+                            {isMe && (
+                              <button
+                                onClick={(e) => { e.stopPropagation(); unassignSection(section.heading.id) }}
+                                className="text-[11px] text-slate-400 hover:text-slate-600 transition-colors ml-auto"
+                                title="Unassign"
+                              >
+                                <X className="w-3 h-3" />
+                              </button>
+                            )}
+                          </div>
+                        )}
+
+                        {/* Ghost highlight — prior session struggle signal */}
+                        {ghostHighlight && (
+                          <div className="mt-2 flex items-center gap-1.5">
+                            <span className="text-[10px] text-amber-600 font-medium">
+                              {ghostHighlight.aggregatedData.totalUsers} prior readers struggled here
+                            </span>
+                            <button
+                              onClick={(e) => { e.stopPropagation(); onShowJourneyReplay?.(section.heading.id, section.heading.text) }}
+                              className="text-[10px] text-slate-400 hover:text-slate-600 underline underline-offset-2 transition-colors"
+                            >
+                              Replay
+                            </button>
+                          </div>
+                        )}
+
+                        {/* A10 reading angle — always shown when available, most useful signal */}
+                        {roleDetail && (
+                          <div className="mt-2 space-y-1.5">
+                            {roleDetail.inferredAngle && (
+                              <p className="text-[11px] text-slate-500 italic leading-snug">
+                                {roleDetail.inferredAngle}
+                              </p>
+                            )}
+                            {/* AI brief toggle for AI-assigned sections */}
+                            {roleDetail.isAI && roleDetail.aiBrief && (
                               <>
-                                <Button
-                                  variant="ghost"
-                                  size="sm"
-                                  onClick={(e) => {
-                                    e.stopPropagation()
-                                    updateProgress(section.heading.id, 50)
-                                  }}
-                                  className="hover:bg-blue-50 hover:text-blue-700 text-xs"
-                                  title="50% Progress"
+                                <button
+                                  onClick={() => setExpandedRationale(prev => {
+                                    const next = new Set(prev)
+                                    if (next.has(section.heading.id)) next.delete(section.heading.id)
+                                    else next.add(section.heading.id)
+                                    return next
+                                  })}
+                                  className="flex items-center gap-1 text-[11px] text-indigo-600 hover:text-indigo-800 font-medium transition-colors"
                                 >
-                                  50%
-                                </Button>
-                                <Button
-                                  variant="ghost"
-                                  size="sm"
-                                  onClick={(e) => {
-                                    e.stopPropagation()
-                                    updateProgress(section.heading.id, 75)
-                                  }}
-                                  className="hover:bg-blue-50 hover:text-blue-700 text-xs"
-                                  title="75% Progress"
-                                >
-                                  75%
-                                </Button>
-                                <Button
-                                  variant="ghost"
-                                  size="sm"
-                                  onClick={(e) => {
-                                    e.stopPropagation()
-                                    markAsCompleted(section.heading.id)
-                                  }}
-                                  className="hover:bg-green-50 hover:text-green-700"
-                                  title="Mark as Completed"
-                                >
-                                  <CheckCircle className="w-4 h-4" />
-                                </Button>
+                                  <Bot className="w-3 h-3" />
+                                  {rationaleOpen ? 'Hide AI brief' : 'Show AI brief'}
+                                  {rationaleOpen ? <ChevronDown className="w-3 h-3" /> : <ChevronRight className="w-3 h-3" />}
+                                </button>
+                                {rationaleOpen && (
+                                  <div className="mt-2 space-y-2 pl-2 border-l-2 border-indigo-100">
+                                    <div>
+                                      <p className="text-[10px] font-semibold text-slate-500 uppercase tracking-wider mb-0.5">Main argument</p>
+                                      <p className="text-[12px] text-slate-700 leading-relaxed">{roleDetail.aiBrief.mainArgument}</p>
+                                    </div>
+                                    {roleDetail.aiBrief.criticalQuestions.length > 0 && (
+                                      <div>
+                                        <p className="text-[10px] font-semibold text-slate-500 uppercase tracking-wider mb-1">Critical questions</p>
+                                        <ol className="space-y-1">
+                                          {roleDetail.aiBrief.criticalQuestions.map((q, i) => (
+                                            <li key={i} className="text-[12px] text-slate-700 leading-relaxed flex gap-1.5">
+                                              <span className="text-slate-400 shrink-0 font-medium">{i + 1}.</span>
+                                              {q}
+                                            </li>
+                                          ))}
+                                        </ol>
+                                      </div>
+                                    )}
+                                    {roleDetail.aiBrief.watchOut && (
+                                      <div className="rounded-lg bg-amber-50 border border-amber-100 px-2.5 py-2">
+                                        <p className="text-[10px] font-semibold text-amber-700 uppercase tracking-wider mb-0.5">Watch out</p>
+                                        <p className="text-[12px] text-slate-700 leading-relaxed">{roleDetail.aiBrief.watchOut}</p>
+                                      </div>
+                                    )}
+                                  </div>
+                                )}
                               </>
                             )}
-
-                            <Button
-                              variant="ghost"
-                              size="sm"
-                              onClick={(e) => {
-                                e.stopPropagation()
-                                unassignSection(section.heading.id)
-                              }}
-                              className="hover:bg-red-50 hover:text-red-600"
-                              title="Unassign"
-                            >
-                              <X className="w-4 h-4" />
-                            </Button>
                           </div>
-                        ) : null
-                      )}
+                        )}
+
+                        {/* Subsections — collapsible */}
+                        {section.subsections.length > 0 && (
+                          <button
+                            onClick={() => toggleSection(section.heading.id)}
+                            className="mt-1.5 flex items-center gap-1 text-[11px] text-slate-400 hover:text-slate-600 transition-colors"
+                          >
+                            {isExpanded ? <ChevronDown className="w-3 h-3" /> : <ChevronRight className="w-3 h-3" />}
+                            {section.subsections.length} subsection{section.subsections.length > 1 ? 's' : ''}
+                          </button>
+                        )}
+                        {isExpanded && (
+                          <div className="mt-1.5 pl-3 space-y-1 border-l border-slate-100">
+                            {section.subsections.map(sub => (
+                              <p key={sub.id} className="text-[11px] text-slate-500 leading-snug">{sub.text}</p>
+                            ))}
+                          </div>
+                        )}
+
+                        {/* Knowledge card toggle */}
+                        {(() => {
+                          const kc = knowledgeCards.get(section.heading.id)
+                          const isKcOpen = expandedKnowledge.has(section.heading.id)
+                          return (
+                            <>
+                              <button
+                                onClick={() => toggleKnowledgeCard(section)}
+                                className="mt-2 flex items-center gap-1 text-[11px] text-violet-600 hover:text-violet-800 font-medium transition-colors"
+                              >
+                                {kc?.loading ? (
+                                  <Loader2 className="w-3 h-3 animate-spin" />
+                                ) : (
+                                  <Lightbulb className="w-3 h-3" />
+                                )}
+                                {isKcOpen ? 'Hide knowledge card' : 'Section knowledge card'}
+                                {isKcOpen ? <ChevronDown className="w-3 h-3" /> : <ChevronRight className="w-3 h-3" />}
+                              </button>
+
+                              {isKcOpen && kc && !kc.loading && (
+                                <div className="mt-2 rounded-xl border border-violet-100 bg-violet-50/40 overflow-hidden">
+                                  {kc.error ? (
+                                    <p className="px-3 py-2.5 text-[12px] text-rose-600">{kc.error}</p>
+                                  ) : (
+                                    <div className="px-3 py-2.5 space-y-2.5">
+                                      {kc.mainArgument && (
+                                        <div>
+                                          <p className="text-[10px] font-semibold text-violet-600 uppercase tracking-wider mb-0.5">Core argument</p>
+                                          <p className="text-[12px] text-slate-700 leading-relaxed">{kc.mainArgument}</p>
+                                        </div>
+                                      )}
+                                      {kc.keyTerms && kc.keyTerms.length > 0 && (
+                                        <div>
+                                          <p className="text-[10px] font-semibold text-violet-600 uppercase tracking-wider mb-1">Key terms</p>
+                                          <div className="flex flex-wrap gap-1">
+                                            {kc.keyTerms.slice(0, 6).map((term, i) => (
+                                              <span key={i} className="px-1.5 py-0.5 rounded-md bg-violet-100 text-[10px] font-medium text-violet-700">
+                                                {term}
+                                              </span>
+                                            ))}
+                                          </div>
+                                        </div>
+                                      )}
+                                      {kc.criticalQuestions && kc.criticalQuestions.length > 0 && (
+                                        <div>
+                                          <p className="text-[10px] font-semibold text-violet-600 uppercase tracking-wider mb-1">Critical questions</p>
+                                          <ol className="space-y-1">
+                                            {kc.criticalQuestions.slice(0, 3).map((q, i) => (
+                                              <li key={i} className="flex gap-1.5 text-[12px] text-slate-700 leading-relaxed">
+                                                <span className="text-slate-400 font-medium shrink-0">{i + 1}.</span>
+                                                {q}
+                                              </li>
+                                            ))}
+                                          </ol>
+                                        </div>
+                                      )}
+                                      {kc.confusionSignal && (
+                                        <div className="flex items-start gap-1.5 rounded-lg bg-amber-50 border border-amber-100 px-2.5 py-2">
+                                          <AlertCircle className="w-3.5 h-3.5 text-amber-500 shrink-0 mt-0.5" />
+                                          <p className="text-[11px] text-amber-700 leading-relaxed">{kc.confusionSignal}</p>
+                                        </div>
+                                      )}
+                                    </div>
+                                  )}
+                                </div>
+                              )}
+                            </>
+                          )
+                        })()}
+                      </div>
                     </div>
                   </div>
                 </div>
-
-                {isExpanded && section.subsections.length > 0 && (
-                  <div className="bg-gray-50/50 border-t border-gray-200 px-4 py-2">
-                    <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">
-                      Subsections
-                    </p>
-                    <div className="space-y-1">
-                      {section.subsections.map(subsection => (
-                        <div
-                          key={subsection.id}
-                          className="flex items-center gap-2 text-sm text-gray-600 py-1.5 px-2 rounded hover:bg-white"
-                        >
-                          <span className="text-gray-400">•</span>
-                          <span className="flex-1">{subsection.text}</span>
-                          {subsection.level && (
-                            <Badge variant="outline" className="text-xs">
-                              L{subsection.level}
-                            </Badge>
-                          )}
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                )}
-              </div>
-            )
-          })}
-        </div>
-      </div>
-
-      <div className="border-t border-gray-200 p-4 bg-gray-50">
-        <div className="flex gap-2">
-          <Button
-            variant="outline"
-            size="sm"
-            className="flex-1 hover:bg-rose-50 hover:border-rose-300 hover:text-rose-700"
-            onClick={autoAssignAll}
-            disabled={!collaborators || collaborators.length === 0}
-          >
-            <Sparkles className="w-4 h-4 mr-2" />
-            Auto-Assign All
-          </Button>
-
-          <Button
-            variant="outline"
-            size="sm"
-            className="flex-1 hover:bg-gray-100"
-            onClick={clearAllAssignments}
-            disabled={assignments.length === 0}
-          >
-            <X className="w-4 h-4 mr-2" />
-            Clear All
-          </Button>
-        </div>
-
-        {completionPercentage === 100 && assignments.length > 0 && (
-          <div className="mt-3 p-3 bg-gradient-to-r from-green-50 to-emerald-50 border border-green-200 rounded-lg">
-            <div className="flex items-center gap-2">
-              <Award className="w-5 h-5 text-green-600" />
-              <div>
-                <p className="text-sm font-semibold text-green-900">All sections completed!</p>
-                <p className="text-xs text-green-700">Great teamwork! 🎉</p>
-              </div>
-            </div>
+              )
+            })}
           </div>
         )}
       </div>
+
+      {/* ── Footer ─────────────────────────────────────────────── */}
+      {!seededFromA10 && (
+        <div className="border-t border-slate-100 px-4 py-3 flex items-center justify-between bg-white">
+          <button
+            onClick={clearAllAssignments}
+            disabled={assignments.length === 0}
+            className="text-[11px] text-slate-400 hover:text-slate-600 disabled:opacity-40 transition-colors font-medium"
+          >
+            Clear all
+          </button>
+          {completionPercentage === 100 && assignments.length > 0 && (
+            <span className="flex items-center gap-1 text-[11px] text-emerald-600 font-medium">
+              <CheckCircle className="w-3.5 h-3.5" />
+              All sections covered
+            </span>
+          )}
+        </div>
+      )}
     </div>
   )
 }

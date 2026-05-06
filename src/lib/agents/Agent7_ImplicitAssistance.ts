@@ -229,7 +229,7 @@ class Agent7_ImplicitAssistance {
       !n.dismissed &&
       n.type === config.type &&
       n.targetUserId === config.targetUserId && // ✅ Must be for the same user to count as duplicate
-      (Date.now() - n.timestamp < 30000) // Prevent same type+user within 30s
+      (Date.now() - n.timestamp < 90000) // Suppress re-fire within tau_cooldown (90s)
     )
 
     if (duplicate) {
@@ -238,7 +238,7 @@ class Agent7_ImplicitAssistance {
     }
 
     const notification: SmartNotification = {
-      id: `custom-${Date.now()}`,
+      id: `${config.type}-${config.sectionId ?? 'global'}-${config.targetUserId ?? 'all'}`,
       type: config.type,
       priority: config.priority,
       title: config.title,

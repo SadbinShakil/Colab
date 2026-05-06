@@ -13,6 +13,7 @@ import { agent9_relatedWorkAnalysis } from './Agent9_RelatedWorkAnalysis'
 import { agent10_roleAllocation } from './Agent10_RoleAllocation'
 import { interactionCollector } from '../interactionCollector'
 import { interactionAnalyzer } from '../interactionAnalyzer'
+import { logIntervention, logDsDataPoint, type InterventionEvent } from '../sessionLogger'
 
 
 /**
@@ -54,10 +55,39 @@ class AICoordinationCoreService {
   private muteUntilNotification: number | null = null
   private eventLog: Array<{ event: string; timestamp: number; agent: string }> = []
 
+  // Session ID for Firebase logging — set when a session starts
+  private activeSessionId: string = ''
+  private activeUserId: string = ''
+
   // ✅ LIVE CONTEXT CACHE: Stores the most recent page text for each section.
   // Updated whenever the user moves to a new section (via agent1:current-section-text).
   // This is the "what is the user actually reading right now" store.
   private liveSectionTextCache: Map<string, { text: string; sectionName: string; timestamp: number }> = new Map()
+
+  // Socket.IO instance — set by ApryseWebViewer after connection.
+  // Used to send cross-user A2 notifications via the server room map.
+  private socket: { emit: (event: string, data: unknown) => void } | null = null
+  // Cooldown tracking for group/peer notifications — keyed by sectionId+type
+  // Prevents the same notification from re-firing every 2s while D_s stays elevated.
+  private notifCooldowns: Map<string, number> = new Map()
+
+  /** Inject the live socket so A2 peer notifications cross the network. */
+  setSocket(socket: { emit: (event: string, data: unknown) => void } | null) {
+    this.socket = socket
+  }
+
+  /** Called at session start to enable Firebase logging */
+  setSession(sessionId: string, userId: string) {
+    this.activeSessionId = sessionId
+    this.activeUserId = userId
+    console.log(`🧠 [AI Core] Session set: ${sessionId} / ${userId}`)
+  }
+
+  /** Log an intervention to Firebase. Fails silently if offline. */
+  private async logToFirebase(event: InterventionEvent) {
+    if (!this.activeSessionId) return
+    await logIntervention(this.activeSessionId, event)
+  }
 
   /**
    * DEMO ONLY: Inject fake peer for simulation
@@ -126,7 +156,11 @@ class AICoordinationCoreService {
 
 
     this.isInitialized = true
-    console.log('✅ [AI Coordination Core] System initialized')
+    // System is fully online as soon as it initialises — the old onboarding
+    // animation gate (SystemFlowVisualizer) has been removed. The only gate
+    // that matters is whether an active session exists (checked per-event).
+    this.isSystemFullyOnline = true
+    console.log('✅ [AI Coordination Core] System initialized and fully online')
 
     this.logEvent('system-initialized', 'core')
   }
@@ -222,10 +256,11 @@ class AICoordinationCoreService {
   }
 
   /**
-   * Triggers the smart role allocation process
+   * Triggers the smart role allocation process (A10).
+   * Now async — calls GPT-4o via /api/role-allocation for semantic matching.
    */
-  requestSmartAllocation(sections: any[], reflections: any, userId: string, userName: string) {
-    const assignments = agent10_roleAllocation.allocateRoles(sections, reflections, userId, userName)
+  async requestSmartAllocation(sections: any[], reflections: any, paperTitle?: string) {
+    const assignments = await agent10_roleAllocation.allocateRoles(sections, reflections, paperTitle)
     this.logEvent('roles-allocated', 'agent10')
     return assignments
   }
@@ -233,7 +268,7 @@ class AICoordinationCoreService {
   /**
    * Routes agent events to other agents
    */
-  routeAgentEvent(sourceAgent: string, event: string, data: any) {
+  async routeAgentEvent(sourceAgent: string, event: string, data: any) {
     this.logEvent(event, sourceAgent)
 
     switch (event) {
@@ -251,10 +286,37 @@ class AICoordinationCoreService {
           break
         }
 
-        // ✅ Check if notifications are muted
+        // ✅ Check if notifications are muted (silence routing)
         if (this.isMuted()) {
           console.log(`🔕 [AI Core] Muted! Suppressing notification for ${strugglingUserId} (${this.getMuteRemainingMinutes()}m left)`)
+          this.logToFirebase({
+            agentId: 'A7',
+            type: 'silence',
+            userId: strugglingUserId,
+            sectionId: data.sectionId,
+            dsAtTrigger: data.dsScore ?? 0.75,
+            outcome: 'abstained',
+            timestamp: Date.now(),
+          })
           break
+        }
+
+        // Log A7 notification to Firebase before dispatching
+        this.logToFirebase({
+          agentId: 'A7',
+          type: 'notification',
+          userId: strugglingUserId,
+          sectionId: data.sectionId,
+          dsAtTrigger: data.dsScore ?? 0.75,
+          timestamp: Date.now(),
+        })
+        // Log D_s data point
+        if (this.activeSessionId) {
+          logDsDataPoint(this.activeSessionId, strugglingUserId, {
+            timestamp: Date.now(),
+            value: data.dsScore ?? 0.75,
+            sectionId: data.sectionId,
+          })
         }
 
         // Step 1: Notify the struggling user with basic help message
@@ -267,7 +329,7 @@ class AICoordinationCoreService {
           priority: data.severity === 'high' ? 'high' : 'medium',
           sectionId: data.sectionId,
           targetUserId: strugglingUserId,
-          text: data.text, // ✅ PASS SPECIFIC TEXT
+          text: data.text,
           actionButton: {
             label: 'Show Options',
             action: 'open-ai-help'
@@ -295,9 +357,26 @@ class AICoordinationCoreService {
           })
         } */
 
-        // Step 2: Find peers who can help
+        // Step 2: Sync live peers from the room, then find who can help
         const session = interactionCollector.getCurrentSession()
         if (session) {
+          // Broadcast own D_s so other users see this reader's state
+          agent2_collaborationOrchestrator.broadcastOwnState(
+            data.documentId || session.documentId || '',
+            strugglingUserId,
+            data.sectionId,
+            data.dsScore ?? 0.75
+          )
+          // Pull latest peer list + teaching profiles before matching
+          // Teaching profiles weight explainer effectiveness — not just section proficiency
+          await agent2_collaborationOrchestrator.syncLivePeers(
+            data.documentId || session.documentId || '',
+            strugglingUserId
+          )
+          await agent2_collaborationOrchestrator.syncTeachingProfiles(
+            data.documentId || session.documentId || ''
+          )
+
           const matches = agent2_collaborationOrchestrator.findPeersForHelp(
             strugglingUserId,
             data.sectionId
@@ -311,33 +390,41 @@ class AICoordinationCoreService {
               // GROUP STUDY: Multiple people struggling on same section
               console.log('👥 [Group Study] Multiple users struggling')
 
+              // Cooldown: suppress if same section already notified within 90s
+              const groupCooldownKey = `group-${data.sectionId}`
+              const lastGroupFired = this.notifCooldowns.get(groupCooldownKey) ?? 0
+              if (Date.now() - lastGroupFired < 90_000) {
+                console.log('⏳ [Group Study] Cooldown active — suppressing repeat notification')
+                break
+              }
+              this.notifCooldowns.set(groupCooldownKey, Date.now())
+
               // Notify the current struggling user
               agent7_implicitAssistance.generateNotification({
                 type: 'peer-suggestion',
-                title: '👥 You\'re not alone!',
-                message: 'Other students are also working on this section. Join group study?',
+                title: 'Shared confusion signal detected',
+                message: `Multiple readers have elevated D_s on ${data.sectionName || 'this section'}. Coordinate before proceeding?`,
                 priority: 'medium',
                 sectionId: data.sectionId,
                 targetUserId: strugglingUserId,
-                sectionName: data.sectionName, // ✅ Pass section Name
+                sectionName: data.sectionName,
                 actionButton: {
-                  label: 'Join Group',
+                  label: 'Coordinate',
                   action: 'join-group'
                 }
               })
 
-              // ✅ ALSO notify the other struggling user(s)
               if (match.helper.status === 'struggling') {
                 agent7_implicitAssistance.generateNotification({
                   type: 'peer-suggestion',
-                  title: '👥 You\'re not alone!',
-                  message: `${strugglingUserName} is also working on this section. Join group study?`,
+                  title: 'Shared confusion signal detected',
+                  message: `${strugglingUserName} has the same confusion signal on ${data.sectionName || 'this section'}. Coordinate?`,
                   priority: 'medium',
                   sectionId: data.sectionId,
                   targetUserId: match.helper.userId,
-                  sectionName: data.sectionName, // ✅ Pass section Name
+                  sectionName: data.sectionName,
                   actionButton: {
-                    label: 'Join Group',
+                    label: 'Coordinate',
                     action: 'join-group'
                   }
                 })
@@ -346,6 +433,38 @@ class AICoordinationCoreService {
               // PEER TUTORING: Helper available
               console.log('🤝 [Peer Match] Helper found:', match.helper.userName)
 
+              // Feature 6: Look up concept label for this user's most recent confusion
+              // Used to make the notification specific: "Alex understands the τ-scaled softmax"
+              let conceptLabel: string | null = null
+              try {
+                const conceptRes = await fetch(
+                  `/api/concept-confusion?paperId=${encodeURIComponent(data.documentId || '')}&sectionId=${encodeURIComponent(data.sectionId)}`
+                )
+                if (conceptRes.ok) {
+                  const conceptData = await conceptRes.json()
+                  // Find the most recent concept confusion for this user
+                  const userConcept = conceptData.confusions?.find(
+                    (c: { userId: string; conceptLabel: string }) => c.userId === strugglingUserId
+                  )
+                  if (userConcept) conceptLabel = userConcept.conceptLabel
+                }
+              } catch { /* non-critical */ }
+
+              const conceptNote = conceptLabel
+                ? ` Specifically: "${conceptLabel}".`
+                : ''
+
+              // Log peer routing to Firebase
+              this.logToFirebase({
+                agentId: 'A2',
+                type: 'peer_routing',
+                userId: strugglingUserId,
+                sectionId: data.sectionId,
+                dsAtTrigger: data.dsScore ?? 0.75,
+                timestamp: Date.now(),
+                metadata: { helperUserId: match.helper.userId, matchScore: match.matchScore, conceptLabel },
+              })
+
               // ✅ BIDIRECTIONAL NOTIFICATIONS (both users notified)
 
               // 1. Notify struggling user about available helper (NO SCORE!)
@@ -353,7 +472,7 @@ class AICoordinationCoreService {
               agent7_implicitAssistance.generateNotification({
                 type: 'peer-suggestion',
                 title: `💡 Collaboration Match`,
-                message: `${match.matchReason} Connect to discuss?`,
+                message: `${match.matchReason}${conceptNote} Connect to discuss?`,
                 priority: 'high',
                 sectionId: data.sectionId,
                 targetUserId: strugglingUserId,
@@ -370,20 +489,19 @@ class AICoordinationCoreService {
                 }
               })
 
-              // 2. Notify helper about struggling user
-              agent7_implicitAssistance.generateNotification({
+              // 2. Notify helper about struggling user.
+              // If we have a socket, send cross-network via server room map.
+              // Otherwise fall back to same-tab CustomEvent (solo / demo mode).
+              const helperNotification = {
                 type: 'peer-suggestion',
-                title: `🤝 Peer Request`,
-                message: `${strugglingUserName} is reviewing ${data.sectionName} and could use a second pair of eyes. Want to assist?`,
+                title: '🤝 Peer Request',
+                message: `${strugglingUserName} is reviewing ${data.sectionName || 'this section'} and could use a second pair of eyes.${conceptNote} Want to assist?`,
                 priority: 'medium',
                 sectionId: data.sectionId,
-                sectionName: data.sectionName, // ✅ Pass section Name
+                sectionName: data.sectionName,
                 targetUserId: match.helper.userId,
-                actionButton: {
-                  label: 'Offer Help',
-                  action: 'offer-help'
-                },
-                // ✅ ADD: Store struggling user info in notification for easy access
+                documentId: data.documentId || '',
+                actionButton: { label: 'Offer Help', action: 'offer-help' },
                 invitationData: {
                   strugglingUserId: strugglingUserId,
                   strugglingUserName: strugglingUserName,
@@ -392,9 +510,18 @@ class AICoordinationCoreService {
                   toUserId: strugglingUserId,
                   toUserName: strugglingUserName,
                   sectionId: data.sectionId,
-                  documentId: data.documentId || ''
-                }
-              })
+                  documentId: data.documentId || '',
+                },
+              }
+
+              if (this.socket) {
+                // Cross-user delivery: server routes to helper's socket
+                this.socket.emit('peer-notification', helperNotification)
+                console.log(`🔔 [AI Core] peer-notification sent via socket → ${match.helper.userName}`)
+              } else {
+                // Same-tab fallback (demo / solo mode)
+                agent7_implicitAssistance.generateNotification(helperNotification)
+              }
             }
           } else {
             console.log('ℹ️ [No Peers] No peers available to help')
@@ -404,20 +531,18 @@ class AICoordinationCoreService {
 
       case 'breakthrough-detected':
         // Agent 1 detected breakthrough → Agent 7 offers peer help
-        if (this.isSystemFullyOnline) {
-          agent7_implicitAssistance.onBreakthroughDetected(data)
-        }
+        if (!interactionCollector.getCurrentSession()) break
+        agent7_implicitAssistance.onBreakthroughDetected(data)
         break
 
       case 'confusion-loop-detected':
         // Agent 1 detected loop → Agent 7 intervenes
-        if (this.isSystemFullyOnline) {
-          agent7_implicitAssistance.generateSlowZoneNotification(
-            data.sectionId,
-            data.sectionName,
-            data.timeSpent
-          )
-        }
+        if (!interactionCollector.getCurrentSession()) break
+        agent7_implicitAssistance.generateSlowZoneNotification(
+          data.sectionId,
+          data.sectionName,
+          data.timeSpent
+        )
         break
     }
   }

@@ -35,20 +35,24 @@ export default function JoinDocumentPage() {
   }
   
   // Create document URL with state parameters
+  // Anyone arriving via a join link is already in collaborative mode — no intent modal needed
   const getDocumentUrlWithState = () => {
     if (!documentId) return `/document/${documentId}`
-    
+
     const params = new URLSearchParams()
-    
-    // Add state parameters if they exist
+
+    // Mark as collaborative — session intent modal will be skipped
+    params.set('mode', 'collaborative')
+    // Extract session code from URL if present (e.g. shared as ?code=ABC123)
+    const codeFromUrl = searchParams.get('code')
+    if (codeFromUrl) params.set('code', codeFromUrl)
+
+    // Add other state parameters if they exist
     Object.entries(stateParams).forEach(([key, value]) => {
-      if (value) {
-        params.set(key, value)
-      }
+      if (value) params.set(key, value)
     })
-    
-    const queryString = params.toString()
-    return queryString ? `/document/${documentId}?${queryString}` : `/document/${documentId}`
+
+    return `/document/${documentId}?${params.toString()}`
   }
 
   useEffect(() => {
@@ -105,7 +109,7 @@ export default function JoinDocumentPage() {
               <div className="w-12 h-12 bg-blue-600 rounded-2xl flex items-center justify-center shadow-xl group-hover:shadow-2xl group-hover:scale-110 transition-all duration-300">
                 <FileText className="w-6 h-6 text-white" />
               </div>
-              <span className="text-3xl font-bold text-gray-900">LitSense</span>
+              <span className="text-3xl font-bold text-gray-900">CoRead</span>
             </Link>
             
             <div className="space-y-4">
@@ -232,7 +236,7 @@ export default function JoinDocumentPage() {
               ))}
             </div>
             <p className="text-gray-700 italic leading-relaxed">
-              "LitSense has transformed how our research team collaborates. The real-time annotations and AI insights are game-changing."
+              "CoRead has transformed how our research team collaborates. The real-time annotations and AI insights are game-changing."
             </p>
             <div className="mt-4 flex items-center space-x-3">
               <div className="w-10 h-10 bg-blue-100 rounded-full flex items-center justify-center">

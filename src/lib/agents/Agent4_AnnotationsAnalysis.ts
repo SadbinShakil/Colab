@@ -315,9 +315,122 @@ class Agent4_AnnotationsAnalysis {
   getTopUnderstoodTopics(): TopicCluster[] {
     const session = interactionCollector.getCurrentSession()
     if (!session) return []
-    
+
     const topics = this.extractTopics(session.highlights, session.annotations)
     return topics.filter(t => t.sentiment === 'understood').slice(0, 5)
+  }
+
+  // ============================================================================
+  // DIVERGENCE DETECTION (cross-reader annotation divergence)
+  // ============================================================================
+
+  /**
+   * Detect divergence pairs across all peer highlights.
+   * Returns passages where two readers marked the same text with different reasons.
+   * Uses token-level Jaccard similarity >= 0.35 as the overlap threshold.
+   */
+  detectDivergenceAcrossPeers(
+    localHighlights: Array<{ id: string; text: string; reason: string; sectionId: string; pageNumber: number; userId: string; userName: string }>,
+    peerHighlights: Array<{ id: string; text: string; reason: string; sectionId: string; pageNumber: number; userId: string; userName: string }>
+  ): Array<{
+    localId: string; peerId: string;
+    sharedPassage: string; overlapScore: number;
+    localReason: string; peerReason: string;
+    sectionId: string; pageNumber: number;
+    localUserName: string; peerUserName: string;
+  }> {
+    const OVERLAP_THRESHOLD = 0.35
+    const results: typeof this._divergenceResultType[] = []
+    const seen = new Set<string>()
+
+    function jaccard(a: string, b: string): number {
+      const tokA = new Set(a.toLowerCase().split(/\s+/).filter(t => t.length > 3))
+      const tokB = new Set(b.toLowerCase().split(/\s+/).filter(t => t.length > 3))
+      if (tokA.size === 0 || tokB.size === 0) return 0
+      const intersection = [...tokA].filter(t => tokB.has(t)).length
+      const union = new Set([...tokA, ...tokB]).size
+      return intersection / union
+    }
+
+    function longestPhrase(a: string, b: string): string {
+      const wordsA = a.split(/\s+/)
+      const wordsB = new Set(b.split(/\s+/))
+      let best: string[] = [], cur: string[] = []
+      for (const w of wordsA) {
+        if (wordsB.has(w)) { cur.push(w); if (cur.length > best.length) best = [...cur] }
+        else cur = []
+      }
+      return best.join(' ')
+    }
+
+    for (const local of localHighlights) {
+      for (const peer of peerHighlights) {
+        if (local.userId === peer.userId) continue
+        if (local.reason === peer.reason) continue
+        if (Math.abs((local.pageNumber || 0) - (peer.pageNumber || 0)) > 1) continue
+        const key = [local.id, peer.id].sort().join(':')
+        if (seen.has(key)) continue
+        const score = jaccard(local.text, peer.text)
+        if (score >= OVERLAP_THRESHOLD) {
+          seen.add(key)
+          results.push({
+            localId: local.id,
+            peerId: peer.id,
+            sharedPassage: longestPhrase(local.text, peer.text),
+            overlapScore: score,
+            localReason: local.reason,
+            peerReason: peer.reason,
+            sectionId: local.sectionId,
+            pageNumber: local.pageNumber || 0,
+            localUserName: local.userName,
+            peerUserName: peer.userName,
+          })
+        }
+      }
+    }
+    return results.sort((a, b) => b.overlapScore - a.overlapScore)
+  }
+
+  // TypeScript helper — never instantiated, only used for return type inference
+  private _divergenceResultType = {} as {
+    localId: string; peerId: string;
+    sharedPassage: string; overlapScore: number;
+    localReason: string; peerReason: string;
+    sectionId: string; pageNumber: number;
+    localUserName: string; peerUserName: string;
+  }
+
+  /**
+   * Analyze the distribution of epistemic tags across all marginal notes for this session.
+   * Returns counts per tag and the dominant epistemic concern.
+   */
+  analyzeEpistemicTagDistribution(
+    notes: Array<{ epistemicTag?: string | null; sectionId?: string | null }>
+  ): {
+    counts: Record<string, number>;
+    dominant: string | null;
+    sectionBreakdown: Record<string, Record<string, number>>;
+  } {
+    const counts: Record<string, number> = {
+      Claim: 0, Evidence: 0, Gap: 0, Assumption: 0, Contradiction: 0, untagged: 0,
+    }
+    const sectionBreakdown: Record<string, Record<string, number>> = {}
+
+    for (const note of notes) {
+      const tag = note.epistemicTag || 'untagged'
+      counts[tag] = (counts[tag] || 0) + 1
+      if (note.sectionId) {
+        if (!sectionBreakdown[note.sectionId]) sectionBreakdown[note.sectionId] = {}
+        sectionBreakdown[note.sectionId][tag] = (sectionBreakdown[note.sectionId][tag] || 0) + 1
+      }
+    }
+
+    const tagged = Object.entries(counts).filter(([k]) => k !== 'untagged')
+    const dominant = tagged.length > 0
+      ? tagged.reduce((a, b) => (b[1] > a[1] ? b : a))[0]
+      : null
+
+    return { counts, dominant, sectionBreakdown }
   }
 }
 

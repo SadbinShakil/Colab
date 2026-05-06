@@ -124,7 +124,7 @@ export default function SignUpPage() {
               <div className="w-12 h-12 bg-blue-600 rounded-xl flex items-center justify-center text-white shadow-lg group-hover:scale-110 transition-transform">
                 <FileText size={24} fill="currentColor" />
               </div>
-              <span className="text-3xl font-bold text-gray-900">LitSense</span>
+              <span className="text-3xl font-bold text-gray-900">CoRead</span>
             </Link>
 
             <h1 className="text-5xl font-bold text-gray-900 leading-[1.1] mb-6">

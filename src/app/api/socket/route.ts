@@ -3,10 +3,10 @@
 // Extend global type
 declare global {
   var sectionAssignments: Record<string, any[]> | undefined
-}
-
-declare global {
-  var sectionSummaries: Record<string, Record<string, any>> | undefined  // ✅ ADD THIS
+  var sectionSummaries: Record<string, Record<string, any>> | undefined
+  var __reflectionStore: Record<string, Record<string, { userName: string; content: string; timestamp: string }>> | undefined
+  var __allocationResultStore: Record<string, { assignments: any[]; computedAt: string }> | undefined
+  var __activeUsers: Record<string, Set<string>> | undefined
 }
 
 import { NextResponse } from "next/server"
@@ -17,9 +17,37 @@ const annotationStorage: Record<string, any[]> = {}
 // In-memory storage for demo (in real app, use database)
 const chatMessages: { [documentId: string]: any[] } = {}
 const typingUsers: { [documentId: string]: Set<string> } = {}
-const activeUsers: { [documentId: string]: Set<string> } = {}
+// Active users pinned to global so hot reloads don't wipe join state
+if (!global.__activeUsers) global.__activeUsers = {}
+const activeUsers = global.__activeUsers
 const realtimeAnnotations: { [documentId: string]: any[] } = {}
 const annotationSubscribers: { [documentId: string]: Set<string> } = {}
+
+// Phase I reflections — survive hot reloads via global
+// documentId → userId → { userName, content, timestamp }
+if (!global.__reflectionStore) global.__reflectionStore = {}
+const reflectionStore = global.__reflectionStore
+
+// Shared A10 allocation result — survive hot reloads via global
+if (!global.__allocationResultStore) global.__allocationResultStore = {}
+const allocationResultStore = global.__allocationResultStore
+
+// Problem 3: Passage highlight index for divergence detection
+// documentId → passageKey → PassageHighlight
+interface PassageHighlight {
+  passageKey: string
+  passageText: string
+  sectionId: string
+  sectionName: string
+  entries: Array<{
+    userId: string
+    userName: string
+    reason: string       // 'confusion' | 'understood' | 'general'
+    timestamp: string
+    annotationId: string
+  }>
+}
+const passageHighlightIndex: Record<string, Record<string, PassageHighlight>> = {}
 
 export async function POST(req: Request) {
   let body: any = {}
@@ -165,11 +193,11 @@ export async function POST(req: Request) {
 
       case 'send-message':
         // Handle sending messages
-        const { 
-          documentId: sendMsgDocId, 
-          userId: sendMsgUserId, 
-          userName: sendMsgUserName, 
-          messageData 
+        const {
+          documentId: sendMsgDocId,
+          userId: sendMsgUserId,
+          userName: sendMsgUserName,
+          messageData
         } = body
         if (sendMsgDocId && sendMsgUserId && messageData) {
           const message = {
@@ -182,13 +210,51 @@ export async function POST(req: Request) {
             recipientId: messageData.recipientId,
             timestamp: new Date().toISOString()
           }
-          
-          // Store message
+
+          // Store message in REST cache
           if (!chatMessages[sendMsgDocId]) {
             chatMessages[sendMsgDocId] = []
           }
           chatMessages[sendMsgDocId].push(message)
-          
+
+          // Emit via Socket.IO so all peers receive it in real-time
+          // and so the discussion navigator (maybeNavigateDiscussion) can trigger
+          const io = (global as any).__io
+          const rooms = (global as any).__documentRooms
+          if (io) {
+            const payload = {
+              fromUserId: sendMsgUserId,
+              fromUserName: sendMsgUserName || 'Anonymous',
+              message: messageData.content,
+              content: messageData.content,
+              type: messageData.type || 'TEXT',
+              documentId: sendMsgDocId,
+              toUserId: messageData.recipientId || null,
+              anchor: messageData.anchor || null,
+              timestamp: message.timestamp,
+            }
+            // Push into room chatHistory so discussion navigator can process it
+            if (rooms) {
+              const room = rooms.get(sendMsgDocId)
+              if (room && !messageData.recipientId) {
+                room.chatHistory.push({
+                  userId: sendMsgUserId,
+                  userName: sendMsgUserName || 'Anonymous',
+                  message: messageData.content,
+                  timestamp: Date.now(),
+                })
+                if (room.chatHistory.length > 20) room.chatHistory.splice(0, room.chatHistory.length - 20)
+                // Trigger discussion navigator every 3 group messages
+                if (room.chatHistory.length % 3 === 0) {
+                  const maybeNav = (global as any).__maybeNavigateDiscussion
+                  if (maybeNav) maybeNav(sendMsgDocId)
+                }
+              }
+            }
+            // Broadcast to all other clients in the room
+            io.to(sendMsgDocId).emit('peer-chat-message', payload)
+          }
+
           console.log(`💬 Message sent by ${sendMsgUserName || 'Anonymous'} in document ${sendMsgDocId}`)
           return NextResponse.json({
             success: true,
@@ -216,16 +282,18 @@ export async function POST(req: Request) {
           }
           return NextResponse.json({ success: false, error: "Missing document ID" }, { status: 400 })
 
-      case 'get-highlights':
-        // Handle getting highlights (empty for now)
+      case 'get-highlights': {
         const { documentId: getHighlightsDocId } = body
-        if (getHighlightsDocId) {
-          return NextResponse.json({
-            success: true,
-            highlights: []
-          })
-        }
-        return NextResponse.json({ success: false, error: "Missing document ID" }, { status: 400 })
+        if (!getHighlightsDocId) return NextResponse.json({ success: false, error: "Missing document ID" }, { status: 400 })
+
+        // Read from the Socket.IO document rooms (shared via global) if available
+        const rooms = (global as any).__documentRooms as Map<string, { highlights: any[]; users: any[] }> | undefined
+        const room = rooms?.get(getHighlightsDocId)
+        return NextResponse.json({
+          success: true,
+          highlights: room?.highlights ?? []
+        })
+      }
 
       case 'add-highlight':
         // Handle adding highlights (empty for now)
@@ -291,36 +359,43 @@ export async function POST(req: Request) {
         }
         return NextResponse.json({ success: false, error: "Missing required fields" }, { status: 400 })
 
-      case 'get-realtime-annotations':
-        // Handle getting real-time annotations
+      case 'get-realtime-annotations': {
         const { documentId: getAnnotationsDocId, userId: getAnnotationsUserId } = body
-        if (getAnnotationsDocId) {
-          // Add user to subscribers
-          if (!annotationSubscribers[getAnnotationsDocId]) {
-            annotationSubscribers[getAnnotationsDocId] = new Set()
-          }
-          annotationSubscribers[getAnnotationsDocId].add(getAnnotationsUserId || 'anonymous')
-          
-          // Return recent annotation events (last 50)
-          const allAnnotations = realtimeAnnotations[getAnnotationsDocId] || []
-          const recentAnnotations = allAnnotations
-            .slice(-50)
-            .filter(annotation => annotation.userId !== getAnnotationsUserId) // Don't send user's own annotations back
-          
-          console.log(`🔍 Real-time annotations for ${getAnnotationsUserId}:`, {
-            total: allAnnotations.length,
-            filtered: recentAnnotations.length,
-            allUserIds: allAnnotations.map(a => a.userId),
-            requestingUserId: getAnnotationsUserId
-          })
-          
-          return NextResponse.json({
-            success: true,
-            annotations: recentAnnotations,
-            subscriberCount: annotationSubscribers[getAnnotationsDocId]?.size || 0
-          })
+        if (!getAnnotationsDocId) return NextResponse.json({ success: false, error: "Missing document ID" }, { status: 400 })
+
+        if (!annotationSubscribers[getAnnotationsDocId]) {
+          annotationSubscribers[getAnnotationsDocId] = new Set()
         }
-        return NextResponse.json({ success: false, error: "Missing document ID" }, { status: 400 })
+        annotationSubscribers[getAnnotationsDocId].add(getAnnotationsUserId || 'anonymous')
+
+        // Merge HTTP annotation-changed events + Socket.IO highlights from the shared room
+        const httpAnnotations = (realtimeAnnotations[getAnnotationsDocId] || []).slice(-50)
+
+        const rooms = (global as any).__documentRooms as Map<string, { highlights: any[]; users: any[] }> | undefined
+        const socketHighlights = (rooms?.get(getAnnotationsDocId)?.highlights ?? []).map((h: any) => ({
+          id: h.id,
+          documentId: getAnnotationsDocId,
+          userId: h.userId || h.user || 'unknown',
+          userName: h.userName || h.user || 'Collaborator',
+          action: 'add',
+          annotationData: {
+            text: h.contents || h.text || '',
+            color: h.color || '#FEF08A',
+            pageNumber: h.pageNumber || h.page || 1,
+          },
+          timestamp: h.timestamp || new Date().toISOString(),
+        }))
+
+        // Combine and exclude the requesting user's own entries
+        const combined = [...httpAnnotations, ...socketHighlights]
+          .filter(a => (a.userId || a.user) !== getAnnotationsUserId)
+
+        return NextResponse.json({
+          success: true,
+          annotations: combined.slice(-50),
+          subscriberCount: annotationSubscribers[getAnnotationsDocId]?.size || 0
+        })
+      }
 
 
 
@@ -411,6 +486,66 @@ export async function POST(req: Request) {
 
 
 
+      // ── Problem 3: Annotation divergence detection ─────────────────────────
+      case 'register-passage-highlight': {
+        const { documentId: phDocId, passageKey, passageText, sectionId: phSectionId, sectionName: phSectionName,
+                userId: phUserId, userName: phUserName, reason: phReason, annotationId: phAnnotationId } = body
+        if (!phDocId || !passageKey || !phUserId) break
+
+        if (!passageHighlightIndex[phDocId]) passageHighlightIndex[phDocId] = {}
+        const existing = passageHighlightIndex[phDocId][passageKey]
+
+        if (existing) {
+          // Only add if this user hasn't already registered for this passage
+          const alreadyRegistered = existing.entries.some(e => e.userId === phUserId)
+          if (!alreadyRegistered) {
+            existing.entries.push({ userId: phUserId, userName: phUserName, reason: phReason || 'general', timestamp: new Date().toISOString(), annotationId: phAnnotationId || '' })
+          }
+        } else {
+          passageHighlightIndex[phDocId][passageKey] = {
+            passageKey, passageText: passageText || passageKey, sectionId: phSectionId || '', sectionName: phSectionName || '',
+            entries: [{ userId: phUserId, userName: phUserName, reason: phReason || 'general', timestamp: new Date().toISOString(), annotationId: phAnnotationId || '' }]
+          }
+        }
+
+        // Check for divergence: 2+ users, 2+ distinct reasons
+        const record = passageHighlightIndex[phDocId][passageKey]
+        const hasDivergence = record.entries.length >= 2 &&
+          new Set(record.entries.map((e: any) => e.reason)).size >= 2 &&
+          new Set(record.entries.map((e: any) => e.userId)).size >= 2
+
+        return NextResponse.json({ success: true, divergence: hasDivergence, record })
+      }
+
+      case 'get-passage-divergences': {
+        const { documentId: divDocId, userId: divUserId } = body
+        if (!divDocId) return NextResponse.json({ success: true, divergences: [] })
+
+        const docIndex = passageHighlightIndex[divDocId] || {}
+        // Return passages where this user has an entry AND there's a divergence
+        const divergences = Object.values(docIndex).filter((record: any) => {
+          const userEntry = record.entries.find((e: any) => e.userId === divUserId)
+          if (!userEntry) return false
+          const otherEntries = record.entries.filter((e: any) => e.userId !== divUserId)
+          if (otherEntries.length === 0) return false
+          return otherEntries.some((e: any) => e.reason !== userEntry.reason)
+        }).map((record: any) => {
+          const userEntry = record.entries.find((e: any) => e.userId === divUserId)
+          const otherEntry = record.entries.find((e: any) => e.userId !== divUserId && e.reason !== userEntry.reason)
+          return {
+            passageKey: record.passageKey,
+            passageText: record.passageText,
+            sectionName: record.sectionName,
+            myReason: userEntry.reason,
+            otherUserId: otherEntry.userId,
+            otherUserName: otherEntry.userName,
+            theirReason: otherEntry.reason,
+          }
+        })
+
+        return NextResponse.json({ success: true, divergences })
+      }
+
       case 'sync-annotations':
         // Handle annotation synchronization (for initial load)
         const { 
@@ -445,6 +580,130 @@ export async function POST(req: Request) {
         }
         return NextResponse.json({ success: false, error: "Missing required fields" }, { status: 400 })
       
+      case 'save-reflection': {
+        const {
+          documentId: refDocId,
+          userId: refUserId,
+          userName: refUserName,
+          content: refContent,
+          sections: refSections,
+          paperTitle: refPaperTitle,
+          expectedParticipants: refExpected,
+          forceAllocate,
+        } = body
+        if (!refDocId || !refUserId || !refContent) {
+          return NextResponse.json({ success: false, error: 'Missing fields' }, { status: 400 })
+        }
+
+        // Store this user's reflection (skip update if forceAllocate — content already stored)
+        if (!reflectionStore[refDocId]) reflectionStore[refDocId] = {}
+        if (!forceAllocate) {
+          reflectionStore[refDocId][refUserId] = {
+            userName: refUserName || 'Participant',
+            content: refContent,
+            timestamp: new Date().toISOString(),
+          }
+        }
+
+        const reflectionCount = Object.keys(reflectionStore[refDocId]).length
+        const expected = refExpected ?? 1
+
+        // Run allocation ONLY when explicitly forced by the poll (which has the
+        // authoritative live user count). Never auto-allocate on save — the first
+        // user to submit would get an all-AI result before others join.
+        const shouldAllocate = forceAllocate && refSections?.length
+
+        if (shouldAllocate) {
+          try {
+            // Disambiguate names if multiple participants share the same display name
+            // (e.g. two tabs on same machine logged into same account during testing)
+            const nameCounts: Record<string, number> = {}
+            const nameIndex: Record<string, number> = {}
+            for (const d of Object.values(reflectionStore[refDocId])) {
+              nameCounts[d.userName] = (nameCounts[d.userName] ?? 0) + 1
+            }
+            const allReflections = Object.entries(reflectionStore[refDocId]).map(([uid, d]) => {
+              let displayName = d.userName
+              if (nameCounts[d.userName] > 1) {
+                nameIndex[d.userName] = (nameIndex[d.userName] ?? 0) + 1
+                displayName = `${d.userName} (${nameIndex[d.userName]})`
+              }
+              return { userId: uid, userName: displayName, content: d.content }
+            })
+
+            const baseUrl = process.env.NEXTAUTH_URL || 'http://localhost:3000'
+            const allocRes = await fetch(`${baseUrl}/api/role-allocation`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                reflections: allReflections,
+                sections: refSections,
+                paperTitle: refPaperTitle || '',
+              }),
+            })
+            if (allocRes.ok) {
+              const allocData = await allocRes.json()
+              allocationResultStore[refDocId] = {
+                assignments: allocData.assignments ?? [],
+                computedAt: new Date().toISOString(),
+              }
+            }
+          } catch (e) {
+            console.error('[socket/save-reflection] Allocation failed:', e)
+          }
+        }
+
+        return NextResponse.json({
+          success: true,
+          reflectionCount,
+          expected,
+          allocationReady: !!allocationResultStore[refDocId],
+        })
+      }
+
+      case 'get-reflections': {
+        const { documentId: getRefDocId } = body
+        if (!getRefDocId) return NextResponse.json({ success: false, error: 'Missing documentId' }, { status: 400 })
+        const stored = reflectionStore[getRefDocId] ?? {}
+        const reflections = Object.entries(stored).map(([userId, data]) => ({
+          userId,
+          userName: data.userName,
+          content: data.content,
+          timestamp: data.timestamp,
+        }))
+
+        // Parse active users for this document
+        const activeUserEntries = Array.from(activeUsers[getRefDocId] ?? []).map(s => {
+          try { return JSON.parse(s) } catch { return null }
+        }).filter(Boolean) as { userId: string; userName: string }[]
+
+        const activeUserCount = activeUserEntries.length
+
+        // allReflected = true only when EVERY currently joined user has submitted
+        const submittedIds = new Set(Object.keys(stored))
+        const allReflected = activeUserCount >= 2 &&
+          activeUserEntries.every(u => submittedIds.has(u.userId))
+
+        return NextResponse.json({ success: true, reflections, activeUserCount, allReflected })
+      }
+
+      case 'get-allocation': {
+        const { documentId: getAllocDocId } = body
+        if (!getAllocDocId) return NextResponse.json({ success: false, error: 'Missing documentId' }, { status: 400 })
+        const result = allocationResultStore[getAllocDocId] ?? null
+        return NextResponse.json({ success: true, result })
+      }
+
+      case 'clear-allocation': {
+        // Called when session resets — allows re-running A10 for a new session
+        const { documentId: clearDocId } = body
+        if (clearDocId) {
+          delete allocationResultStore[clearDocId]
+          delete reflectionStore[clearDocId]
+        }
+        return NextResponse.json({ success: true })
+      }
+
       default:
         return NextResponse.json({
           success: true,

@@ -27,7 +27,7 @@ export default function InfoToast({ onClose }: { onClose: () => void }) {
               <FileText className="w-6 h-6 text-white" />
             </div>
             <div>
-              <CardTitle className="text-2xl font-bold text-gray-900">Welcome to LitSense!</CardTitle>
+              <CardTitle className="text-2xl font-bold text-gray-900">Welcome to CoRead!</CardTitle>
               <CardDescription className="text-gray-600 text-base">
                 Your AI-powered research collaboration platform is ready
               </CardDescription>
@@ -172,7 +172,7 @@ export default function InfoToast({ onClose }: { onClose: () => void }) {
               onClick={onClose}
             >
               <ArrowRight className="w-4 h-4 mr-2" />
-              Start Exploring LitSense
+              Start Exploring CoRead
             </Button>
             <Button 
               variant="outline"

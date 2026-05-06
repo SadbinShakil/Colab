@@ -259,5 +259,8 @@ socket.on('summary-shared', (data) => {
     ;(global as any).io = io
   }
 
-  return new Response('Socket.io server initialized', { status: 200 })
+  return new Response(JSON.stringify({ status: 'ok', port: 3001 }), {
+    status: 200,
+    headers: { 'Content-Type': 'application/json' },
+  })
 }

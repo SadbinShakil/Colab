@@ -48,7 +48,7 @@ class ContextualAIService {
 
   private loadSettings() {
     if (typeof window !== 'undefined') {
-      const saved = localStorage.getItem('litsense_struggle_thresholds')
+      const saved = localStorage.getItem('coread_struggle_thresholds')
       if (saved) {
         try {
           const parsed = JSON.parse(saved)
@@ -64,7 +64,7 @@ class ContextualAIService {
   public updateThresholds(newThresholds: Partial<typeof ContextualAIService.prototype.struggleThresholds>) {
     this.struggleThresholds = { ...this.struggleThresholds, ...newThresholds }
     if (typeof window !== 'undefined') {
-      localStorage.setItem('litsense_struggle_thresholds', JSON.stringify(this.struggleThresholds))
+      localStorage.setItem('coread_struggle_thresholds', JSON.stringify(this.struggleThresholds))
     }
     console.log('⚙️ [ContextualAI] Updated thresholds:', this.struggleThresholds)
   }

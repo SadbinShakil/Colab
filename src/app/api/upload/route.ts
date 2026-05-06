@@ -66,12 +66,13 @@ export async function POST(request: NextRequest) {
       console.log('🔄 Starting PDF text extraction...')
       console.log('📁 File path for extraction:', filepath)
       
-      // Import pdf-parse dynamically to avoid build issues
-      const pdfParse = (await import('pdf-parse')).default
-      
+      // Use require (not dynamic import) to avoid pdf-parse test file ENOENT bug
+      // eslint-disable-next-line @typescript-eslint/no-var-requires
+      const pdfParse = require('pdf-parse')
+
       // Read the PDF file and extract text
       const pdfBuffer = await readFile(filepath)
-      const pdfData = await pdfParse(pdfBuffer)
+      const pdfData = await pdfParse(pdfBuffer, { version: 'default' })
       const extractedText = pdfData.text
       
       console.log(`✅ PDF text extracted: ${extractedText.length} characters`)

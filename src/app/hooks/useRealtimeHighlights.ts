@@ -1,5 +1,4 @@
 import { useEffect, useRef, useState, useCallback } from 'react'
-import { io, Socket } from 'socket.io-client'
 
 interface UseRealtimeHighlightsProps {
   documentId: string
@@ -7,6 +6,11 @@ interface UseRealtimeHighlightsProps {
   userId: string
   webViewerInstance?: any
   enabled?: boolean
+  /**
+   * If provided, use this existing socket instead of creating a new one.
+   * This avoids double-joining the room when ApryseWebViewer already has a socket.
+   */
+  externalSocket?: any
 }
 
 export function useRealtimeHighlights({
@@ -14,183 +18,153 @@ export function useRealtimeHighlights({
   userName,
   userId,
   webViewerInstance,
-  enabled = true
+  enabled = true,
+  externalSocket,
 }: UseRealtimeHighlightsProps) {
-  const socketRef = useRef<Socket | null>(null)
+  const socketRef = useRef<any>(null)
   const [isConnected, setIsConnected] = useState(false)
   const [connectedUsers, setConnectedUsers] = useState<any[]>([])
-  const [incomingHighlights, setIncomingHighlights] = useState<any[]>([]) // MOVED INSIDE
-  // ✅ ADD THIS NEW FUNCTION:
+  const [incomingHighlights, setIncomingHighlights] = useState<any[]>([])
+
   const clearIncomingHighlights = useCallback(() => {
-    setIncomingHighlights([]);
-  }, []);
+    setIncomingHighlights([])
+  }, [])
 
-
+  // If an external socket is provided, use it — no new connection created.
+  // ApryseWebViewer emits highlight events via window custom events so we pick them up
+  // even before this effect re-runs with the external socket.
   useEffect(() => {
-    if (!enabled || !documentId) return
+    if (!externalSocket) return
 
-    console.log('🔌 Connecting to real Socket.io server...')
+    socketRef.current = externalSocket
+    // Snapshot current connection state; also track future connect/disconnect
+    setIsConnected(externalSocket.connected)
+    const onConnect = () => setIsConnected(true)
+    const onDisconnect = () => { setIsConnected(false); setConnectedUsers([]) }
+    externalSocket.on('connect', onConnect)
+    externalSocket.on('disconnect', onDisconnect)
 
-    const socket = io('http://localhost:3000')
-    socketRef.current = socket
+    // Window-event bridge: ApryseWebViewer dispatches these on the window so highlights
+    // received before this effect re-ran (timing gap) are still captured.
+    const onWindowExisting = (e: Event) => {
+      const highlights = (e as CustomEvent).detail
+      if (highlights?.length > 0) setIncomingHighlights(prev => [...prev, ...highlights])
+    }
+    const onWindowHighlight = (e: Event) => {
+      const h = (e as CustomEvent).detail
+      if (h) setIncomingHighlights(prev => [...prev, h])
+    }
+    window.addEventListener('__existing-highlights', onWindowExisting)
+    window.addEventListener('__highlight-added', onWindowHighlight)
 
-    socket.on('connect', () => {
-      console.log('✅ Connected to Socket.io server!')
-      setIsConnected(true)
+    // Direct socket listeners for events that arrive after this effect runs
+    const onExistingHighlights = (highlights: any[]) => {
+      if (highlights.length > 0) setIncomingHighlights(prev => [...prev, ...highlights])
+    }
+    const onHighlightAdded = (highlight: any) => {
+      if (highlight.action === 'click') return
+      setIncomingHighlights(prev => [...prev, highlight])
+    }
+    const onUsersUpdate = (users: any[]) => setConnectedUsers(users)
 
-      socket.emit('join-document', {
-        documentId,
-        userName,
-        userId
+    externalSocket.on('existing-highlights', onExistingHighlights)
+    externalSocket.on('highlight-added', onHighlightAdded)
+    externalSocket.on('users-update', onUsersUpdate)
+
+    return () => {
+      externalSocket.off('connect', onConnect)
+      externalSocket.off('disconnect', onDisconnect)
+      window.removeEventListener('__existing-highlights', onWindowExisting)
+      window.removeEventListener('__highlight-added', onWindowHighlight)
+      externalSocket.off('existing-highlights', onExistingHighlights)
+      externalSocket.off('highlight-added', onHighlightAdded)
+      externalSocket.off('users-update', onUsersUpdate)
+    }
+  }, [externalSocket])
+
+  // Fallback: create own socket only when no external socket is provided
+  useEffect(() => {
+    if (!enabled || !documentId || externalSocket) return
+
+    let socket: any
+    import('socket.io-client').then(({ io }) => {
+      socket = io({
+        path: '/socket.io',
+        transports: ['websocket', 'polling'],
+        reconnectionAttempts: 3,
+        timeout: 5000,
       })
-    })
+      socketRef.current = socket
 
-    socket.on('disconnect', () => {
-      console.log('❌ Disconnected from Socket.io server')
-      setIsConnected(false)
-    })
-
-    socket.on('users-update', (users) => {
-      console.log('👥 Users updated:', users)
-      setConnectedUsers(users)
-    })
-
-    socket.on('existing-highlights', (highlights) => {
-      console.log('📋 Received existing highlights:', highlights.length)
-    })
-
-    socket.on('highlight-added', (highlight) => {
-      console.log('✨ New highlight from another user:', highlight)
-
-      if (highlight.action === 'click') {
-        showUserClickInPDF(highlight)
-        console.log(`👁️ ${highlight.user} is viewing: "${highlight.clickedText.substring(0, 30)}..."`)
-      } else {
-        console.log('📝 Received new highlight, passing to main component');
-        // Note: Struggle detection is now handled in the annotation listener
-        // after the highlight is imported, where we track confusion highlights
-        // per user and only trigger notifications when there are 3+ highlights
-        setIncomingHighlights(prev => [...prev, highlight]);
-      }
-    })
-
-    socket.on('peer-chat-invitation', (data) => {
-      console.log('📨 Received chat invitation:', data)
-      window.dispatchEvent(new CustomEvent('peer-chat-invitation', { detail: data }))
-    })
-
-    socket.on('peer-chat-accepted', (data) => {
-      console.log('✅ Chat invitation accepted:', data)
-      window.dispatchEvent(new CustomEvent('peer-chat-accepted', { detail: data }))
-    })
-
-    socket.on('peer-chat-message', (data) => {
-      console.log('💬 Received peer message:', data)
-      window.dispatchEvent(new CustomEvent('peer-chat-message', { detail: data }))
-    })
-
-    // ✅ ADD: Listen for reflections from other users
-    socket.on('reflection-updated', (data) => {
-      console.log('🧠 Received remote reflection update:', data)
-      window.dispatchEvent(new CustomEvent('remote-reflection-updated', { detail: data }))
-    })
-
-    // ✅ ADD: Listen for Start Signal
-    socket.on('session-start', (data) => {
-      console.log('🚀 Received remote session start:', data)
-      // Dispatch to window so SystemFlowVisualizer can pick it up
-      window.dispatchEvent(new CustomEvent('remote-session-start', { detail: data.timestamp }))
+      socket.on('connect', () => {
+        setIsConnected(true)
+        socket.emit('join-document', { documentId, userName, userId })
+      })
+      socket.on('disconnect', () => {
+        setIsConnected(false)
+        setConnectedUsers([])
+      })
+      socket.on('users-update', (users: any[]) => setConnectedUsers(users))
+      socket.on('existing-highlights', (highlights: any[]) => {
+        if (highlights.length > 0) setIncomingHighlights(prev => [...prev, ...highlights])
+      })
+      socket.on('highlight-added', (highlight: any) => {
+        if (highlight.action === 'click') return
+        setIncomingHighlights(prev => [...prev, highlight])
+      })
+      socket.on('peer-chat-invitation', (data: any) => {
+        window.dispatchEvent(new CustomEvent('peer-chat-invitation', { detail: data }))
+      })
+      socket.on('peer-chat-accepted', (data: any) => {
+        window.dispatchEvent(new CustomEvent('peer-chat-accepted', { detail: data }))
+      })
+      socket.on('peer-chat-message', (data: any) => {
+        window.dispatchEvent(new CustomEvent('peer-chat-message', { detail: data }))
+      })
+      socket.on('reflection-updated', (data: any) => {
+        window.dispatchEvent(new CustomEvent('remote-reflection-updated', { detail: data }))
+      })
+      socket.on('session-start', (data: any) => {
+        window.dispatchEvent(new CustomEvent('remote-session-start', { detail: data.timestamp }))
+      })
     })
 
     return () => {
-      socket.disconnect()
+      socket?.disconnect()
       setIsConnected(false)
       setConnectedUsers([])
     }
-  }, [documentId, userName, userId, enabled, webViewerInstance])
+  }, [documentId, userName, userId, enabled, externalSocket])
 
-  const broadcastReflection = (data: { type: string, content: string }) => {
-    if (socketRef.current?.connected) {
-      console.log('📡 Broadcasting reflection:', data)
-      socketRef.current.emit('reflection-updated', {
-        ...data,
-        userId,
-        userName,
-        documentId,
-        timestamp: Date.now()
-      })
-    }
-  }
+  const broadcastHighlight = useCallback((data: any) => {
+    const s = socketRef.current
+    if (s?.connected) s.emit('new-highlight', data)
+  }, [])
 
-  const broadcastHighlight = (data: any) => {
-    if (socketRef.current?.connected) {
-      console.log('📡 Broadcasting highlight:', data)
-      socketRef.current.emit('new-highlight', data)
-    }
-  }
+  const broadcastReflection = useCallback((data: { type: string; content: string }) => {
+    const s = socketRef.current
+    if (s?.connected) s.emit('reflection-updated', { ...data, userId, userName, documentId, timestamp: Date.now() })
+  }, [userId, userName, documentId])
 
-  const broadcastPeerInvitation = (data: any) => {
-    if (socketRef.current?.connected) {
-      console.log('📨 Broadcasting peer invitation:', data)
-      socketRef.current.emit('peer-chat-invitation', data)
-    }
-  }
+  const broadcastPeerInvitation = useCallback((data: any) => {
+    const s = socketRef.current
+    if (s?.connected) s.emit('peer-chat-invitation', data)
+  }, [])
 
-  const broadcastPeerAcceptance = (data: any) => {
-    if (socketRef.current?.connected) {
-      console.log('✅ Broadcasting peer acceptance:', data)
-      socketRef.current.emit('peer-chat-accepted', data)
-    }
-  }
+  const broadcastPeerAcceptance = useCallback((data: any) => {
+    const s = socketRef.current
+    if (s?.connected) s.emit('peer-chat-accepted', data)
+  }, [])
 
-  const broadcastPeerMessage = (data: any) => {
-    if (socketRef.current?.connected) {
-      console.log('💬 Broadcasting peer message:', data)
-      socketRef.current.emit('peer-chat-message', data)
-    }
-  }
+  const broadcastPeerMessage = useCallback((data: any) => {
+    const s = socketRef.current
+    if (s?.connected) s.emit('peer-chat-message', data)
+  }, [])
 
-  // ✅ ADD: Function to trigger session start
-  const broadcastSessionStart = (timestamp: number) => {
-    if (socketRef.current?.connected) {
-      console.log('🚀 Broadcasting Session Start:', timestamp)
-      socketRef.current.emit('session-start', {
-        documentId,
-        timestamp
-      })
-    }
-  }
-
-  const showUserClickInPDF = useCallback((highlight: any) => {
-    console.log('🎨 showUserClickInPDF called with:', highlight);
-
-    if (!webViewerInstance?.Core) return;
-
-    try {
-      const { annotationManager } = webViewerInstance.Core
-
-      const allAnnotations = annotationManager.getAnnotationsList();
-      const pageHighlights = allAnnotations.filter((ann: any) => {
-        const isHighlight = ann.Subject === 'Highlight' || ann.Subject === 'highlight';
-        const isCorrectPage = ann.PageNumber === highlight.pageNumber;
-        return isHighlight && isCorrectPage;
-      });
-
-      if (pageHighlights.length > 0) {
-        const targetAnnotation = pageHighlights[0];
-        const originalColor = targetAnnotation.StrokeColor;
-        targetAnnotation.StrokeColor = new webViewerInstance.Core.Annotations.Color(0, 255, 0);
-        annotationManager.redrawAnnotation(targetAnnotation);
-
-        setTimeout(() => {
-          targetAnnotation.StrokeColor = originalColor;
-          annotationManager.redrawAnnotation(targetAnnotation);
-        }, 2000);
-      }
-    } catch (error) {
-      console.error('❌ Error showing user click:', error)
-    }
-  }, [webViewerInstance])
+  const broadcastSessionStart = useCallback((timestamp: number) => {
+    const s = socketRef.current
+    if (s?.connected) s.emit('session-start', { documentId, timestamp })
+  }, [documentId])
 
   return {
     isConnected,
@@ -200,9 +174,9 @@ export function useRealtimeHighlights({
     broadcastPeerAcceptance,
     broadcastPeerMessage,
     broadcastSessionStart,
-    broadcastReflection, // ✅ Added this
+    broadcastReflection,
     incomingHighlights,
     clearIncomingHighlights,
-    broadcastHighlightDeletion: () => { },
+    broadcastHighlightDeletion: () => {},
   }
 }

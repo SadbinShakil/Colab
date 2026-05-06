@@ -18,10 +18,10 @@ interface SessionReportProps {
 // LIT-SENSE: REALISTIC SIMULATED DATA
 // ------------------------------------------------------------------
 const PAPER_DETAILS = {
-    title: "LitSense: A Framework for Human-AI Collaboration in Academic Reading",
+    title: "CoRead: A Framework for Human-AI Collaboration in Academic Reading",
     authors: "Smith, J., Doe, A., & Lee, K. (2025)",
     topic: "Human-Computer Interaction / AI",
-    reflectionSummary: "This paper presents a novel framework for human-AI collaboration in academic reading. It introduces 'LitSense', a system that uses gaze tracking and intent recognition to provide proactive, implicit assistance. Key findings suggest that implicit help significantly reduces cognitive load compared to traditional explicit tools.",
+    reflectionSummary: "This paper presents a novel framework for human-AI collaboration in academic reading. It introduces 'CoRead', a system that uses gaze tracking and intent recognition to provide proactive, implicit assistance. Key findings suggest that implicit help significantly reduces cognitive load compared to traditional explicit tools.",
     keyfindings: [
         "Implicit assistance reduced cognitive load by 40% vs explicit tools",
         "Gaze fixation duration is a reliable proxy for reader confusion",
@@ -87,7 +87,7 @@ export default function SessionReport({
                                     <span className="text-slate-400 text-xs font-mono uppercase tracking-wide">ID: {summary?.id || 'SESSION-2025-X99'}</span>
                                 </div>
                                 <h2 className="text-3xl font-black text-slate-800 tracking-tight">Overall Interaction Analysis</h2>
-                                <p className="text-sm text-slate-500 font-medium mt-1">Holistic assessment of "LitSense" reading session & collaboration</p>
+                                <p className="text-sm text-slate-500 font-medium mt-1">Holistic assessment of "CoRead" reading session & collaboration</p>
                             </div>
 
                             <div className="flex items-center gap-8">
@@ -365,7 +365,7 @@ export default function SessionReport({
                             <div className="flex gap-4 text-xs font-mono text-slate-400">
                                 <span>v2.4.0-stable</span>
                                 <span>•</span>
-                                <span>LitSense Analytics Engine</span>
+                                <span>CoRead Analytics Engine</span>
                             </div>
                             <div className="flex gap-3">
                                 <button onClick={onClose} className="px-6 py-2.5 rounded-xl text-sm font-bold text-slate-500 hover:text-slate-800 hover:bg-slate-50 transition-colors">

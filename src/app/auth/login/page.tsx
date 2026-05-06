@@ -87,7 +87,7 @@ export default function LoginPage() {
             <div className="w-10 h-10 bg-blue-600 rounded-xl flex items-center justify-center text-white shadow-md transition-transform group-hover:scale-105">
               <FileText size={20} fill="currentColor" />
             </div>
-            <span className="text-2xl font-bold text-gray-900 tracking-tight">LitSense</span>
+            <span className="text-2xl font-bold text-gray-900 tracking-tight">CoRead</span>
           </Link>
 
           <h1 className="text-5xl font-bold text-gray-900 leading-tight mb-6">
@@ -131,7 +131,7 @@ export default function LoginPage() {
 
             <div className="mb-8">
               <h2 className="text-2xl font-bold text-gray-900">Sign in</h2>
-              <p className="text-gray-500 mt-2 font-medium">to continue to LitSense</p>
+              <p className="text-gray-500 mt-2 font-medium">to continue to CoRead</p>
             </div>
 
             <form onSubmit={handleSubmit} className="space-y-5">
@@ -212,7 +212,7 @@ export default function LoginPage() {
             </div>
 
             <div className="mt-8 text-center text-sm">
-              <span className="text-gray-500 font-medium">New to LitSense? </span>
+              <span className="text-gray-500 font-medium">New to CoRead? </span>
               <Link href="/auth/signup" className="text-blue-700 font-bold hover:underline">
                 Create account
               </Link>

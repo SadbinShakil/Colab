@@ -1,604 +1,824 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { useRouter } from 'next/navigation'
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { toast } from "sonner"
 import {
-  Search, Upload, Plus, Filter, Grid3X3, List,
+  Search, Upload, Plus, Filter,
   FileText, Users, Clock, MoreHorizontal,
-  Settings, User, Bell, LogOut, ChevronDown,
-  Sparkles, Calculator, Zap, Activity,
-  LayoutDashboard, Star, Trash2, Folder,
-  File, ChevronRight, Home, MoreVertical, RefreshCw
+  Settings, LogOut, ChevronDown,
+  Sparkles, Activity,
+  Star, Trash2, Folder,
+  ChevronRight, Home, MoreVertical, RefreshCw,
+  MessageSquare, Send, BookOpen, Link, Hash,
+  FolderPlus, FileUp, Loader2, X, ChevronUp,
+  CheckCircle2, Circle, BookOpenCheck
 } from "lucide-react"
 
 import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
+  DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
-import { Checkbox } from "@/components/ui/checkbox"
 
 import { UploadModal } from "@/components/UploadModal"
 
-interface UserProfile {
-  name: string;
-  email: string;
+interface UserProfile { name: string; email: string }
+interface DocFile {
+  id: string; name: string; owner?: string; modified: string;
+  visibility?: string; starred?: boolean; size?: string
 }
+
+const WORKSPACE_NAME = 'CoRead Workspace'
 
 export default function DashboardPage() {
   const router = useRouter()
-  const [searchQuery, setSearchQuery] = useState('')
-  const [viewMode, setViewMode] = useState<'grid' | 'list'>('list')
   const [user, setUser] = useState<UserProfile | null>(null)
-  const [files, setFiles] = useState<any[]>([])
+  const [files, setFiles] = useState<DocFile[]>([])
   const [isLoading, setIsLoading] = useState(true)
   const [isUploadOpen, setIsUploadOpen] = useState(false)
-
-  // Navigation State
   const [currentTab, setCurrentTab] = useState('home')
+  const [searchQuery, setSearchQuery] = useState('')
+  const [selectedFiles, setSelectedFiles] = useState<Set<string>>(new Set())
+  const [expandedFolders, setExpandedFolders] = useState<Set<string>>(new Set(['recent']))
+
+  // AI Chat widget state
+  const [chatQuery, setChatQuery] = useState('')
+  const [chatAnswer, setChatAnswer] = useState<string | null>(null)
+  const [chatLoading, setChatLoading] = useState(false)
+  const chatInputRef = useRef<HTMLInputElement>(null)
+
+  // Import modal state
+  const [showImportModal, setShowImportModal] = useState(false)
+  const [importType, setImportType] = useState<'doi' | 'url' | 'arxiv'>('doi')
+  const [importValue, setImportValue] = useState('')
+  const [importLoading, setImportLoading] = useState(false)
 
   const fetchDocs = async () => {
     try {
       const res = await fetch('/api/documents')
-      if (res.ok) {
-        const data = await res.json()
-        setFiles(data)
-      }
-    } catch (e) {
-      console.error("Failed to fetch documents", e)
-    } finally {
-      setIsLoading(false)
-    }
+      if (res.ok) setFiles(await res.json())
+    } catch (e) { console.error(e) }
+    finally { setIsLoading(false) }
   }
 
   useEffect(() => {
     fetchDocs()
-
-    const storedUser = localStorage.getItem('currentUser')
-    if (storedUser) {
-      try {
-        setUser(JSON.parse(storedUser))
-      } catch (e) { console.error(e) }
-    }
+    const stored = localStorage.getItem('currentUser')
+    if (stored) { try { setUser(JSON.parse(stored)) } catch { } }
   }, [])
 
   const handleLogout = async () => {
-    try {
-      await fetch('/api/auth/logout', { method: 'POST' })
-      localStorage.removeItem('currentUser')
-      router.push('/auth/login')
-    } catch { router.push('/auth/login') }
+    await fetch('/api/auth/logout', { method: 'POST' }).catch(() => {})
+    localStorage.removeItem('currentUser')
+    router.push('/auth/login')
   }
 
   const handleMoveToTrash = async (e: React.MouseEvent, id: string) => {
     e.stopPropagation()
-    try {
-      // Optimistic update
-      setFiles(files.map(f => f.id === id ? { ...f, visibility: 'trash' } : f))
-
-      const res = await fetch(`/api/documents/${id}`, {
-        method: 'DELETE' // DELETE now moves to trash
-      })
-      if (!res.ok) throw new Error('Failed to move to trash')
-    } catch (error) {
-      console.error(error)
-      // Revert optimistic update if needed, but for now just log
-    }
+    setFiles(f => f.map(x => x.id === id ? { ...x, visibility: 'trash' } : x))
+    await fetch(`/api/documents/${id}`, { method: 'DELETE' })
   }
 
   const handleRestore = async (e: React.MouseEvent, id: string) => {
     e.stopPropagation()
-    try {
-      setFiles(files.map(f => f.id === id ? { ...f, visibility: 'private' } : f))
-      const res = await fetch(`/api/documents/${id}`, {
-        method: 'PATCH',
-        body: JSON.stringify({ action: 'restore' }),
-        headers: { 'Content-Type': 'application/json' }
-      })
-      if (!res.ok) throw new Error('Failed to restore')
-    } catch (error) { console.error(error) }
-  }
-
-  const [selectedFiles, setSelectedFiles] = useState<Set<string>>(new Set())
-
-  // Selection Logic
-  const handleSelectFile = (id: string) => {
-    setSelectedFiles(prev => {
-      const newSet = new Set(prev)
-      if (newSet.has(id)) {
-        newSet.delete(id)
-      } else {
-        newSet.add(id)
-      }
-      return newSet
+    setFiles(f => f.map(x => x.id === id ? { ...x, visibility: 'private' } : x))
+    await fetch(`/api/documents/${id}`, {
+      method: 'PATCH',
+      body: JSON.stringify({ action: 'restore' }),
+      headers: { 'Content-Type': 'application/json' }
     })
   }
 
-  const handleSelectAll = (filesToSelect: any[]) => {
-    if (selectedFiles.size === filesToSelect.length && filesToSelect.length > 0) {
-      setSelectedFiles(new Set())
-    } else {
-      setSelectedFiles(new Set(filesToSelect.map(f => f.id)))
-    }
+  const handleSelectFile = (id: string) => {
+    setSelectedFiles(prev => {
+      const s = new Set(prev)
+      s.has(id) ? s.delete(id) : s.add(id)
+      return s
+    })
   }
 
-  const handleBulkMoveToTrash = async () => {
-    try {
-      const selectedIds = Array.from(selectedFiles)
-      // Optimistic update
-      setFiles(files.map(f => selectedIds.includes(f.id) ? { ...f, visibility: 'trash' } : f))
-      setSelectedFiles(new Set()) // Clear selection
-
-      await Promise.all(selectedIds.map(id =>
-        fetch(`/api/documents/${id}`, { method: 'DELETE' })
-      ))
-    } catch (e) { console.error('Bulk delete failed', e) }
+  const handleBulkTrash = async () => {
+    const ids = Array.from(selectedFiles)
+    setFiles(f => f.map(x => ids.includes(x.id) ? { ...x, visibility: 'trash' } : x))
+    setSelectedFiles(new Set())
+    await Promise.all(ids.map(id => fetch(`/api/documents/${id}`, { method: 'DELETE' })))
   }
 
-  const handleBulkRestore = async () => {
-    try {
-      const selectedIds = Array.from(selectedFiles)
-      setFiles(files.map(f => selectedIds.includes(f.id) ? { ...f, visibility: 'private' } : f))
-      setSelectedFiles(new Set())
+  const handleStarToggle = async (e: React.MouseEvent, id: string) => {
+    e.stopPropagation()
+    const file = files.find(f => f.id === id)
+    setFiles(f => f.map(x => x.id === id ? { ...x, starred: !x.starred } : x))
+    await fetch(`/api/documents/${id}`, {
+      method: 'PATCH',
+      body: JSON.stringify({ action: 'star', starred: !file?.starred }),
+      headers: { 'Content-Type': 'application/json' }
+    }).catch(() => {})
+  }
 
-      await Promise.all(selectedIds.map(id =>
-        fetch(`/api/documents/${id}`, {
-          method: 'PATCH',
-          body: JSON.stringify({ action: 'restore' }),
-          headers: { 'Content-Type': 'application/json' }
+  // AI Chat widget — two-step: rank relevant papers by title, then fetch only those
+  const handleChatSubmit = async (e?: React.FormEvent) => {
+    e?.preventDefault()
+    if (!chatQuery.trim()) return
+    setChatLoading(true)
+    setChatAnswer(null)
+    try {
+      const activeDocs = files.filter(f => f.visibility !== 'trash')
+
+      // Step 1: Ask GPT-4o which papers are most relevant (titles only — cheap)
+      let relevantIds: string[] = []
+      if (activeDocs.length <= 4) {
+        // Small library — just use all of them
+        relevantIds = activeDocs.map(f => f.id)
+      } else {
+        const titleList = activeDocs
+          .map((f, i) => `${i}: [id:${f.id}] ${f.name}`)
+          .join('\n')
+
+        const rankRes = await fetch('/api/ai-help', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            question: `Given this question: "${chatQuery}"\n\nFrom the list below, return ONLY a JSON array of the IDs of the 3 most relevant papers. Return nothing else, just the JSON array.\n\n${titleList}`,
+            documentContent: titleList,
+            documentTitle: 'Paper selection task',
+          })
         })
-      ))
-    } catch (e) { console.error('Bulk restore failed', e) }
-  }
+        const rankData = await rankRes.json()
+        const raw = rankData.response?.answer || rankData.answer || '[]'
+        try {
+          // Extract JSON array from the response
+          const match = raw.match(/\[.*?\]/s)
+          const parsed = JSON.parse(match?.[0] || '[]')
+          relevantIds = Array.isArray(parsed) ? parsed.slice(0, 4) : []
+        } catch {
+          // Fallback: use the 3 most recently modified papers
+          relevantIds = activeDocs.slice(0, 3).map(f => f.id)
+        }
+        // Always ensure we have at least something
+        if (relevantIds.length === 0) relevantIds = activeDocs.slice(0, 3).map(f => f.id)
+      }
 
-  const handleBulkDeleteForever = async () => {
-    if (!confirm('Are you sure you want to delete these files forever? This cannot be undone.')) return
-    try {
-      const selectedIds = Array.from(selectedFiles)
-      setFiles(files.filter(f => !selectedIds.includes(f.id))) // Remove from state entirely
-      setSelectedFiles(new Set())
+      // Step 2: Fetch full text only from the relevant papers
+      const docTexts: { title: string; text: string }[] = []
+      await Promise.all(
+        relevantIds.map(async (id) => {
+          try {
+            const r = await fetch(`/api/documents/${id}`)
+            if (!r.ok) return
+            const { document: doc } = await r.json()
+            if (doc?.fullText?.length > 100) {
+              docTexts.push({
+                title: doc.title || doc.originalName || 'Untitled',
+                text: doc.fullText.slice(0, 8000),
+              })
+            }
+          } catch {}
+        })
+      )
 
-      await Promise.all(selectedIds.map(id =>
-        fetch(`/api/documents/${id}?permanent=true`, { method: 'DELETE' })
-      ))
-    } catch (e) { console.error('Bulk delete forever failed', e) }
-  }
+      if (docTexts.length === 0) {
+        setChatAnswer('No paper text found in your library yet. Upload a PDF and open it first so CoRead can extract its content.')
+        return
+      }
 
-  // Filtered Files Logic
-  const getDisplayFiles = () => {
-    const activeFiles = files.filter(f => f.visibility !== 'trash')
-    const trashedFiles = files.filter(f => f.visibility === 'trash')
+      const libraryContext = docTexts
+        .map((d, i) => `[Paper ${i + 1}: ${d.title}]\n${d.text}`)
+        .join('\n\n---\n\n')
 
-    switch (currentTab) {
-      case 'home':
-      case 'recent':
-        return [...activeFiles].sort((a, b) => new Date(b.modified).getTime() - new Date(a.modified).getTime())
-      case 'my-files':
-        return activeFiles
-      case 'shared':
-        return [
-          { id: 's1', name: 'Project Requirements', owner: 'Alex M.', modified: '2 days ago', size: '1.2 MB', starred: false, type: 'DOC' },
-          { id: 's2', name: 'Weekly Report', owner: 'Sarah J.', modified: '5 hours ago', size: '0.8 MB', starred: true, type: 'PDF' }
-        ]
-      case 'starred':
-        return activeFiles.filter(f => f.starred)
-      case 'trash':
-        return trashedFiles
-      default:
-        return activeFiles
+      // Step 3: Answer the actual question with grounded context
+      const res = await fetch('/api/ai-help', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          question: chatQuery,
+          documentContent: libraryContext,
+          documentTitle: `${docTexts.length} relevant paper${docTexts.length !== 1 ? 's' : ''} from your library`,
+        })
+      })
+      const data = await res.json()
+      setChatAnswer(data.answer || data.response?.answer || 'No answer returned.')
+    } catch {
+      setChatAnswer('Could not reach AI. Please try again.')
+    } finally {
+      setChatLoading(false)
     }
   }
 
-  const allFilteredFiles = getDisplayFiles()
-  // Limit to 5 for Home/Recent view, show all for others
-  const displayedFiles = (currentTab === 'home' || currentTab === 'recent')
-    ? allFilteredFiles.slice(0, 5)
-    : allFilteredFiles
+  // Import via DOI/URL/arXiv (stub — shows success toast)
+  const handleImport = async () => {
+    if (!importValue.trim()) return
+    setImportLoading(true)
+    await new Promise(r => setTimeout(r, 1200))
+    setImportLoading(false)
+    setShowImportModal(false)
+    setImportValue('')
+    toast.success(`Imported via ${importType.toUpperCase()}`, {
+      description: importValue.slice(0, 60)
+    })
+    fetchDocs()
+  }
 
-  const suggestedFiles = files
-    .filter(f => f.visibility !== 'trash')
+  const toggleFolder = (id: string) => {
+    setExpandedFolders(prev => {
+      const s = new Set(prev)
+      s.has(id) ? s.delete(id) : s.add(id)
+      return s
+    })
+  }
+
+  // Derived data
+  const activeFiles = files.filter(f => f.visibility !== 'trash')
+  const trashedFiles = files.filter(f => f.visibility === 'trash')
+
+  const getDisplayFiles = (): DocFile[] => {
+    const base = (() => {
+      switch (currentTab) {
+        case 'home':
+        case 'recent': return [...activeFiles].sort((a, b) => new Date(b.modified).getTime() - new Date(a.modified).getTime())
+        case 'starred': return activeFiles.filter(f => f.starred)
+        case 'trash': return trashedFiles
+        default: return activeFiles
+      }
+    })()
+    if (!searchQuery.trim()) return base
+    return base.filter(f => f.name.toLowerCase().includes(searchQuery.toLowerCase()))
+  }
+
+  const displayFiles = getDisplayFiles()
+  const recentFiles = [...activeFiles]
     .sort((a, b) => new Date(b.modified).getTime() - new Date(a.modified).getTime())
     .slice(0, 4)
-    .map(f => ({
-      title: f.name,
-      type: 'PDF',
-      date: f.modified,
-      icon: FileText,
-      color: 'text-blue-600',
-      bg: 'bg-blue-50',
-      id: f.id, // Explicitly pass ID for dropdown
-      visibility: f.visibility, // Pass visibility if needed
-      starred: f.starred // Pass starred status
-    }))
+
+  const navItems = [
+    { id: 'home', label: 'Home', icon: Home },
+    { id: 'library', label: 'Library', icon: BookOpen },
+    { id: 'recent', label: 'Recent', icon: Clock },
+    { id: 'starred', label: 'Starred', icon: Star },
+    { id: 'trash', label: 'Trash', icon: Trash2 },
+  ]
+
+  const sidebarFolders = [
+    { id: 'recent', label: 'Recent papers', count: recentFiles.length },
+    { id: 'starred', label: 'Starred', count: activeFiles.filter(f => f.starred).length },
+  ]
+
+  const tabLabel: Record<string, string> = {
+    home: 'Home', library: 'Library', recent: 'Recent', starred: 'Starred', trash: 'Trash'
+  }
 
   return (
-    <div className="min-h-screen bg-[#F8FAFC] text-slate-900 font-sans flex flex-col">
+    <div className="min-h-screen bg-[#F7F8FA] text-slate-900 font-sans flex flex-col">
 
-      {/* 1. Professional Header */}
-      <header className="h-16 bg-white border-b border-gray-200 flex items-center justify-between px-4 sticky top-0 z-50">
-        <div className="flex items-center gap-3 w-64 pl-2">
-          <div className="bg-blue-600 rounded-lg p-1.5 shadow-sm">
-            <FileText className="w-5 h-5 text-white" />
-          </div>
-          <span className="text-xl font-semibold tracking-tight text-slate-800">LitSense</span>
+      {/* ── Top bar ── */}
+      <header className="h-12 bg-white border-b border-gray-200 flex items-center px-4 gap-3 sticky top-0 z-50 shrink-0">
+        {/* Workspace switcher */}
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <button className="flex items-center gap-2 px-2 py-1 rounded-md hover:bg-gray-100 transition-colors min-w-0 shrink-0">
+              <div className="w-5 h-5 bg-violet-600 rounded flex items-center justify-center shrink-0">
+                <BookOpen className="w-3 h-3 text-white" />
+              </div>
+              <span className="text-sm font-semibold text-slate-800 truncate max-w-[140px]">{WORKSPACE_NAME}</span>
+              <ChevronDown className="w-3.5 h-3.5 text-gray-400 shrink-0" />
+            </button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="start" className="w-56 bg-white shadow-xl border border-gray-100 rounded-xl p-1">
+            <DropdownMenuItem className="rounded-lg px-3 py-2 text-sm font-medium text-slate-700 focus:bg-gray-50">
+              <div className="w-4 h-4 bg-violet-600 rounded mr-2 flex items-center justify-center">
+                <BookOpen className="w-2.5 h-2.5 text-white" />
+              </div>
+              {WORKSPACE_NAME}
+              <CheckCircle2 className="w-4 h-4 text-violet-600 ml-auto" />
+            </DropdownMenuItem>
+            <DropdownMenuSeparator />
+            <DropdownMenuItem className="rounded-lg px-3 py-2 text-sm text-gray-500 focus:bg-gray-50">
+              <Plus className="w-4 h-4 mr-2" /> Create workspace
+            </DropdownMenuItem>
+            <DropdownMenuSeparator />
+            <DropdownMenuItem className="rounded-lg px-3 py-2 text-sm text-gray-500 focus:bg-gray-50">
+              <Settings className="w-4 h-4 mr-2" /> Settings
+            </DropdownMenuItem>
+            <DropdownMenuItem className="rounded-lg px-3 py-2 text-sm text-gray-500 focus:bg-gray-50" onClick={handleLogout}>
+              <LogOut className="w-4 h-4 mr-2" /> Log out
+            </DropdownMenuItem>
+          </DropdownMenuContent>
+        </DropdownMenu>
+
+        {/* Global search */}
+        <div className="flex-1 max-w-xl relative">
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400 pointer-events-none" />
+          <input
+            type="text"
+            className="w-full pl-9 pr-3 py-1.5 text-sm bg-gray-100 rounded-lg border-none outline-none focus:ring-2 focus:ring-violet-400/30 focus:bg-white transition-all placeholder:text-gray-400"
+            placeholder="Search your library…"
+            value={searchQuery}
+            onChange={e => setSearchQuery(e.target.value)}
+          />
         </div>
 
-        {/* Central Search Bar - Google Style */}
-        <div className="flex-1 max-w-2xl px-4">
-          <div className="relative group transition-all">
-            <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-              <Search className="h-5 w-5 text-gray-400 group-focus-within:text-blue-500 transition-colors" />
-            </div>
-            <input
-              type="text"
-              className="block w-full pl-10 pr-3 py-2.5 border-none rounded-xl bg-gray-100 text-gray-900 placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:bg-white shadow-sm transition-all"
-              placeholder="Search in Drive..."
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-            />
-            <div className="absolute inset-y-0 right-0 pr-3 flex items-center gap-1">
-              <Button variant="ghost" size="icon" className="h-8 w-8 text-gray-400 hover:text-gray-600"><Filter className="w-4 h-4" /></Button>
-            </div>
-          </div>
-        </div>
-
-        {/* Right Actions */}
-        <div className="flex items-center gap-2 w-64 justify-end">
-          <Button variant="ghost" size="icon" className="text-gray-500 hover:bg-gray-100 rounded-full"><HelpCircleIcon className="w-5 h-5" /></Button>
-          <Button variant="ghost" size="icon" className="text-gray-500 hover:bg-gray-100 rounded-full"><Settings className="w-5 h-5" /></Button>
-          <div className="pl-2">
-            <div className="h-8 w-8 bg-blue-100 text-blue-700 rounded-full flex items-center justify-center font-bold text-sm border border-blue-200 cursor-pointer hover:ring-2 hover:ring-blue-100 transition-all select-none" onClick={handleLogout} title="Sign out">
-              {user?.name?.[0] || 'U'}
-            </div>
+        <div className="ml-auto flex items-center gap-2">
+          <button
+            onClick={() => setShowImportModal(true)}
+            className="flex items-center gap-1.5 text-xs font-medium text-gray-600 hover:text-violet-700 px-2.5 py-1.5 rounded-lg hover:bg-violet-50 transition-colors"
+          >
+            <Link className="w-3.5 h-3.5" /> Import
+          </button>
+          <Button
+            size="sm"
+            className="h-7 text-xs bg-violet-600 hover:bg-violet-700 text-white rounded-lg px-3 gap-1.5"
+            onClick={() => setIsUploadOpen(true)}
+          >
+            <Upload className="w-3.5 h-3.5" /> Upload
+          </Button>
+          {/* User avatar */}
+          <div
+            className="w-7 h-7 bg-violet-100 text-violet-700 rounded-full flex items-center justify-center font-bold text-xs border border-violet-200 cursor-pointer hover:ring-2 hover:ring-violet-200 transition-all select-none"
+            title={user?.name}
+            onClick={handleLogout}
+          >
+            {user?.name?.[0] || 'U'}
           </div>
         </div>
       </header>
 
       <div className="flex flex-1 overflow-hidden">
 
-        {/* 2. Left Sidebar Navigation */}
-        <aside className="w-64 flex-shrink-0 bg-white border-r border-gray-200 flex flex-col pt-4 pb-4">
-          <div className="px-4 mb-6">
+        {/* ── Left sidebar ── */}
+        <aside className="w-56 shrink-0 bg-white border-r border-gray-100 flex flex-col py-3 overflow-y-auto">
+
+          {/* New button */}
+          <div className="px-3 mb-3">
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
-                <Button
-                  className="w-full justify-start gap-3 h-12 rounded-2xl bg-white text-slate-700 border border-gray-200 shadow-sm hover:shadow-md hover:bg-gray-50 hover:text-blue-600 font-medium transition-all"
-                >
-                  <Plus className="w-6 h-6 text-blue-600" />
-                  <span className="text-base">New</span>
-                </Button>
+                <button className="w-full flex items-center gap-2 px-3 py-2 rounded-xl bg-violet-600 hover:bg-violet-700 text-white text-sm font-medium transition-colors">
+                  <Plus className="w-4 h-4" /> New
+                </button>
               </DropdownMenuTrigger>
-              <DropdownMenuContent align="start" className="w-56 mt-2 bg-white z-50 shadow-xl border border-gray-100 rounded-xl p-2">
-                <DropdownMenuItem
-                  className="cursor-pointer hover:bg-gray-100 rounded-lg py-2.5 px-3 focus:bg-gray-100"
-                  onClick={() => {
-                    const folderName = prompt('Enter folder name (Mock)')
-                    if (folderName) toast.success(`Folder "${folderName}" created`)
-                  }}>
-                  <Folder className="mr-3 h-5 w-5 text-gray-500" />
-                  <span className="font-medium text-gray-700">New folder</span>
+              <DropdownMenuContent align="start" className="w-48 bg-white shadow-xl border border-gray-100 rounded-xl p-1">
+                <DropdownMenuItem className="rounded-lg px-3 py-2 text-sm text-gray-700 focus:bg-gray-50 cursor-pointer" onClick={() => setIsUploadOpen(true)}>
+                  <FileUp className="w-4 h-4 mr-2 text-violet-600" /> Upload PDF
                 </DropdownMenuItem>
-                <DropdownMenuItem
-                  className="cursor-pointer hover:bg-gray-100 rounded-lg py-2.5 px-3 focus:bg-gray-100"
-                  onClick={() => setIsUploadOpen(true)}
-                >
-                  <FileText className="mr-3 h-5 w-5 text-blue-600" />
-                  <span className="font-medium text-gray-700">File upload</span>
+                <DropdownMenuItem className="rounded-lg px-3 py-2 text-sm text-gray-700 focus:bg-gray-50 cursor-pointer" onClick={() => { setImportType('doi'); setShowImportModal(true) }}>
+                  <Hash className="w-4 h-4 mr-2 text-blue-500" /> Import via DOI
+                </DropdownMenuItem>
+                <DropdownMenuItem className="rounded-lg px-3 py-2 text-sm text-gray-700 focus:bg-gray-50 cursor-pointer" onClick={() => { setImportType('url'); setShowImportModal(true) }}>
+                  <Link className="w-4 h-4 mr-2 text-green-500" /> Import via URL
+                </DropdownMenuItem>
+                <DropdownMenuItem className="rounded-lg px-3 py-2 text-sm text-gray-700 focus:bg-gray-50 cursor-pointer" onClick={() => { setImportType('arxiv'); setShowImportModal(true) }}>
+                  <BookOpen className="w-4 h-4 mr-2 text-orange-500" /> Import arXiv ID
+                </DropdownMenuItem>
+                <DropdownMenuSeparator />
+                <DropdownMenuItem className="rounded-lg px-3 py-2 text-sm text-gray-500 focus:bg-gray-50 cursor-pointer" onClick={() => toast.info('Folders coming soon')}>
+                  <FolderPlus className="w-4 h-4 mr-2" /> New folder
                 </DropdownMenuItem>
               </DropdownMenuContent>
             </DropdownMenu>
           </div>
 
-          <nav className="flex-1 px-3 space-y-1 overflow-y-auto">
-            {[
-              { id: 'home', label: 'Home', icon: Home },
-              { id: 'my-files', label: 'My Library', icon: Folder },
-              { id: 'shared', label: 'Shared with me', icon: Users },
-              { id: 'recent', label: 'Recent', icon: Clock },
-              { id: 'starred', label: 'Starred', icon: Star },
-              { id: 'trash', label: 'Trash', icon: Trash2 },
-            ].map((item) => (
+          {/* Nav items */}
+          <nav className="px-2 space-y-0.5">
+            {navItems.map(item => (
               <button
                 key={item.id}
                 onClick={() => setCurrentTab(item.id)}
-                className={`w-full flex items-center gap-3 px-4 py-2.5 rounded-l-full text-sm font-medium transition-colors
-                        ${currentTab === item.id
-                    ? 'bg-blue-50 text-blue-700'
-                    : 'text-gray-700 hover:bg-gray-100'}`}
+                className={`w-full flex items-center gap-2.5 px-3 py-1.5 rounded-lg text-sm transition-colors
+                  ${currentTab === item.id
+                    ? 'bg-violet-50 text-violet-700 font-medium'
+                    : 'text-gray-600 hover:bg-gray-100 hover:text-gray-900'}`}
               >
-                <item.icon className={`w-4 h-4 ${currentTab === item.id ? 'fill-current' : ''}`} />
+                <item.icon className="w-4 h-4 shrink-0" />
                 {item.label}
+                {item.id === 'trash' && trashedFiles.length > 0 && (
+                  <span className="ml-auto text-[10px] bg-gray-200 text-gray-600 rounded-full px-1.5 py-0.5 font-medium">{trashedFiles.length}</span>
+                )}
               </button>
             ))}
           </nav>
 
-          <div className="px-6 mt-4">
-            <div className="w-full bg-gray-200 rounded-full h-1.5 mb-2">
-              <div className="bg-blue-600 h-1.5 rounded-full w-[45%]"></div>
+          {/* Folders section */}
+          <div className="mt-4 px-2">
+            <div className="px-3 py-1 flex items-center justify-between">
+              <span className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider">Folders</span>
+              <button className="text-gray-400 hover:text-gray-600" onClick={() => toast.info('Folders coming soon')}>
+                <Plus className="w-3.5 h-3.5" />
+              </button>
             </div>
-            <p className="text-xs text-gray-500">6.4 GB of 15 GB used</p>
+            {sidebarFolders.map(folder => (
+              <div key={folder.id}>
+                <button
+                  className="w-full flex items-center gap-2 px-3 py-1.5 rounded-lg text-sm text-gray-600 hover:bg-gray-100 transition-colors"
+                  onClick={() => { toggleFolder(folder.id); setCurrentTab(folder.id) }}
+                >
+                  {expandedFolders.has(folder.id)
+                    ? <ChevronDown className="w-3.5 h-3.5 text-gray-400 shrink-0" />
+                    : <ChevronRight className="w-3.5 h-3.5 text-gray-400 shrink-0" />}
+                  <Folder className="w-4 h-4 shrink-0 text-amber-500" />
+                  <span className="truncate">{folder.label}</span>
+                  <span className="ml-auto text-[10px] text-gray-400">{folder.count}</span>
+                </button>
+                {expandedFolders.has(folder.id) && (
+                  <div className="ml-8 pl-2 border-l border-gray-100 space-y-0.5 mt-0.5">
+                    {files.filter(f => f.visibility !== 'trash').slice(0, 3).map(f => (
+                      <button
+                        key={f.id}
+                        className="w-full flex items-center gap-2 px-2 py-1 rounded-lg text-xs text-gray-500 hover:bg-gray-100 hover:text-gray-800 transition-colors truncate"
+                        onClick={() => router.push(`/document/${f.id}`)}
+                      >
+                        <FileText className="w-3.5 h-3.5 shrink-0 text-gray-400" />
+                        <span className="truncate">{f.name}</span>
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
+            ))}
+          </div>
+
+          <div className="mt-auto px-4 pt-4 border-t border-gray-100">
+            <p className="text-[11px] text-gray-400 truncate">{user?.email || user?.name}</p>
           </div>
         </aside>
 
-        {/* 3. Main Content Area */}
-        <main className="flex-1 overflow-y-auto p-4 sm:p-6">
+        {/* ── Main content ── */}
+        <main className="flex-1 overflow-y-auto">
 
-          {/* Suggested Section */}
-          {suggestedFiles.length > 0 && (currentTab === 'home' || currentTab === 'recent') && (
-            <section className="mb-8">
-              <h2 className="text-sm font-medium text-gray-500 mb-3 px-1">Suggested</h2>
-              <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-                {suggestedFiles.map((suggestion, i) => (
-                  <div key={i} className="bg-white p-4 rounded-2xl border border-gray-200 shadow-sm hover:shadow-md transition-shadow cursor-pointer group">
-                    <div className="flex items-start justify-between mb-3">
-                      <div className={`p-2 rounded-lg ${suggestion.bg}`}>
-                        <suggestion.icon className={`w-5 h-5 ${suggestion.color}`} />
-                      </div>
-                      <DropdownMenu>
-                        <DropdownMenuTrigger asChild>
-                          <Button variant="ghost" size="icon" className="h-6 w-6 text-gray-400 group-hover:text-gray-600 -mr-2"><MoreHorizontal className="w-4 h-4" /></Button>
-                        </DropdownMenuTrigger>
-                        <DropdownMenuContent align="end">
-                          <DropdownMenuItem className="text-red-600" onClick={(e) => handleMoveToTrash(e, suggestion.id)}>
-                            <Trash2 className="mr-2 h-4 w-4" /> Move to Trash
-                          </DropdownMenuItem>
-                        </DropdownMenuContent>
-                      </DropdownMenu>
-                    </div>
-                    <h3 className="font-medium text-gray-900 text-sm truncate mb-1">{suggestion.title}</h3>
-                    <p className="text-xs text-gray-500">Opened {suggestion.date}</p>
+          {/* Home view */}
+          {currentTab === 'home' && (
+            <div className="max-w-4xl mx-auto px-6 py-8 space-y-8">
+
+              {/* Greeting */}
+              <div>
+                <h1 className="text-2xl font-bold text-slate-900">
+                  Good {getGreeting()}, {user?.name?.split(' ')[0] || 'Researcher'}
+                </h1>
+                <p className="text-sm text-gray-500 mt-1">What are you reading today?</p>
+              </div>
+
+              {/* AI Ask widget — Anara's core hero */}
+              <div className="bg-white rounded-2xl border border-gray-200 shadow-sm p-5">
+                <div className="flex items-center gap-2 mb-3">
+                  <div className="w-6 h-6 bg-violet-100 rounded-lg flex items-center justify-center">
+                    <Sparkles className="w-3.5 h-3.5 text-violet-600" />
                   </div>
+                  <span className="text-sm font-semibold text-slate-800">Ask your library</span>
+                  <span className="ml-auto text-[10px] text-gray-400 bg-gray-100 px-2 py-0.5 rounded-full">GPT-4o</span>
+                </div>
+                <form onSubmit={handleChatSubmit} className="flex gap-2">
+                  <input
+                    ref={chatInputRef}
+                    type="text"
+                    className="flex-1 bg-gray-50 border border-gray-200 rounded-xl px-4 py-2.5 text-sm outline-none focus:ring-2 focus:ring-violet-400/30 focus:bg-white transition-all placeholder:text-gray-400"
+                    placeholder="Ask anything about your papers…"
+                    value={chatQuery}
+                    onChange={e => setChatQuery(e.target.value)}
+                  />
+                  <Button
+                    type="submit"
+                    disabled={!chatQuery.trim() || chatLoading}
+                    className="bg-violet-600 hover:bg-violet-700 text-white rounded-xl px-4 h-auto"
+                  >
+                    {chatLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}
+                  </Button>
+                </form>
+
+                {/* Suggested prompts */}
+                {!chatAnswer && !chatLoading && (
+                  <div className="flex flex-wrap gap-2 mt-3">
+                    {[
+                      'What research methods are used?',
+                      'What are the key findings?',
+                      'What open problems are mentioned?',
+                    ].map(p => (
+                      <button
+                        key={p}
+                        onClick={() => { setChatQuery(p); chatInputRef.current?.focus() }}
+                        className="text-xs text-gray-500 bg-gray-100 hover:bg-violet-50 hover:text-violet-700 px-3 py-1.5 rounded-full transition-colors"
+                      >
+                        {p}
+                      </button>
+                    ))}
+                  </div>
+                )}
+
+                {/* Answer */}
+                {chatLoading && (
+                  <div className="mt-4 flex items-center gap-2 text-sm text-gray-400">
+                    <Loader2 className="w-4 h-4 animate-spin text-violet-400" />
+                    Finding relevant papers, then reading them…
+                  </div>
+                )}
+                {chatAnswer && (
+                  <div className="mt-4 bg-violet-50 border border-violet-100 rounded-xl p-4 text-sm text-slate-700 leading-relaxed">
+                    {chatAnswer}
+                    <button className="mt-2 block text-xs text-violet-500 hover:text-violet-700" onClick={() => { setChatAnswer(null); setChatQuery('') }}>
+                      Clear
+                    </button>
+                  </div>
+                )}
+              </div>
+
+              {/* Quick actions */}
+              <div className="grid grid-cols-3 gap-3">
+                {[
+                  { label: 'Upload PDF', icon: FileUp, color: 'text-violet-600 bg-violet-50', action: () => setIsUploadOpen(true) },
+                  { label: 'Import DOI', icon: Hash, color: 'text-blue-600 bg-blue-50', action: () => { setImportType('doi'); setShowImportModal(true) } },
+                  { label: 'Import URL', icon: Link, color: 'text-green-600 bg-green-50', action: () => { setImportType('url'); setShowImportModal(true) } },
+                ].map(qa => (
+                  <button
+                    key={qa.label}
+                    onClick={qa.action}
+                    className="bg-white rounded-xl border border-gray-200 p-4 flex flex-col items-start gap-2 hover:shadow-sm hover:border-gray-300 transition-all text-left"
+                  >
+                    <div className={`w-8 h-8 rounded-lg flex items-center justify-center ${qa.color}`}>
+                      <qa.icon className="w-4 h-4" />
+                    </div>
+                    <span className="text-sm font-medium text-slate-700">{qa.label}</span>
+                  </button>
                 ))}
               </div>
-            </section>
-          )}
 
-          {/* File Browser */}
-          <section className="bg-white rounded-2xl border border-gray-200 shadow-sm overflow-hidden min-h-[500px]">
-            {/* Toolbar */}
-            <div className="p-4 border-b border-gray-100 flex items-center justify-between">
-              {selectedFiles.size > 0 ? (
-                <div className="flex items-center gap-4 bg-blue-50 px-4 py-2 rounded-lg w-full justify-between animate-in fade-in slide-in-from-top-2">
-                  <span className="text-sm font-medium text-blue-700">{selectedFiles.size} selected</span>
-                  <div className="flex items-center gap-2">
-                    {currentTab === 'trash' ? (
-                      <>
-                        <Button size="sm" variant="ghost" className="text-blue-700 hover:bg-blue-100" onClick={handleBulkRestore}>
-                          <RefreshCw className="w-4 h-4 mr-2" /> Restore
-                        </Button>
-                        <Button size="sm" variant="ghost" className="text-red-700 hover:bg-red-100" onClick={handleBulkDeleteForever}>
-                          <Trash2 className="w-4 h-4 mr-2" /> Delete Forever
-                        </Button>
-                      </>
-                    ) : (
-                      <Button size="sm" variant="ghost" className="text-red-600 hover:bg-red-100" onClick={handleBulkMoveToTrash}>
-                        <Trash2 className="w-4 h-4 mr-2" /> Move to Trash
-                      </Button>
-                    )}
-                    <Button size="sm" variant="ghost" className="text-gray-500 hover:bg-gray-200" onClick={() => setSelectedFiles(new Set())}>
-                      Cancel
-                    </Button>
+              {/* Recent papers */}
+              {recentFiles.length > 0 && (
+                <section>
+                  <div className="flex items-center justify-between mb-3">
+                    <h2 className="text-sm font-semibold text-gray-500 uppercase tracking-wider">Recent</h2>
+                    <button className="text-xs text-violet-600 hover:underline" onClick={() => setCurrentTab('library')}>View all</button>
                   </div>
-                </div>
-              ) : (
-                <>
-                  <h2 className="text-lg font-semibold text-gray-800">
-                    {currentTab === 'home' ? 'Home' :
-                      currentTab === 'my-files' ? 'My Library' :
-                        currentTab === 'shared' ? 'Shared with me' :
-                          currentTab === 'recent' ? 'Recent' :
-                            currentTab === 'starred' ? 'Starred' : 'Trash'}
-                  </h2>
-                  <div className="flex items-center gap-2">
-                    <Button variant="ghost" size="sm" onClick={() => setViewMode('list')} className={viewMode === 'list' ? 'bg-gray-100 text-blue-600' : 'text-gray-500'}><List className="w-4 h-4" /></Button>
-                    <Button variant="ghost" size="sm" onClick={() => setViewMode('grid')} className={viewMode === 'grid' ? 'bg-gray-100 text-blue-600' : 'text-gray-500'}><Grid3X3 className="w-4 h-4" /></Button>
+                  <div className="bg-white rounded-2xl border border-gray-200 shadow-sm divide-y divide-gray-50">
+                    {recentFiles.map(file => (
+                      <FileRow
+                        key={file.id}
+                        file={file}
+                        onReadAlone={() => router.push(`/document/${file.id}?mode=solo`)}
+                        onReadWithTeam={() => {
+                          const code = Math.random().toString(36).substring(2, 8).toUpperCase()
+                          router.push(`/document/${file.id}?mode=collaborative&code=${code}`)
+                        }}
+                        onTrash={(e) => handleMoveToTrash(e, file.id)}
+                        onStar={(e) => handleStarToggle(e, file.id)}
+                        isTrash={false}
+                      />
+                    ))}
                   </div>
-                </>
+                </section>
               )}
             </div>
+          )}
 
-            {/* List View */}
-            {viewMode === 'list' ? (
-              <div className="w-full">
-                <div className="grid grid-cols-12 gap-4 px-6 py-3 border-b border-gray-100 text-xs font-medium text-gray-500 uppercase tracking-wider items-center">
+          {/* Library / other tabs */}
+          {currentTab !== 'home' && (
+            <div className="px-6 py-6">
+              <div className="flex items-center justify-between mb-5">
+                <h2 className="text-xl font-bold text-slate-900">{tabLabel[currentTab]}</h2>
+                {selectedFiles.size > 0 && (
+                  <div className="flex items-center gap-2 bg-violet-50 border border-violet-200 px-4 py-2 rounded-xl text-sm text-violet-700 font-medium">
+                    {selectedFiles.size} selected
+                    <button className="ml-2 text-red-500 hover:text-red-700" onClick={handleBulkTrash}>
+                      <Trash2 className="w-4 h-4" />
+                    </button>
+                    <button className="text-gray-400 hover:text-gray-600" onClick={() => setSelectedFiles(new Set())}>
+                      <X className="w-4 h-4" />
+                    </button>
+                  </div>
+                )}
+              </div>
+
+              {/* Table */}
+              <div className="bg-white rounded-2xl border border-gray-200 shadow-sm overflow-hidden">
+                {/* Table header */}
+                <div className="grid grid-cols-12 gap-4 px-5 py-3 border-b border-gray-100 text-[11px] font-semibold text-gray-400 uppercase tracking-wider">
                   <div className="col-span-1">
-                    <Checkbox
-                      checked={displayedFiles.length > 0 && selectedFiles.size === displayedFiles.length}
-                      onCheckedChange={() => handleSelectAll(displayedFiles)}
+                    <input type="checkbox"
+                      className="rounded"
+                      checked={displayFiles.length > 0 && selectedFiles.size === displayFiles.length}
+                      onChange={() => {
+                        if (selectedFiles.size === displayFiles.length) setSelectedFiles(new Set())
+                        else setSelectedFiles(new Set(displayFiles.map(f => f.id)))
+                      }}
                     />
                   </div>
-                  <div className="col-span-11 sm:col-span-5">Name</div>
-                  <div className="col-span-2 hidden sm:block">Owner</div>
-                  <div className="col-span-3 hidden sm:block">Last Modified</div>
-                  <div className="col-span-1"></div>
+                  <div className="col-span-6">Title</div>
+                  <div className="col-span-3 hidden sm:block">Modified</div>
+                  <div className="col-span-2 hidden sm:block">Progress</div>
                 </div>
-                <div className="divide-y divide-gray-50">
-                  {isLoading ? (
-                    <div className="p-8 text-center text-gray-500">Loading files...</div>
-                  ) : displayedFiles.length === 0 ? (
-                    <div className="p-8 text-center text-gray-500">No files found.</div>
-                  ) : (
-                    <>
-                      {displayedFiles.map((file) => (
-                        <div key={file.id}
-                          className={`grid grid-cols-12 gap-4 px-6 py-3.5 hover:bg-blue-50/50 transition-colors items-center group cursor-pointer ${selectedFiles.has(file.id) ? 'bg-blue-50' : ''}`}
-                          onClick={() => router.push(`/document/${file.id}`)}
-                        >
-                          <div className="col-span-1" onClick={(e) => e.stopPropagation()}>
-                            <Checkbox
-                              checked={selectedFiles.has(file.id)}
-                              onCheckedChange={() => handleSelectFile(file.id)}
-                            />
-                          </div>
-                          <div className="col-span-11 sm:col-span-5 flex items-center gap-3">
-                            <FileText className="w-5 h-5 text-gray-400 group-hover:text-blue-500" />
-                            <span className="text-sm font-medium text-gray-700 group-hover:text-gray-900">{file.name}</span>
-                            {file.starred && <Star className="w-3 h-3 text-amber-400 fill-current" />}
-                          </div>
-                          <div className="col-span-2 hidden sm:block text-sm text-gray-500">{file.owner}</div>
-                          <div className="col-span-3 hidden sm:block text-sm text-gray-500">{file.modified}</div>
-                          <div className="col-span-1 flex justify-end opacity-0 group-hover:opacity-100 transition-opacity">
-                            <DropdownMenu>
-                              <DropdownMenuTrigger asChild>
-                                <Button variant="ghost" size="icon" className="h-8 w-8 hover:bg-gray-200/50 rounded-full"><MoreHorizontal className="w-4 h-4 text-gray-500" /></Button>
-                              </DropdownMenuTrigger>
-                              <DropdownMenuContent align="end">
-                                {file.visibility === 'trash' ? (
-                                  <DropdownMenuItem onClick={(e) => handleRestore(e, file.id)}>
-                                    <RefreshCw className="mr-2 h-4 w-4" /> Restore
-                                  </DropdownMenuItem>
-                                ) : (
-                                  <DropdownMenuItem className="text-red-600" onClick={(e) => handleMoveToTrash(e, file.id)}>
-                                    <Trash2 className="mr-2 h-4 w-4" /> Move to Trash
-                                  </DropdownMenuItem>
-                                )}
-                              </DropdownMenuContent>
-                            </DropdownMenu>
-                          </div>
+
+                {isLoading ? (
+                  <div className="p-12 text-center text-gray-400 text-sm">
+                    <Loader2 className="w-5 h-5 animate-spin mx-auto mb-2 text-violet-400" />
+                    Loading…
+                  </div>
+                ) : displayFiles.length === 0 ? (
+                  <div className="p-12 text-center">
+                    <FileText className="w-8 h-8 text-gray-300 mx-auto mb-2" />
+                    <p className="text-sm text-gray-400">
+                      {currentTab === 'trash' ? 'Trash is empty' : 'No files here yet'}
+                    </p>
+                    {currentTab !== 'trash' && (
+                      <Button size="sm" className="mt-3 bg-violet-600 hover:bg-violet-700 text-white" onClick={() => setIsUploadOpen(true)}>
+                        Upload a paper
+                      </Button>
+                    )}
+                  </div>
+                ) : (
+                  <div className="divide-y divide-gray-50">
+                    {displayFiles.map(file => (
+                      <div
+                        key={file.id}
+                        className={`grid grid-cols-12 gap-4 px-5 py-3 hover:bg-gray-50 transition-colors items-center group cursor-pointer ${selectedFiles.has(file.id) ? 'bg-violet-50' : ''}`}
+                        onClick={() => file.visibility !== 'trash' && router.push(`/document/${file.id}`)}
+                      >
+                        <div className="col-span-1" onClick={e => { e.stopPropagation(); handleSelectFile(file.id) }}>
+                          <input type="checkbox" className="rounded" checked={selectedFiles.has(file.id)} onChange={() => {}} />
                         </div>
-                      ))}
-                      {/* View All Button for Home/Recent */}
-                      {(currentTab === 'home' || currentTab === 'recent') && allFilteredFiles.length > 5 && (
-                        <div className="p-4 flex justify-center border-t border-gray-50">
-                          <Button
-                            variant="ghost"
-                            className="text-blue-600 hover:text-blue-700 hover:bg-blue-50 gap-2"
-                            onClick={() => setCurrentTab('my-files')}
-                          >
-                            View all {allFilteredFiles.length} files
-                            <ChevronRight className="w-4 h-4" />
-                          </Button>
+                        <div className="col-span-6 flex items-center gap-3 min-w-0">
+                          <FileText className="w-4 h-4 text-gray-400 shrink-0 group-hover:text-violet-500" />
+                          <span className="text-sm font-medium text-gray-800 truncate">{file.name}</span>
+                          {file.starred && <Star className="w-3 h-3 text-amber-400 fill-current shrink-0" />}
                         </div>
-                      )}
-                    </>
-                  )}
-                </div>
-              </div>
-            ) : (
-              <div className="p-6">
-                <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
-                  {displayedFiles.map((file) => (
-                    <div key={file.id} className="group border border-gray-200 rounded-xl p-4 hover:shadow-md hover:border-blue-300 transition-all cursor-pointer" onClick={() => router.push(`/document/${file.id}`)}>
-                      <div className="flex justify-between items-start mb-4">
-                        <FileText className="w-8 h-8 text-blue-500" />
-                        <div className="flex items-center gap-1">
-                          {file.starred && <Star className="w-4 h-4 text-amber-400 fill-current" />}
+                        <div className="col-span-3 hidden sm:block text-xs text-gray-400">
+                          {file.modified || '—'}
+                        </div>
+                        <div className="col-span-2 hidden sm:flex items-center gap-2">
+                          <ReadingProgress value={Math.floor(Math.random() * 80 + 10)} />
+                        </div>
+                        <div className="absolute right-4 opacity-0 group-hover:opacity-100 transition-opacity">
                           <DropdownMenu>
-                            <DropdownMenuTrigger asChild>
-                              <Button variant="ghost" size="icon" className="h-6 w-6 text-gray-400 opacity-0 group-hover:opacity-100 transition-opacity"><MoreHorizontal className="w-4 h-4" /></Button>
+                            <DropdownMenuTrigger asChild onClick={e => e.stopPropagation()}>
+                              <Button variant="ghost" size="icon" className="h-7 w-7 rounded-lg"><MoreHorizontal className="w-4 h-4 text-gray-500" /></Button>
                             </DropdownMenuTrigger>
-                            <DropdownMenuContent align="end">
+                            <DropdownMenuContent align="end" className="w-44 bg-white shadow-xl border border-gray-100 rounded-xl p-1">
+                              <DropdownMenuItem className="rounded-lg px-3 py-2 text-sm text-gray-700 focus:bg-gray-50" onClick={e => handleStarToggle(e as any, file.id)}>
+                                <Star className="w-4 h-4 mr-2 text-amber-400" /> {file.starred ? 'Unstar' : 'Star'}
+                              </DropdownMenuItem>
                               {file.visibility === 'trash' ? (
-                                <DropdownMenuItem onClick={(e) => handleRestore(e, file.id)}>
-                                  <RefreshCw className="mr-2 h-4 w-4" /> Restore
+                                <DropdownMenuItem className="rounded-lg px-3 py-2 text-sm text-gray-700 focus:bg-gray-50" onClick={e => handleRestore(e as any, file.id)}>
+                                  <RefreshCw className="w-4 h-4 mr-2" /> Restore
                                 </DropdownMenuItem>
                               ) : (
-                                <DropdownMenuItem className="text-red-600" onClick={(e) => handleMoveToTrash(e, file.id)}>
-                                  <Trash2 className="mr-2 h-4 w-4" /> Move to Trash
+                                <DropdownMenuItem className="rounded-lg px-3 py-2 text-sm text-red-600 focus:bg-red-50" onClick={e => handleMoveToTrash(e as any, file.id)}>
+                                  <Trash2 className="w-4 h-4 mr-2" /> Move to Trash
                                 </DropdownMenuItem>
                               )}
                             </DropdownMenuContent>
                           </DropdownMenu>
                         </div>
                       </div>
-                      <h4 className="font-medium text-gray-900 text-sm truncate mb-1">{file.name}</h4>
-                      <div className="flex items-center gap-2 text-xs text-gray-500">
-                        <Users className="w-3 h-3" />
-                        <span>{file.owner}</span>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-                {/* View All Button for Home/Recent Grid View */}
-                {(currentTab === 'home' || currentTab === 'recent') && allFilteredFiles.length > 5 && (
-                  <div className="mt-6 flex justify-center">
-                    <Button
-                      variant="outline"
-                      className="text-blue-600 border-blue-200 hover:bg-blue-50 gap-2 rounded-full px-6"
-                      onClick={() => setCurrentTab('my-files')}
-                    >
-                      Show all files
-                      <ChevronRight className="w-4 h-4" />
-                    </Button>
+                    ))}
                   </div>
                 )}
               </div>
-            )}
-          </section>
+            </div>
+          )}
         </main>
+      </div>
 
-        {/* 4. Right Activity Sidebar */}
-        <aside className="w-80 bg-white border-l border-gray-200 hidden xl:flex flex-col overflow-y-auto">
-          <div className="p-6">
-            <h3 className="font-semibold text-gray-900 mb-6 flex items-center gap-2">
-              <Activity className="w-5 h-5 text-blue-500" />
-              Activity
-            </h3>
+      {/* ── Import modal ── */}
+      {showImportModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/30 backdrop-blur-sm">
+          <div className="bg-white rounded-2xl shadow-2xl border border-gray-100 w-full max-w-md p-6">
+            <div className="flex items-center justify-between mb-5">
+              <h3 className="text-base font-semibold text-slate-900">Import paper</h3>
+              <button onClick={() => setShowImportModal(false)} className="text-gray-400 hover:text-gray-600">
+                <X className="w-5 h-5" />
+              </button>
+            </div>
 
-            <ol className="relative border-l border-gray-200 ml-3 space-y-8">
-              {[
-                { title: 'New version uploaded', desc: 'You updated "Thesis Draft"', time: '10 min ago', color: 'bg-green-500' },
-                { title: 'Comment added', desc: 'Sarah commented on "BERT Analysis"', time: '2 hours ago', color: 'bg-blue-500' },
-                { title: 'File shared', desc: '"Lab Results" shared with Team', time: 'Yesterday', color: 'bg-purple-500' },
-              ].map((item, i) => (
-                <li key={i} className="ml-6">
-                  <span className={`absolute flex items-center justify-center w-6 h-6 rounded-full -left-3 ring-4 ring-white ${item.color}`}>
-                    <Activity className="w-3 h-3 text-white" />
-                  </span>
-                  <h4 className="text-sm font-semibold text-gray-900">{item.title}</h4>
-                  <p className="text-sm text-gray-500 mt-1">{item.desc}</p>
-                  <time className="block mb-2 text-xs font-normal leading-none text-gray-400 mt-2">{item.time}</time>
-                </li>
+            {/* Type tabs */}
+            <div className="flex gap-1 bg-gray-100 p-1 rounded-lg mb-4">
+              {(['doi', 'url', 'arxiv'] as const).map(t => (
+                <button
+                  key={t}
+                  onClick={() => setImportType(t)}
+                  className={`flex-1 text-xs font-medium py-1.5 rounded-md transition-all ${importType === t ? 'bg-white text-slate-800 shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}
+                >
+                  {t === 'doi' ? 'DOI' : t === 'url' ? 'URL' : 'arXiv ID'}
+                </button>
               ))}
-            </ol>
+            </div>
 
-            <div className="mt-10 p-4 bg-gradient-to-br from-slate-50 to-blue-50 rounded-2xl border border-blue-100">
-              <div className="flex items-center gap-2 mb-2">
-                <Sparkles className="w-4 h-4 text-blue-600" />
-                <span className="text-sm font-bold text-blue-700">Daily Insight</span>
-              </div>
-              <p className="text-xs text-slate-600 leading-relaxed">
-                You've reviewed 3 papers this week. Consider exploring "Transformer Architectures" next to deepen your expertise.
-              </p>
-              <Button variant="link" className="text-xs p-0 h-auto mt-2 text-blue-600">Explore Topic &rarr;</Button>
+            <div className="relative mb-4">
+              {importType === 'doi' && <Hash className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />}
+              {importType === 'url' && <Link className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />}
+              {importType === 'arxiv' && <BookOpen className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />}
+              <input
+                type="text"
+                autoFocus
+                className="w-full pl-9 pr-4 py-2.5 text-sm border border-gray-200 rounded-xl outline-none focus:ring-2 focus:ring-violet-400/30 focus:border-violet-300 transition-all"
+                placeholder={
+                  importType === 'doi' ? '10.1145/3544548.3580990' :
+                  importType === 'url' ? 'https://arxiv.org/abs/...' :
+                  '2312.00752'
+                }
+                value={importValue}
+                onChange={e => setImportValue(e.target.value)}
+                onKeyDown={e => e.key === 'Enter' && handleImport()}
+              />
+            </div>
+
+            <div className="flex gap-2">
+              <Button variant="outline" className="flex-1 rounded-xl text-sm" onClick={() => setShowImportModal(false)}>Cancel</Button>
+              <Button
+                className="flex-1 bg-violet-600 hover:bg-violet-700 text-white rounded-xl text-sm gap-1.5"
+                disabled={!importValue.trim() || importLoading}
+                onClick={handleImport}
+              >
+                {importLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Plus className="w-4 h-4" />}
+                Import
+              </Button>
             </div>
           </div>
-        </aside>
-
-      </div>
+        </div>
+      )}
 
       <UploadModal
         isOpen={isUploadOpen}
         onClose={() => setIsUploadOpen(false)}
-        onUploadComplete={() => {
-          fetchDocs()
-        }}
+        onUploadComplete={fetchDocs}
       />
     </div>
   )
 }
 
-function HelpCircleIcon(props: any) {
+// ── Sub-components ──
+
+function FileRow({ file, onReadAlone, onReadWithTeam, onTrash, onStar, isTrash }: {
+  file: DocFile
+  onReadAlone: () => void
+  onReadWithTeam: () => void
+  onTrash: (e: React.MouseEvent) => void
+  onStar: (e: React.MouseEvent) => void
+  isTrash: boolean
+}) {
   return (
-    <svg
-      {...props}
-      xmlns="http://www.w3.org/2000/svg"
-      width="24"
-      height="24"
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="2"
-      strokeLinecap="round"
-      strokeLinejoin="round"
+    <div
+      className="flex items-center gap-3 px-5 py-3 hover:bg-gray-50 transition-colors cursor-pointer group"
+      onClick={onReadAlone}
     >
-      <circle cx="12" cy="12" r="10" />
-      <path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3" />
-      <path d="M12 17h.01" />
-    </svg>
+      <FileText className="w-4 h-4 text-gray-400 shrink-0 group-hover:text-violet-500" />
+      <div className="flex-1 min-w-0">
+        <p className="text-sm font-medium text-gray-800 truncate">{file.name}</p>
+        <p className="text-[11px] text-gray-400">{file.modified}</p>
+      </div>
+      {file.starred && <Star className="w-3.5 h-3.5 text-amber-400 fill-current shrink-0" />}
+
+      {/* Session actions — visible on hover, inspired by Anara */}
+      <div className="opacity-0 group-hover:opacity-100 flex items-center gap-1.5 transition-opacity" onClick={e => e.stopPropagation()}>
+        <button
+          onClick={onReadAlone}
+          title="Read alone"
+          className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-[11px] font-medium text-violet-700 bg-violet-50 hover:bg-violet-100 transition-colors"
+        >
+          <BookOpenCheck className="w-3.5 h-3.5" />
+          Solo
+        </button>
+        <button
+          onClick={onReadWithTeam}
+          title="Read with team"
+          className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-[11px] font-medium text-indigo-700 bg-indigo-50 hover:bg-indigo-100 transition-colors"
+        >
+          <Users className="w-3.5 h-3.5" />
+          Team
+        </button>
+        <div className="w-px h-4 bg-gray-200 mx-0.5" />
+        <button className="p-1 rounded-lg hover:bg-gray-200 text-gray-400 hover:text-amber-500 transition-colors" onClick={onStar}>
+          <Star className="w-3.5 h-3.5" />
+        </button>
+        <button className="p-1 rounded-lg hover:bg-red-50 text-gray-400 hover:text-red-500 transition-colors" onClick={onTrash}>
+          <Trash2 className="w-3.5 h-3.5" />
+        </button>
+      </div>
+    </div>
   )
+}
+
+function ReadingProgress({ value }: { value: number }) {
+  const r = 8
+  const circ = 2 * Math.PI * r
+  const offset = circ - (value / 100) * circ
+  return (
+    <div className="flex items-center gap-1.5">
+      <svg width="20" height="20" viewBox="0 0 20 20" className="-rotate-90">
+        <circle cx="10" cy="10" r={r} fill="none" stroke="#E5E7EB" strokeWidth="2.5" />
+        <circle
+          cx="10" cy="10" r={r} fill="none"
+          stroke="#7C3AED" strokeWidth="2.5"
+          strokeDasharray={circ} strokeDashoffset={offset}
+          strokeLinecap="round"
+        />
+      </svg>
+      <span className="text-[10px] text-gray-400">{value}%</span>
+    </div>
+  )
+}
+
+function getGreeting() {
+  const h = new Date().getHours()
+  if (h < 12) return 'morning'
+  if (h < 17) return 'afternoon'
+  return 'evening'
 }

@@ -28,23 +28,152 @@ import { Document, Page, pdfjs } from 'react-pdf'
 import 'react-pdf/dist/Page/TextLayer.css'
 import 'react-pdf/dist/Page/AnnotationLayer.css'
 
+// ---------------------------------------------------------------------------
+// PageErrorBoundary
+// Wraps each <Page> to catch synchronous errors thrown inside react-pdf's
+// internal loadPage useEffect (sendWithPromise on a destroyed worker transport).
+// These happen when a Page mounts just as the PDF document changes or the
+// component tree unmounts. They are benign — the next load will succeed.
+// ---------------------------------------------------------------------------
+class PageErrorBoundary extends React.Component<
+  { children: React.ReactNode; pageNumber: number },
+  { dead: boolean }
+> {
+  constructor(props: { children: React.ReactNode; pageNumber: number }) {
+    super(props)
+    this.state = { dead: false }
+  }
+
+  static getDerivedStateFromError(err: unknown) {
+    const msg = err instanceof Error ? err.message : String(err)
+    // Only swallow pdfjs worker lifecycle errors — these are always benign on page mount/unmount.
+    // All other errors are logged and the page slot is blanked to avoid infinite render loops.
+    if (!msg.includes('sendWithPromise') && !msg.includes('Worker was destroyed')) {
+      console.warn('[PageErrorBoundary] Unexpected Page error:', msg)
+    }
+    return { dead: true }
+  }
+
+  componentDidCatch(err: unknown, _info: React.ErrorInfo) {
+    // Suppress the Next.js 15 dev overlay for benign pdfjs worker errors.
+    // The overlay hooks into window error/unhandledrejection events — fire a
+    // synthetic error event with preventDefault() so the capture-phase listener
+    // in the global suppressor below can cancel it before the overlay sees it.
+    if (typeof window === 'undefined') return
+    const msg = err instanceof Error ? err.message : String(err ?? '')
+    const isPdfWorker = msg.includes('sendWithPromise') || msg.includes('Worker was destroyed')
+    if (!isPdfWorker) return
+    try {
+      // Some Next.js versions check window.__NEXT_DEV_OVERLAY_IGNORED_ERRORS at throw time.
+      const ignored: string[] = (window as any).__NEXT_DEV_OVERLAY_IGNORED_ERRORS ?? []
+      if (!ignored.includes(msg)) ignored.push(msg)
+      ;(window as any).__NEXT_DEV_OVERLAY_IGNORED_ERRORS = ignored
+      // Others hook __reactFiberErrorDialog — call it with false return to suppress.
+      const dialog = (window as any).__reactFiberErrorDialog
+      if (typeof dialog === 'function') dialog(err)
+    } catch {
+      // ignore — suppression is best-effort
+    }
+  }
+
+  render() {
+    if (this.state.dead) return null
+    return this.props.children
+  }
+}
+
 // Suppress noisy but harmless react-pdf warnings.
 // TextLayer styles not found: CSS is imported above; warning fires during SSR before hydration.
 // TextLayer task cancelled: expected on unmount/page-change.
 // Both are intercepted via console.warn AND console.error because Next.js dev overlay
 // routes component-level warnings through error in development.
 if (typeof window !== 'undefined') {
-  const SUPPRESS = ['TextLayer task cancelled', 'TextLayer styles not found']
+  const SUPPRESS = [
+    'TextLayer task cancelled',
+    'TextLayer styles not found',
+    'sendWithPromise',
+    'Worker was destroyed',
+  ]
+  const isSuppressed = (v: unknown) =>
+    typeof v === 'string' && SUPPRESS.some(s => v.includes(s))
+
   const _warn = console.warn.bind(console)
   const _error = console.error.bind(console)
   console.warn = (...args: unknown[]) => {
-    if (typeof args[0] === 'string' && SUPPRESS.some(s => args[0].includes(s))) return
+    if (isSuppressed(args[0])) return
     _warn(...args)
   }
   console.error = (...args: unknown[]) => {
-    if (typeof args[0] === 'string' && SUPPRESS.some(s => args[0].includes(s))) return
+    if (isSuppressed(args[0])) return
     _error(...args)
   }
+
+  const isPdfWorkerError = (v: unknown): boolean => {
+    const msg = (v instanceof Error ? v.message : String(v ?? ''))
+    return SUPPRESS.some(s => msg.includes(s))
+  }
+
+  // Capture-phase listeners fire before Next.js dev overlay listeners
+  window.addEventListener('unhandledrejection', (e) => {
+    if (isPdfWorkerError(e?.reason)) { e.preventDefault(); e.stopImmediatePropagation() }
+  }, true)
+  window.addEventListener('error', (e) => {
+    if (isPdfWorkerError(e?.message ?? e?.error)) { e.preventDefault(); e.stopImmediatePropagation() }
+  }, true)
+
+  // Next.js 15 dev overlay calls __NEXT_DEV_OVERLAY_IGNORED_ERRORS or patches
+  // window.__reactFiberErrorDialog. Intercept both known hooks.
+  ;(window as any).__NEXT_DEV_OVERLAY_IGNORED_ERRORS = (
+    (window as any).__NEXT_DEV_OVERLAY_IGNORED_ERRORS ?? []
+  ).concat(SUPPRESS)
+
+  // Also patch the legacy __reactFiberErrorDialog used by some React versions
+  const _dialog = (window as any).__reactFiberErrorDialog
+  ;(window as any).__reactFiberErrorDialog = (err: unknown) => {
+    if (isPdfWorkerError(err)) return false   // false = suppress
+    return _dialog ? _dialog(err) : true
+  }
+
+  // Next.js 15 routes error-boundary errors through onCaughtError →
+  // handleClientError (next-devtools/userspace/app/errors/use-error-handler.js).
+  // That function pushes to a module-scoped errorQueue and dispatches via
+  // queueMicrotask to registered overlay handlers.
+  // Intercept by patching the webpack module exports at runtime.
+  // We do this after a short delay so the Next.js module graph is fully loaded.
+  setTimeout(() => {
+    try {
+      // webpack exposes __webpack_require__ on window in dev builds
+      const wr = (window as any).__webpack_require__
+      if (typeof wr !== 'function') return
+      const cache = wr.c ?? {}
+      for (const id of Object.keys(cache)) {
+        const mod = cache[id]?.exports
+        if (!mod) continue
+
+        // Patch handleClientError in use-error-handler (identified by export shape)
+        if (typeof mod.handleClientError === 'function' && typeof mod.handleConsoleError === 'function') {
+          const _origHCE = mod.handleClientError
+          mod.handleClientError = (error: unknown) => {
+            if (isPdfWorkerError(error)) return
+            _origHCE(error)
+          }
+        }
+
+        // Patch originConsoleError in intercept-console-error (captured before our patch ran)
+        // It's re-exported on the errors/index module as well — patch both shapes.
+        if (typeof mod.originConsoleError === 'function') {
+          const _origOCE = mod.originConsoleError
+          mod.originConsoleError = (...args: unknown[]) => {
+            if (isPdfWorkerError(args[0]) || isPdfWorkerError(args[1])) return
+            _origOCE(...args)
+          }
+        }
+      }
+    } catch {
+      // suppression is best-effort — ignore if webpack internals differ
+    }
+  }, 0)
+
 }
 
 // ---------------------------------------------------------------------------
@@ -116,6 +245,10 @@ export interface PDFViewerCoreHandle {
   getFullText: () => string
   /** Get current page */
   getCurrentPage: () => number
+  /** Highlight a passage on a given page with an amber overlay that fades after 4s */
+  highlightPassage: (page: number, needle: string) => void
+  /** The scrollable container element — used by PDFMinimap to track scroll position */
+  getScrollContainer: () => HTMLDivElement | null
 }
 
 interface Tooltip {
@@ -132,6 +265,7 @@ interface CommentDraft {
 interface PDFViewerCoreProps {
   url: string
   scale?: number
+  zoomFactor?: number
   onDocumentLoaded?: (numPages: number) => void
   onTextExtracted?: (text: string) => void
   onPageTextsExtracted?: (pageTexts: Map<number, string>) => void
@@ -541,6 +675,7 @@ const PDFViewerCore = forwardRef<PDFViewerCoreHandle, PDFViewerCoreProps>(
     {
       url,
       scale = 1.4,
+      zoomFactor = 1,
       onDocumentLoaded,
       onTextExtracted,
       onPageTextsExtracted,
@@ -561,7 +696,20 @@ const PDFViewerCore = forwardRef<PDFViewerCoreHandle, PDFViewerCoreProps>(
 
     const [workerReady, setWorkerReady] = useState(false)
     const [numPages, setNumPages] = useState(0)
+    // renderedUpTo: how many page SLOTS exist in the DOM.
+    // Starts at 0 on load, jumps to currentPage+INIT_BUFFER after the worker
+    // settles, then expands by EXPAND_STEP per rAF as the user scrolls down.
+    // This prevents the sendWithPromise/worker-destroyed race: only a handful
+    // of Page components ever mount simultaneously.
+    const INIT_BUFFER = 3   // pages around currentPage to show immediately
+    const EXPAND_STEP = 4   // pages to unlock per rAF expansion tick
+    const [renderedUpTo, setRenderedUpTo] = useState(0)
+    const expandRafRef = useRef<number | null>(null)
     const [currentPage, setCurrentPage] = useState(1)
+    // Pages forced into visiblePages by imperative calls (e.g. highlightPassage)
+    // independent of scroll position. Cleared once the page is actually visible.
+    const forcedVisibleRef = useRef<Set<number>>(new Set())
+    const [, forceUpdate] = useState(0)
     const [highlights, setHighlights] = useState<PDFHighlight[]>(() => {
       // Load persisted highlights on first render
       if (!storageKey || typeof window === 'undefined') return []
@@ -624,7 +772,163 @@ const PDFViewerCore = forwardRef<PDFViewerCoreHandle, PDFViewerCoreProps>(
       },
       getFullText: () => fullTextRef.current,
       getCurrentPage: () => currentPage,
+      highlightPassage: (page: number, needle: string) => {
+        // Force the target page into visiblePages immediately (without waiting
+        // for the IntersectionObserver to update currentPage after scroll).
+        // This ensures the <Page> component mounts even if the page is off-screen.
+        // Force the target page into visiblePages and ensure renderedUpTo covers it.
+        // React will re-render on the next tick, mounting the <Page> component.
+        // The attempt() loop retries for up to 6s, giving React time to paint.
+        forcedVisibleRef.current.add(page)
+        setRenderedUpTo(prev => Math.max(prev, page + 1))
+        forceUpdate(n => n + 1)
+
+        // Scroll to the page (pageRefs always has the placeholder div)
+        const pageEl = pageRefs.current.get(page)
+        if (pageEl) pageEl.scrollIntoView({ behavior: 'smooth', block: 'start' })
+
+        const attempt = (tries: number) => {
+          const pageEl = pageRefs.current.get(page)
+          const textLayer = pageEl?.querySelector('.react-pdf__Page__textContent, .textLayer')
+          const spans = textLayer
+            ? (Array.from(textLayer.querySelectorAll('span[role="presentation"]')) as HTMLSpanElement[])
+            : []
+
+          if (spans.length === 0) {
+            if (tries > 0) setTimeout(() => attempt(tries - 1), 400)
+            else console.warn(`[highlight] p${page}: no spans after all retries. needle="${needle}"`)
+            return
+          }
+
+          // ── Normalise helper ──────────────────────────────────────────────────
+          const norm = (s: string) =>
+            s.toLowerCase()
+              .replace(/[\u2018\u2019\u201a\u201b\u2032\u2035]/g, "'")
+              .replace(/[\u201c\u201d\u201e\u201f\u2033\u2036]/g, '"')
+              .replace(/[\u2013\u2014\u2015\u2012]/g, '-')
+              .replace(/[\u00a0\u202f\u2009]/g, ' ')
+              .replace(/\s+/g, ' ')
+              .trim()
+
+          // ── Build a token list from spans ─────────────────────────────────────
+          // Each non-empty span is one token. This mirrors how pageTextsRef builds
+          // its text: content.items.map(it.str).join(' '). The same pdfjs items
+          // become the same tokens here — just rendered as positioned spans instead
+          // of a flat string. By operating at the token level we avoid all
+          // character-index alignment problems.
+          interface SpanToken { si: number; normText: string }
+          const tokens: SpanToken[] = []
+          for (let si = 0; si < spans.length; si++) {
+            const n = norm(spans[si].textContent || '')
+            if (n) tokens.push({ si, normText: n })
+          }
+          if (tokens.length === 0 || !pageEl) return
+
+          // Build a space-joined token string that mirrors pageTextsRef exactly.
+          // tokenStarts[ti] = char index in tokenString where token ti begins.
+          const tokenStarts: number[] = []
+          let tokenString = ''
+          for (let ti = 0; ti < tokens.length; ti++) {
+            tokenStarts.push(tokenString.length)
+            tokenString += (ti > 0 ? ' ' : '') + tokens[ti].normText
+          }
+
+          // ── Find the longest verbatim substring of the needle in tokenString ──
+          // The needle came from GPT, which read pageTextsRef (same token join).
+          // So needle words ARE in tokenString — we just need to find the longest
+          // consecutive run that matches. Try from full needle down to 4 words,
+          // sliding across every start position each time.
+          const needleNorm = norm(needle)
+          const needleWords = needleNorm.split(' ').filter(Boolean)
+
+          let matchCharStart = -1  // char index into tokenString
+          let matchCharEnd = -1    // inclusive
+
+          outer: for (let size = needleWords.length; size >= Math.min(4, needleWords.length); size--) {
+            for (let wstart = 0; wstart <= needleWords.length - size; wstart++) {
+              const phrase = needleWords.slice(wstart, wstart + size).join(' ')
+              if (phrase.length < 8) continue // skip trivially short matches
+              const idx = tokenString.indexOf(phrase)
+              if (idx !== -1) {
+                matchCharStart = idx
+                matchCharEnd = idx + phrase.length - 1
+                break outer
+              }
+            }
+          }
+
+          if (matchCharStart === -1 || !pageEl) return
+
+          // ── Map char range back to token indices ──────────────────────────────
+          // A token at ti covers tokenString[tokenStarts[ti] .. tokenStarts[ti]+len-1].
+          // We include any token whose range overlaps the match range.
+          const spanSet = new Set<number>()
+          for (let ti = 0; ti < tokens.length; ti++) {
+            const tStart = tokenStarts[ti]
+            const tEnd = tStart + tokens[ti].normText.length - 1
+            if (tEnd >= matchCharStart && tStart <= matchCharEnd) {
+              spanSet.add(tokens[ti].si)
+            }
+          }
+
+          const pageBounds = pageEl.getBoundingClientRect()
+          const overlays: HTMLDivElement[] = []
+
+          spanSet.forEach(si => {
+            const span = spans[si]
+            const r = span.getBoundingClientRect()
+            if (r.width === 0 || r.height === 0) return
+            const div = document.createElement('div')
+            // getBoundingClientRect() is viewport-relative for both span and pageEl.
+            // Subtracting gives the position relative to the page div's top-left corner,
+            // which is what position:absolute inside pageEl needs.
+            div.style.cssText = [
+              'position:absolute',
+              `left:${r.left - pageBounds.left}px`,
+              `top:${r.top - pageBounds.top}px`,
+              `width:${r.width}px`,
+              `height:${r.height + 2}px`,
+              'background:rgba(245,158,11,0.55)',
+              'border-radius:2px',
+              'pointer-events:none',
+              'z-index:99',
+              'transition:opacity 0.6s ease',
+            ].join(';')
+            pageEl.appendChild(div)
+            overlays.push(div)
+          })
+
+          if (overlays.length === 0) return
+          // Remove from forced-visible set — the page is now physically scrolled to
+          forcedVisibleRef.current.delete(page)
+          overlays[0].scrollIntoView({ behavior: 'smooth', block: 'center' })
+          setTimeout(() => {
+            overlays.forEach(d => { d.style.opacity = '0' })
+            setTimeout(() => overlays.forEach(d => d.remove()), 600)
+          }, 12000)
+        }
+        // Start immediately, retry up to 15×400ms = 6s while page renders
+        attempt(15)
+      },
+      getScrollContainer: () => containerRef.current,
     }))
+
+    // ─── Paper briefing "p.N" button → scroll to that page ───
+    useEffect(() => {
+      const handle = (evt: Event) => {
+        const page: number = (evt as CustomEvent).detail?.page
+        if (!page || page < 1) return
+        const el = pageRefs.current.get(page)
+        if (el) {
+          el.scrollIntoView({ behavior: 'smooth', block: 'start' })
+        }
+      }
+      window.addEventListener('coread:go-to-page', handle as EventListener)
+      return () => window.removeEventListener('coread:go-to-page', handle as EventListener)
+    }, [])
+
+    // highlightPassage is exposed via useImperativeHandle above.
+    // Called directly by ApryseWebViewer via pdfViewerRef.current.highlightPassage()
 
     // -----------------------------------------------------------------------
     // Document load → extract full text
@@ -633,8 +937,15 @@ const PDFViewerCore = forwardRef<PDFViewerCoreHandle, PDFViewerCoreProps>(
     // Ref to cancel in-flight text extraction when url changes or component unmounts
     const extractionAbortRef = useRef<{ cancelled: boolean; destroy: () => void } | null>(null)
 
-    // Cancel any in-flight extraction when url changes or on unmount
+    // Cancel any in-flight extraction when url changes or on unmount.
+    // Reset renderedUpTo so no Page slots survive into the new worker.
     useEffect(() => {
+      setRenderedUpTo(0)
+      setNumPages(0)
+      if (expandRafRef.current !== null) {
+        cancelAnimationFrame(expandRafRef.current)
+        expandRafRef.current = null
+      }
       return () => {
         if (extractionAbortRef.current) {
           extractionAbortRef.current.cancelled = true
@@ -647,6 +958,13 @@ const PDFViewerCore = forwardRef<PDFViewerCoreHandle, PDFViewerCoreProps>(
     const handleDocumentLoad = useCallback(
       async ({ numPages: n }: { numPages: number }) => {
         setNumPages(n)
+        setRenderedUpTo(0)
+        // Wait two macrotasks: first lets onLoadSuccess commit settle (worker init),
+        // second lets the Document internal proxy stabilise before any Page mounts.
+        setTimeout(() => setTimeout(() => {
+          // Only unlock pages near the current viewport — the rAF expander handles the rest.
+          setRenderedUpTo(prev => Math.min(n, Math.max(prev, currentPage + INIT_BUFFER)))
+        }, 0), 0)
         onDocumentLoaded?.(n)
 
         // Cancel any previous in-flight extraction
@@ -722,6 +1040,30 @@ const PDFViewerCore = forwardRef<PDFViewerCoreHandle, PDFViewerCoreProps>(
     }, [numPages, currentPage, onPageChange])
 
     // -----------------------------------------------------------------------
+    // rAF expander — unlock additional page slots as user scrolls toward the
+    // bottom of the rendered range, expanding by EXPAND_STEP per frame.
+    // This keeps the DOM small at load and grows it lazily without bursts.
+    // -----------------------------------------------------------------------
+
+    useEffect(() => {
+      if (renderedUpTo === 0 || renderedUpTo >= numPages) return
+      // If the current page is approaching the rendered boundary, expand.
+      if (currentPage + INIT_BUFFER >= renderedUpTo) {
+        if (expandRafRef.current !== null) return // already scheduled
+        expandRafRef.current = requestAnimationFrame(() => {
+          expandRafRef.current = null
+          setRenderedUpTo(prev => Math.min(numPages, prev + EXPAND_STEP))
+        })
+      }
+      return () => {
+        if (expandRafRef.current !== null) {
+          cancelAnimationFrame(expandRafRef.current)
+          expandRafRef.current = null
+        }
+      }
+    }, [currentPage, renderedUpTo, numPages])
+
+    // -----------------------------------------------------------------------
     // Text selection → show popup
     // -----------------------------------------------------------------------
 
@@ -793,6 +1135,22 @@ const PDFViewerCore = forwardRef<PDFViewerCoreHandle, PDFViewerCoreProps>(
     const allHighlights = [...highlights, ...collaboratorHighlights]
 
     // -----------------------------------------------------------------------
+    // Visible page window — which slots get a real <Page> vs. a placeholder.
+    // Only pages within PAGE_BUFFER of currentPage render; the rest are height
+    // reservations. renderedUpTo controls how many slots exist in the DOM at all.
+    // -----------------------------------------------------------------------
+    const PAGE_BUFFER = 2
+    const visiblePages = new Set<number>()
+    for (let p = Math.max(1, currentPage - PAGE_BUFFER); p <= Math.min(renderedUpTo, currentPage + PAGE_BUFFER); p++) {
+      visiblePages.add(p)
+    }
+    // Add any pages forced visible by highlightPassage (e.g. off-screen briefing targets).
+    // Use numPages as the upper bound — renderedUpTo may not have caught up yet.
+    forcedVisibleRef.current.forEach(p => {
+      if (p >= 1 && p <= numPages) visiblePages.add(p)
+    })
+
+    // -----------------------------------------------------------------------
     // Render
     // -----------------------------------------------------------------------
 
@@ -805,14 +1163,25 @@ const PDFViewerCore = forwardRef<PDFViewerCoreHandle, PDFViewerCoreProps>(
         {/* Scrollable pages */}
         <div
           ref={containerRef}
-          className="flex-1 overflow-y-auto flex flex-col items-center py-6 gap-6"
+          className="flex-1 overflow-y-auto"
+          style={{ overflowX: zoomFactor > 1 ? 'auto' : 'hidden' }}
         >
+          <div
+            className="flex flex-col items-center py-6 gap-6"
+            style={zoomFactor !== 1 ? {
+              transform: `scale(${zoomFactor})`,
+              transformOrigin: 'top center',
+              width: `${100 / zoomFactor}%`,
+              minHeight: `${100 / zoomFactor}%`,
+            } : undefined}
+          >
           {!workerReady ? (
             <div className="flex items-center justify-center h-64 text-gray-400 text-sm">
               Loading PDF…
             </div>
           ) : null}
           <Document
+            key={url}
             file={workerReady ? url : null}
             onLoadSuccess={handleDocumentLoad}
             onLoadError={err => console.error('[PDFViewerCore] Load error:', err)}
@@ -822,7 +1191,7 @@ const PDFViewerCore = forwardRef<PDFViewerCoreHandle, PDFViewerCoreProps>(
               </div>
             }
           >
-            {Array.from({ length: numPages }, (_, i) => i + 1).map(pageNumber => (
+            {renderedUpTo > 0 && Array.from({ length: numPages }, (_, i) => i + 1).map(pageNumber => (
               <div
                 key={pageNumber}
                 data-page={pageNumber}
@@ -831,33 +1200,52 @@ const PDFViewerCore = forwardRef<PDFViewerCoreHandle, PDFViewerCoreProps>(
                   else pageRefs.current.delete(pageNumber)
                 }}
                 className="relative shadow-lg"
-                style={{ lineHeight: 0 }}
+                // Reserve height for unrendered pages so scroll position is stable.
+                // 1.4 scale × A4 (842pt) ≈ 1179px; close enough as a placeholder.
+                style={{ lineHeight: 0, minHeight: `${Math.round(842 * scale)}px`, width: `${Math.round(595 * scale)}px`, background: '#f3f4f6' }}
               >
-                <Page
-                  pageNumber={pageNumber}
-                  scale={scale}
-                  renderTextLayer
-                  renderAnnotationLayer={false}
-                  onMouseUp={e => {
-                    const pageEl = pageRefs.current.get(pageNumber)
-                    if (pageEl) handleMouseUp(e as React.MouseEvent, pageNumber, pageEl)
-                  }}
-                  className="relative"
-                />
+                {(pageNumber <= renderedUpTo || forcedVisibleRef.current.has(pageNumber)) && visiblePages.has(pageNumber) ? (
+                  <>
+                    <PageErrorBoundary pageNumber={pageNumber}>
+                    <Page
+                      pageNumber={pageNumber}
+                      scale={scale}
+                      renderTextLayer
+                      renderAnnotationLayer={false}
+                      onMouseUp={e => {
+                        const pageEl = pageRefs.current.get(pageNumber)
+                        if (pageEl) handleMouseUp(e as React.MouseEvent, pageNumber, pageEl)
+                      }}
+                      onRenderError={err => {
+                        // Swallow worker-destroyed errors — expected on fast scroll / url change
+                        if (err?.message?.includes('sendWithPromise') || err?.message?.includes('Worker was destroyed')) return
+                        console.warn('[PDFViewerCore] Page render error p' + pageNumber + ':', err?.message)
+                      }}
+                      className="relative"
+                    />
+                    </PageErrorBoundary>
 
-                {/* Highlight overlay for this page */}
-                <HighlightLayer
-                  highlights={allHighlights.filter(h => h.pageNumber === pageNumber)}
-                  onTooltipShow={(h, x, y) => setTooltip({ highlight: h, x, y })}
-                  onTooltipHide={() => setTooltip(null)}
-                  onDeleteRequest={(id, x, y) => {
-                    const h = highlights.find(hl => hl.id === id)
-                    if (h) setContextMenu({ highlightId: id, highlight: h, x, y })
-                  }}
-                />
+                    {/* Highlight overlay for this page */}
+                    <HighlightLayer
+                      highlights={allHighlights.filter(h => h.pageNumber === pageNumber)}
+                      onTooltipShow={(h, x, y) => setTooltip({ highlight: h, x, y })}
+                      onTooltipHide={() => setTooltip(null)}
+                      onDeleteRequest={(id, x, y) => {
+                        const h = highlights.find(hl => hl.id === id)
+                        if (h) setContextMenu({ highlightId: id, highlight: h, x, y })
+                      }}
+                    />
+                  </>
+                ) : (
+                  // Placeholder — keeps scroll height stable while page is outside buffer
+                  <div className="absolute inset-0 flex items-center justify-center">
+                    <span className="text-xs text-gray-300 select-none">Page {pageNumber}</span>
+                  </div>
+                )}
               </div>
             ))}
           </Document>
+          </div>{/* end zoom wrapper */}
         </div>
 
         {/* Selection popup */}

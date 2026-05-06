@@ -1,0 +1,739 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>CoRead — User Study Data Collection Plan</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    font-family: 'Georgia', serif;
+    font-size: 11pt;
+    line-height: 1.65;
+    color: #1a1a1a;
+    background: #fff;
+    padding: 0;
+  }
+
+  .page {
+    max-width: 780px;
+    margin: 0 auto;
+    padding: 52px 56px;
+  }
+
+  /* ── Cover ── */
+  .cover {
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    border-bottom: 3px solid #1a1a1a;
+    padding-bottom: 48px;
+    margin-bottom: 48px;
+  }
+
+  .cover-tag {
+    font-family: 'Helvetica Neue', sans-serif;
+    font-size: 8.5pt;
+    font-weight: 700;
+    letter-spacing: 0.15em;
+    text-transform: uppercase;
+    color: #888;
+    margin-bottom: 24px;
+  }
+
+  .cover h1 {
+    font-size: 26pt;
+    font-weight: normal;
+    line-height: 1.25;
+    margin-bottom: 18px;
+    letter-spacing: -0.01em;
+  }
+
+  .cover h1 em {
+    font-style: italic;
+    color: #2c5f8a;
+  }
+
+  .cover-sub {
+    font-family: 'Helvetica Neue', sans-serif;
+    font-size: 11pt;
+    color: #444;
+    margin-bottom: 48px;
+    line-height: 1.5;
+  }
+
+  .cover-meta {
+    display: grid;
+    grid-template-columns: 1fr 1fr 1fr;
+    gap: 24px;
+    border-top: 1px solid #ddd;
+    padding-top: 28px;
+  }
+
+  .meta-item label {
+    display: block;
+    font-family: 'Helvetica Neue', sans-serif;
+    font-size: 7.5pt;
+    font-weight: 700;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: #888;
+    margin-bottom: 4px;
+  }
+
+  .meta-item span {
+    font-family: 'Helvetica Neue', sans-serif;
+    font-size: 10pt;
+    color: #1a1a1a;
+    font-weight: 500;
+  }
+
+  /* ── Section headings ── */
+  h2 {
+    font-family: 'Helvetica Neue', sans-serif;
+    font-size: 13pt;
+    font-weight: 700;
+    letter-spacing: -0.01em;
+    margin-top: 40px;
+    margin-bottom: 14px;
+    padding-bottom: 6px;
+    border-bottom: 2px solid #1a1a1a;
+  }
+
+  h3 {
+    font-family: 'Helvetica Neue', sans-serif;
+    font-size: 10.5pt;
+    font-weight: 700;
+    margin-top: 24px;
+    margin-bottom: 8px;
+    color: #2c5f8a;
+  }
+
+  h4 {
+    font-family: 'Helvetica Neue', sans-serif;
+    font-size: 9.5pt;
+    font-weight: 700;
+    margin-top: 16px;
+    margin-bottom: 6px;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    color: #555;
+  }
+
+  p {
+    margin-bottom: 10px;
+  }
+
+  /* ── Tables ── */
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    margin: 14px 0 22px 0;
+    font-family: 'Helvetica Neue', sans-serif;
+    font-size: 9pt;
+  }
+
+  thead tr {
+    background: #1a1a1a;
+    color: #fff;
+  }
+
+  thead th {
+    padding: 8px 12px;
+    text-align: left;
+    font-weight: 600;
+    letter-spacing: 0.03em;
+  }
+
+  tbody tr:nth-child(even) {
+    background: #f7f7f7;
+  }
+
+  tbody tr:hover {
+    background: #eef4fb;
+  }
+
+  tbody td {
+    padding: 7px 12px;
+    border-bottom: 1px solid #e8e8e8;
+    vertical-align: top;
+  }
+
+  td.cat {
+    font-weight: 700;
+    color: #2c5f8a;
+    white-space: nowrap;
+  }
+
+  td.source {
+    font-style: italic;
+    color: #666;
+    font-size: 8.5pt;
+  }
+
+  td.green { color: #1a6b3c; font-weight: 600; }
+  td.amber { color: #b85c00; font-weight: 600; }
+  td.red   { color: #b00020; font-weight: 600; }
+
+  /* ── Callout boxes ── */
+  .callout {
+    border-left: 4px solid #2c5f8a;
+    background: #f0f6fb;
+    padding: 12px 16px;
+    margin: 16px 0;
+    border-radius: 0 4px 4px 0;
+  }
+
+  .callout.green {
+    border-color: #1a6b3c;
+    background: #f0faf4;
+  }
+
+  .callout.amber {
+    border-color: #b85c00;
+    background: #fdf5ec;
+  }
+
+  .callout strong {
+    font-family: 'Helvetica Neue', sans-serif;
+    font-size: 9pt;
+    font-weight: 700;
+    display: block;
+    margin-bottom: 4px;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+  }
+
+  /* ── Metric cards ── */
+  .metric-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr 1fr;
+    gap: 14px;
+    margin: 16px 0;
+  }
+
+  .metric-card {
+    border: 1.5px solid #e0e0e0;
+    border-radius: 6px;
+    padding: 14px;
+  }
+
+  .metric-card .label {
+    font-family: 'Helvetica Neue', sans-serif;
+    font-size: 7.5pt;
+    font-weight: 700;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: #888;
+    margin-bottom: 6px;
+  }
+
+  .metric-card .value {
+    font-size: 16pt;
+    font-weight: 700;
+    color: #2c5f8a;
+    font-family: 'Helvetica Neue', sans-serif;
+  }
+
+  .metric-card .desc {
+    font-size: 8.5pt;
+    color: #555;
+    margin-top: 4px;
+    font-family: 'Helvetica Neue', sans-serif;
+  }
+
+  /* ── Lists ── */
+  ul, ol {
+    padding-left: 20px;
+    margin-bottom: 12px;
+  }
+
+  li {
+    margin-bottom: 5px;
+  }
+
+  li strong {
+    font-family: 'Helvetica Neue', sans-serif;
+  }
+
+  /* ── Code / inline ── */
+  code {
+    font-family: 'Courier New', monospace;
+    font-size: 8.5pt;
+    background: #f2f2f2;
+    padding: 1px 5px;
+    border-radius: 3px;
+    color: #c7254e;
+  }
+
+  /* ── Phase banner ── */
+  .phase-banner {
+    display: flex;
+    gap: 0;
+    margin: 18px 0;
+    border-radius: 6px;
+    overflow: hidden;
+    font-family: 'Helvetica Neue', sans-serif;
+    font-size: 9pt;
+  }
+
+  .phase-item {
+    flex: 1;
+    padding: 10px 14px;
+    text-align: center;
+  }
+
+  .phase-item .phase-num {
+    font-size: 7pt;
+    font-weight: 700;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    opacity: 0.7;
+    display: block;
+    margin-bottom: 2px;
+  }
+
+  .phase-item.blue { background: #2c5f8a; color: #fff; }
+  .phase-item.purple { background: #5b3d8a; color: #fff; }
+  .phase-item.green { background: #1a6b3c; color: #fff; }
+
+  /* ── Section divider ── */
+  .divider {
+    border: none;
+    border-top: 1px solid #ddd;
+    margin: 32px 0;
+  }
+
+  /* ── Footer ── */
+  .footer {
+    font-family: 'Helvetica Neue', sans-serif;
+    font-size: 8pt;
+    color: #aaa;
+    text-align: center;
+    margin-top: 48px;
+    padding-top: 16px;
+    border-top: 1px solid #eee;
+  }
+
+  /* ── Print ── */
+  @media print {
+    body { background: #fff; }
+    .page { padding: 36px 44px; }
+    .cover { min-height: auto; padding-bottom: 36px; margin-bottom: 36px; }
+    h2 { page-break-after: avoid; }
+    table { page-break-inside: avoid; }
+    .callout { page-break-inside: avoid; }
+  }
+</style>
+</head>
+<body>
+<div class="page">
+
+  <!-- ══════════════════════════════════════════════════ COVER -->
+  <div class="cover">
+    <div class="cover-tag">CoRead · UIST 2026 · Evaluation Protocol</div>
+    <h1>What We Are Finding<br>from the <em>User Study</em></h1>
+    <div class="cover-sub">
+      A complete data collection and outcome framework for the CoRead evaluation.<br>
+      Designed to meet UIST best-paper standards for systems evaluation.
+    </div>
+    <div class="cover-meta">
+      <div class="meta-item">
+        <label>Participants</label>
+        <span>12 (within-subjects)</span>
+      </div>
+      <div class="meta-item">
+        <label>Conditions</label>
+        <span>CoRead vs. Baseline</span>
+      </div>
+      <div class="meta-item">
+        <label>Sessions</label>
+        <span>24 total (2 per participant)</span>
+      </div>
+      <div class="meta-item">
+        <label>Session length</label>
+        <span>75 minutes each</span>
+      </div>
+      <div class="meta-item">
+        <label>Method</label>
+        <span>WoZ confederate + solo</span>
+      </div>
+      <div class="meta-item">
+        <label>Analysis</label>
+        <span>Wilcoxon + Spearman + Thematic</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- ══════════════════════════════════════════════════ STUDY DESIGN -->
+  <h2>1. Study Design Overview</h2>
+
+  <div class="phase-banner">
+    <div class="phase-item blue">
+      <span class="phase-num">Phase 1</span>
+      Pre-Reading Setup<br><small>5 min</small>
+    </div>
+    <div class="phase-item purple">
+      <span class="phase-num">Phase 2</span>
+      Active Reading<br><small>45 min</small>
+    </div>
+    <div class="phase-item green">
+      <span class="phase-num">Phase 3</span>
+      Post-Reading + Survey<br><small>25 min</small>
+    </div>
+  </div>
+
+  <p>Each of the 12 participants completes <strong>two sessions</strong> (one CoRead, one Baseline) separated by at least one week. Order is counterbalanced: 6 participants do CoRead first, 6 do Baseline first. Two papers of matched complexity are used, also counterbalanced.</p>
+
+  <p>CoRead sessions use a <strong>Wizard-of-Oz confederate protocol</strong>: the researcher operates two additional authenticated accounts in separate browser windows, simulating peer collaborators following a standardized behavioral script. This ensures every participant experiences an identical collaborative context — validated practice in groupware research (Gutwin &amp; Greenberg, 1998).</p>
+
+  <div class="callout green">
+    <strong>Why within-subjects with N=12?</strong>
+    Within-subjects design controls individual differences and doubles statistical power at small N. Wilcoxon Signed-Rank tests are appropriate (non-parametric, paired, N=12). Standard at UIST/CHI for lab-based systems evaluation.
+  </div>
+
+  <!-- ══════════════════════════════════════════════════ DATA SOURCES -->
+  <h2>2. Data Sources</h2>
+
+  <table>
+    <thead>
+      <tr>
+        <th>Source</th>
+        <th>What it captures</th>
+        <th>Storage</th>
+        <th>Both conditions?</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr><td class="cat">System logs</td><td>Every user interaction, timestamped (studyLogger.ts)</td><td>localStorage + /study-data/ JSON</td><td class="green">CoRead only</td></tr>
+      <tr><td class="cat">Existing activity tracker</td><td>Page visits, AI calls, scroll, highlight events</td><td>localStorage (activityTracker.ts)</td><td class="green">CoRead only</td></tr>
+      <tr><td class="cat">Post-session survey</td><td>NASA-TLX, perceived quality, AI timing ratings</td><td>Google Form / paper form</td><td class="amber">Both conditions</td></tr>
+      <tr><td class="cat">Screen recording</td><td>Full session video — for behavioral coding</td><td>OBS / Zoom local recording</td><td class="amber">Both conditions</td></tr>
+      <tr><td class="cat">Post-study interview</td><td>Qualitative: perceptions, preferences, incidents</td><td>Audio recording + transcript</td><td class="amber">Once, after both sessions</td></tr>
+    </tbody>
+  </table>
+
+  <!-- ══════════════════════════════════════════════════ CAT A -->
+  <h2>3. Category A — Feature Usage &amp; Adoption</h2>
+
+  <p>The primary question: <em>did participants actually engage with CoRead's novel features, and which ones?</em> A reviewer's biggest concern for systems papers is that participants ignore AI features and use the tool like a basic PDF reader. This data directly refutes or confirms that concern.</p>
+
+  <h3>A1. Feature Adoption Table</h3>
+  <p>Reported as: <strong>N out of 12 participants who used each feature at least once</strong>, plus mean uses per session (M ± SD).</p>
+
+  <table>
+    <thead>
+      <tr>
+        <th>Feature</th>
+        <th>Category</th>
+        <th>N / 12</th>
+        <th>M uses/session</th>
+        <th>SD</th>
+        <th>First use (min)</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr><td>Role Assignment — viewed</td><td class="cat">Role</td><td>—</td><td>—</td><td>—</td><td>—</td></tr>
+      <tr><td>Role Assignment — accepted</td><td class="cat">Role</td><td>—</td><td>—</td><td>—</td><td>—</td></tr>
+      <tr><td>Role Assignment — modified</td><td class="cat">Role</td><td>—</td><td>—</td><td>—</td><td>—</td></tr>
+      <tr><td>Highlight — any type</td><td class="cat">Annotation</td><td>—</td><td>—</td><td>—</td><td>—</td></tr>
+      <tr><td>Highlight — Confused</td><td class="cat">Annotation</td><td>—</td><td>—</td><td>—</td><td>—</td></tr>
+      <tr><td>Highlight — Important</td><td class="cat">Annotation</td><td>—</td><td>—</td><td>—</td><td>—</td></tr>
+      <tr><td>Highlight — Understood</td><td class="cat">Annotation</td><td>—</td><td>—</td><td>—</td><td>—</td></tr>
+      <tr><td>Highlight — Question</td><td class="cat">Annotation</td><td>—</td><td>—</td><td>—</td><td>—</td></tr>
+      <tr><td>Stuck Marker</td><td class="cat">Annotation</td><td>—</td><td>—</td><td>—</td><td>—</td></tr>
+      <tr><td>AI Help (general)</td><td class="cat">AI</td><td>—</td><td>—</td><td>—</td><td>—</td></tr>
+      <tr><td>AI Math Explainer</td><td class="cat">AI</td><td>—</td><td>—</td><td>—</td><td>—</td></tr>
+      <tr><td>AI Image / Figure Analysis</td><td class="cat">AI</td><td>—</td><td>—</td><td>—</td><td>—</td></tr>
+      <tr><td>AI Tutor</td><td class="cat">AI</td><td>—</td><td>—</td><td>—</td><td>—</td></tr>
+      <tr><td>AI Summary</td><td class="cat">AI</td><td>—</td><td>—</td><td>—</td><td>—</td></tr>
+      <tr><td>Share Panel opened</td><td class="cat">Collaboration</td><td>—</td><td>—</td><td>—</td><td>—</td></tr>
+      <tr><td>Notification clicked</td><td class="cat">Notification</td><td>—</td><td>—</td><td>—</td><td>—</td></tr>
+      <tr><td>Peer Chat accepted</td><td class="cat">Collaboration</td><td>—</td><td>—</td><td>—</td><td>—</td></tr>
+      <tr><td>Discussion Report opened</td><td class="cat">Post-reading</td><td>—</td><td>—</td><td>—</td><td>—</td></tr>
+      <tr><td>Team Consensus opened</td><td class="cat">Post-reading</td><td>—</td><td>—</td><td>—</td><td>—</td></tr>
+      <tr><td>Collective Knowledge opened</td><td class="cat">Post-reading</td><td>—</td><td>—</td><td>—</td><td>—</td></tr>
+    </tbody>
+  </table>
+
+  <h3>A2. Feature Usage Trajectory</h3>
+  <p>Line chart showing mean usage frequency per 10-minute block across the 45-minute session. Reveals <em>when</em> each feature is most used — e.g., AI Help peaks in minutes 20–30 (dense methodology sections), Post-reading artifacts peak at session end. Confirms features are used at the right moments.</p>
+
+  <h3>A3. Time-to-First-Use (Discoverability)</h3>
+  <p>Horizontal bar chart: one bar per feature, showing median minutes into session before first use. Features discovered within the first 5 minutes = highly discoverable. Features first used after 30 minutes = potentially hidden or intimidating.</p>
+
+  <h3>A4. Feature Abandonment</h3>
+  <p>For each feature: what % of participants who used it once used it a second time? Low return rate (e.g., 1/10 returned) = feature was tried but not found useful. High return rate = genuine ongoing utility.</p>
+
+  <!-- ══════════════════════════════════════════════════ CAT B -->
+  <h2>4. Category B — AI Timing Accuracy</h2>
+
+  <p>This is CoRead's most <strong>novel and publishable metric</strong>. No prior paper has measured whether AI assistance arrived at the right moment in a reading session. Three complementary methods triangulate the answer.</p>
+
+  <div class="metric-grid">
+    <div class="metric-card">
+      <div class="label">Method 1</div>
+      <div class="value">Log-based</div>
+      <div class="desc">Time from CIM trigger to participant's next action. Short gap = timely.</div>
+    </div>
+    <div class="metric-card">
+      <div class="label">Method 2</div>
+      <div class="value">Behavioral</div>
+      <div class="desc">Notification accepted vs dismissed. Acceptance = well-timed signal.</div>
+    </div>
+    <div class="metric-card">
+      <div class="label">Method 3</div>
+      <div class="value">Retrospective</div>
+      <div class="desc">Participant rates each notification after session: well-timed / too early / too late.</div>
+    </div>
+  </div>
+
+  <h3>B1. Notification Outcome Breakdown</h3>
+
+  <table>
+    <thead>
+      <tr><th>Outcome</th><th>Definition</th><th>N events</th><th>%</th></tr>
+    </thead>
+    <tbody>
+      <tr><td><strong>Clicked (engaged)</strong></td><td>Participant opened notification within 30s</td><td>—</td><td>—</td></tr>
+      <tr><td><strong>Read then dismissed</strong></td><td>Notification visible >2s then closed</td><td>—</td><td>—</td></tr>
+      <tr><td><strong>Ignored (fast dismiss)</strong></td><td>Dismissed within 2s — not read</td><td>—</td><td>—</td></tr>
+      <tr><td><strong>Auto-expired</strong></td><td>Auto-dismissed after 6s without interaction</td><td>—</td><td>—</td></tr>
+    </tbody>
+  </table>
+
+  <h3>B2. Timing Accuracy by Struggle Severity</h3>
+  <p>Compare acceptance rate when CIM fired at medium severity (score 0.72–0.88) vs. high severity (score &gt;0.88). If high severity → higher acceptance rate, this validates the CIM threshold calibration.</p>
+
+  <h3>B3. Retrospective Timing Ratings</h3>
+  <p>After the session, each participant sees a timeline of every notification that fired during their session and rates each: <em>Well-timed / Too early / Too late / I didn't notice it.</em> Reported as percentage distribution across all ratings from all 12 participants.</p>
+
+  <div class="callout">
+    <strong>Why this matters to reviewers</strong>
+    Prior work on AI assistance timing (Horvitz 1999) identified timing as the central challenge of mixed-initiative systems but provided no empirical measurement method. CoRead's CIM gives a formal trigger; this data is the first empirical test of whether that trigger actually fires at the right moment.
+  </div>
+
+  <!-- ══════════════════════════════════════════════════ CAT C -->
+  <h2>5. Category C — User Control &amp; Opt-Out Behaviors</h2>
+
+  <p>Measures whether participants exercised control over CoRead's monitoring and collaboration features — and whether they felt comfortable with the system's level of access. Directly addresses reviewer questions about privacy and surveillance concerns in behavioral AI systems.</p>
+
+  <table>
+    <thead>
+      <tr>
+        <th>Feature</th>
+        <th>Opt-out event</th>
+        <th>N opted out</th>
+        <th>N opted back in</th>
+        <th>Net opt-out</th>
+        <th>Insight</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr><td>Implicit AI help</td><td><code>implicit_ai_disabled</code></td><td>—</td><td>—</td><td>—</td><td>Proactive help tolerance</td></tr>
+      <tr><td>Struggle broadcasting</td><td><code>struggle_broadcast_off</code></td><td>—</td><td>—</td><td>—</td><td>Confusion privacy concern</td></tr>
+      <tr><td>Collaboration mode</td><td><code>collaboration_mode_off</code></td><td>—</td><td>—</td><td>—</td><td>Preference for solo reading</td></tr>
+      <tr><td>Annotation broadcasting</td><td><code>annotation_broadcast_off</code></td><td>—</td><td>—</td><td>—</td><td>Sharing highlights comfort</td></tr>
+      <tr><td>Eye tracking</td><td><code>eye_tracking_declined</code></td><td>—</td><td>—</td><td>—</td><td>Gaze monitoring comfort</td></tr>
+      <tr><td>Awareness panel</td><td><code>awareness_panel_hidden</code></td><td>—</td><td>—</td><td>—</td><td>Others' highlights distraction</td></tr>
+      <tr><td>Notifications</td><td><code>notifications_muted</code></td><td>—</td><td>—</td><td>—</td><td>Notification fatigue</td></tr>
+    </tbody>
+  </table>
+
+  <div class="callout amber">
+    <strong>The "opted back in" column is your most interesting finding</strong>
+    A participant who turns a feature off and then re-enables it demonstrates experiential trust-building — they needed to see the system behave before trusting it with their data. This is a design insight no survey question can capture.
+  </div>
+
+  <h3>Privacy Sensitivity Hierarchy</h3>
+  <p>Rank features by opt-out rate. Expected finding based on formative study: <em>struggle broadcasting</em> will have the highest opt-out (participants don't want to broadcast confusion) while <em>annotation broadcasting</em> will have lower opt-out (sharing highlights feels safer). This validates the formative finding that confusion signals carry higher social cost than content signals.</p>
+
+  <!-- ══════════════════════════════════════════════════ CAT D -->
+  <h2>6. Category D — Behavioral Outcomes</h2>
+
+  <p>Quantitative measures derived from recordings and logs, compared CoRead vs. Baseline using Wilcoxon Signed-Rank tests.</p>
+
+  <table>
+    <thead>
+      <tr>
+        <th>Measure</th>
+        <th>Definition</th>
+        <th>Source</th>
+        <th>CoRead M (SD)</th>
+        <th>Baseline M (SD)</th>
+        <th>Expected direction</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr><td><strong>Confusion highlights</strong></td><td>Highlights tagged as "Confused" per session</td><td>Log</td><td>—</td><td>—</td><td class="green">CoRead lower (resolved faster)</td></tr>
+      <tr><td><strong>Total highlights</strong></td><td>All annotation events per session</td><td>Log</td><td>—</td><td>—</td><td class="green">CoRead higher (richer engagement)</td></tr>
+      <tr><td><strong>Section coverage</strong></td><td>Unique sections annotated / total sections</td><td>Log</td><td>—</td><td>—</td><td class="green">CoRead higher (role assignment works)</td></tr>
+      <tr><td><strong>Assigned section depth</strong></td><td>Highlights in assigned section vs. other sections</td><td>Log</td><td>—</td><td>—</td><td class="green">CoRead: assigned &gt; other</td></tr>
+      <tr><td><strong>Time-to-first-annotation</strong></td><td>Min until first substantive highlight</td><td>Log</td><td>—</td><td>—</td><td class="green">CoRead shorter (roles reduce cold start)</td></tr>
+      <tr><td><strong>AI help invocations</strong></td><td>Explicit AI requests per session</td><td>Log</td><td>—</td><td>N/A</td><td>—</td></tr>
+      <tr><td><strong>Post-summary dwell</strong></td><td>Time spent on Discussion Report artifacts</td><td>Log</td><td>—</td><td>N/A</td><td>—</td></tr>
+      <tr><td><strong>Revisit rate</strong></td><td>% of pages visited more than once</td><td>Log</td><td>—</td><td>—</td><td class="green">CoRead lower (less rereading needed)</td></tr>
+    </tbody>
+  </table>
+
+  <!-- ══════════════════════════════════════════════════ CAT E -->
+  <h2>7. Category E — Subjective Measures (Surveys)</h2>
+
+  <h3>E1. NASA-TLX — both conditions</h3>
+  <p>Six subscales (Mental Demand, Physical Demand, Temporal Demand, Performance, Effort, Frustration), each 0–100. Administered after each condition. Key hypothesis: CoRead reduces Mental Demand and Frustration without increasing Temporal Demand.</p>
+
+  <h3>E2. Perceived Collaborative Quality — both conditions</h3>
+  <p>Custom 5-point Likert scale (5 items):</p>
+  <ol>
+    <li>"Our group worked well together during this session"</li>
+    <li>"I felt comfortable asking for help when confused"</li>
+    <li>"I understood what my teammates were focusing on"</li>
+    <li>"Our discussion covered the paper thoroughly"</li>
+    <li>"I felt my contributions were valuable to the group"</li>
+  </ol>
+
+  <h3>E3. AI Feature Ratings — CoRead condition only</h3>
+
+  <table>
+    <thead>
+      <tr><th>Item</th><th>Scale</th><th>Constructs</th></tr>
+    </thead>
+    <tbody>
+      <tr><td>"The AI assistance appeared at the right moment"</td><td>1–5</td><td>AI timing accuracy</td></tr>
+      <tr><td>"The AI notifications were distracting"</td><td>1–5 (R)</td><td>Notification intrusiveness</td></tr>
+      <tr><td>"The AI help was relevant to what I was confused about"</td><td>1–5</td><td>AI relevance</td></tr>
+      <tr><td>"I felt the AI understood when I needed help"</td><td>1–5</td><td>AI empathy / appropriateness</td></tr>
+      <tr><td>"I would have wanted more AI help than I received"</td><td>1–5</td><td>Under-intervention sensitivity</td></tr>
+      <tr><td>"I would have wanted less AI help than I received"</td><td>1–5</td><td>Over-intervention sensitivity</td></tr>
+      <tr><td>"The role assignment helped me focus my reading"</td><td>1–5</td><td>Role assignment utility</td></tr>
+      <tr><td>"The post-reading summary helped start our discussion"</td><td>1–5</td><td>Synthesis artifact utility</td></tr>
+      <tr><td>"The peer chat invitation came at a useful moment"</td><td>1–5</td><td>Peer brokering timing</td></tr>
+    </tbody>
+  </table>
+
+  <h3>E4. Post-Study Preference (once, after both conditions)</h3>
+  <ul>
+    <li>"Which condition did you prefer overall?" (CoRead / Baseline / No preference)</li>
+    <li>"Which helped you understand the paper better?" (same options)</li>
+    <li>"Which would you use in your real reading group?" (same options)</li>
+  </ul>
+
+  <!-- ══════════════════════════════════════════════════ CAT F -->
+  <h2>8. Category F — Individual Differences &amp; User Archetypes</h2>
+
+  <p>With 12 participants you can identify <strong>usage archetypes</strong> — qualitatively distinct patterns of engagement that reveal how different users appropriate the system.</p>
+
+  <table>
+    <thead>
+      <tr><th>Archetype</th><th>Signature pattern</th><th>Design implication</th></tr>
+    </thead>
+    <tbody>
+      <tr><td><strong>Heavy AI users</strong></td><td>≥5 AI invocations, long response dwell, math explainer used</td><td>AI features support diverse expertise levels</td></tr>
+      <tr><td><strong>Annotation-first users</strong></td><td>Many highlights, few AI invocations, Share Panel used heavily</td><td>Collaborative annotation valued over AI assistance</td></tr>
+      <tr><td><strong>Passive readers</strong></td><td>Few highlights, few AI calls, mostly page-visit events</td><td>System may need stronger onboarding nudges</td></tr>
+      <tr><td><strong>Trust-builders</strong></td><td>Opted out of features early, re-enabled after 10–15 min</td><td>Experiential trust more effective than upfront explanation</td></tr>
+    </tbody>
+  </table>
+
+  <div class="callout">
+    <strong>Why archetypes matter</strong>
+    Showing that CoRead accommodated multiple reading styles — rather than forcing a single interaction model — is a strong design argument. It addresses the reviewer concern: "What about participants who don't want AI help?" The archetype data shows those participants can use CoRead successfully in annotation-first mode.
+  </div>
+
+  <!-- ══════════════════════════════════════════════════ CAT G -->
+  <h2>9. Category G — Correlation Analysis</h2>
+
+  <p>Spearman rank correlations (non-parametric, appropriate for N=12) between feature usage and outcomes. These answer the question: <em>did using certain features actually lead to better results?</em></p>
+
+  <table>
+    <thead>
+      <tr><th>Variable 1</th><th>Variable 2</th><th>Hypothesis</th></tr>
+    </thead>
+    <tbody>
+      <tr><td>AI Help invocations</td><td>NASA-TLX Mental Demand</td><td>More AI help → lower cognitive load</td></tr>
+      <tr><td>Confusion highlights</td><td>Subsequent AI help in same section</td><td>Confusion annotation predicts help-seeking</td></tr>
+      <tr><td>Role Assignment accepted</td><td>Annotation depth in assigned section</td><td>Role ownership → deeper engagement with assigned content</td></tr>
+      <tr><td>Notification clicked</td><td>AI timing accuracy survey rating</td><td>Behavioral and subjective timing measures should align</td></tr>
+      <tr><td>Struggle score at CIM trigger</td><td>Notification acceptance rate</td><td>Higher struggle → more timely intervention (validates CIM)</td></tr>
+      <tr><td>Post-summary dwell time</td><td>Perceived Collaborative Quality</td><td>Engaging with artifacts → better perceived collaboration</td></tr>
+      <tr><td>Opt-out count</td><td>Overall CoRead preference</td><td>Users who exercised more control feel more positive</td></tr>
+    </tbody>
+  </table>
+
+  <!-- ══════════════════════════════════════════════════ CAT H -->
+  <h2>10. Category H — Qualitative Findings</h2>
+
+  <p>Semi-structured interview (15 min) conducted once after both sessions. Analyzed using reflexive thematic analysis (Braun &amp; Clarke) with two coders. Target: 4–6 themes with representative quotes.</p>
+
+  <h3>Interview Questions</h3>
+  <ol>
+    <li>"Walk me through a moment in the CoRead session where the AI did something that felt helpful or unhelpful."</li>
+    <li>"Did the role assignment change how you read compared to the other session?"</li>
+    <li>"Was there a moment where you wished AI had stepped in but it didn't? Or stepped in when you didn't want it to?"</li>
+    <li>"How did the post-reading summary affect your group discussion?"</li>
+    <li>"You turned off [X feature] during the session — can you tell me why?"  <em>(only if they opted out of something)</em></li>
+    <li>"Would you use CoRead in your actual reading group? What would you change?"</li>
+  </ol>
+
+  <h3>Expected Themes (grounded in formative study)</h3>
+  <ul>
+    <li><strong>Epistemic accountability</strong> — role assignment creates responsibility to read deeply</li>
+    <li><strong>Trust calibration</strong> — comfort with AI monitoring develops during the session, not before</li>
+    <li><strong>Confusion visibility</strong> — seeing confusion signals reduces social cost of asking for help</li>
+    <li><strong>Artifact-anchored discussion</strong> — post-reading synthesis changes how discussion starts</li>
+    <li><strong>Attention economy</strong> — relevance-filtered notifications preserved focus better than expected</li>
+  </ul>
+
+  <!-- ══════════════════════════════════════════════════ OUTPUTS -->
+  <h2>11. Paper Outputs — Tables &amp; Figures</h2>
+
+  <table>
+    <thead>
+      <tr><th>#</th><th>Output</th><th>Type</th><th>Data source</th></tr>
+    </thead>
+    <tbody>
+      <tr><td>T1</td><td>Feature adoption &amp; usage statistics (all features, M ± SD, N/12)</td><td>Table</td><td>System logs</td></tr>
+      <tr><td>T2</td><td>CoRead vs. Baseline quantitative comparison (W, p, r for each measure)</td><td>Table</td><td>Logs + survey</td></tr>
+      <tr><td>T3</td><td>AI feature subjective ratings (M ± SD for each item)</td><td>Table</td><td>Survey</td></tr>
+      <tr><td>T4</td><td>User control &amp; opt-out behaviors (N opted out, N re-enabled)</td><td>Table</td><td>System logs</td></tr>
+      <tr><td>T5</td><td>Spearman correlations: feature usage vs. outcomes</td><td>Table</td><td>Logs + survey</td></tr>
+      <tr><td>F1</td><td>Feature adoption bar chart (sorted by % adoption)</td><td>Figure</td><td>System logs</td></tr>
+      <tr><td>F2</td><td>Feature usage trajectory (usage/10min across session)</td><td>Figure</td><td>System logs</td></tr>
+      <tr><td>F3</td><td>AI timing accuracy breakdown (well-timed / too early / too late / ignored)</td><td>Figure</td><td>Logs + survey</td></tr>
+      <tr><td>F4</td><td>Time-to-first-use per feature (discoverability chart)</td><td>Figure</td><td>System logs</td></tr>
+      <tr><td>F5</td><td>NASA-TLX subscale comparison CoRead vs. Baseline</td><td>Figure</td><td>Survey</td></tr>
+    </tbody>
+  </table>
+
+  <!-- ══════════════════════════════════════════════════ STATS -->
+  <h2>12. Statistical Analysis Plan</h2>
+
+  <table>
+    <thead>
+      <tr><th>Comparison</th><th>Test</th><th>Report</th></tr>
+    </thead>
+    <tbody>
+      <tr><td>CoRead vs. Baseline on any continuous measure</td><td>Wilcoxon Signed-Rank (within-subjects, N=12)</td><td>W, p, r = Z/√N</td></tr>
+      <tr><td>Feature usage vs. outcome variable</td><td>Spearman rank correlation</td><td>ρ, p, N</td></tr>
+      <tr><td>Notification outcome distribution</td><td>Descriptive (%, counts)</td><td>Table + figure</td></tr>
+      <tr><td>Multiple comparisons (≥3 tests on same data)</td><td>Bonferroni correction</td><td>Adjusted p reported</td></tr>
+      <tr><td>Qualitative coding agreement</td><td>Cohen's κ</td><td>Target κ > 0.75</td></tr>
+    </tbody>
+  </table>
+
+  <div class="callout amber">
+    <strong>Important for small N</strong>
+    With N=12, report all tests as exploratory rather than confirmatory. State: <em>"Given the small sample size, we report Wilcoxon tests and effect sizes as exploratory indicators; findings should be interpreted with appropriate caution and validated in larger deployments."</em> Reviewers expect this honesty and will penalize papers that over-claim statistical significance at N=12.
+  </div>
+
+  <hr class="divider">
+
+  <div class="footer">
+    CoRead · UIST 2026 Submission · User Study Protocol v1.0 · Confidential
+  </div>
+
+</div>
+</body>
+</html>

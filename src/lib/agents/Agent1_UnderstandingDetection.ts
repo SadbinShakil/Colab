@@ -106,6 +106,13 @@ class Agent1_UnderstandingDetection {
   // Previous understanding scores for breakthrough detection
   private previousUnderstandingScores: Map<string, number> = new Map()
 
+  // Feature 3: Implicit struggle — tracks last time we fired for each section
+  // so we don't spam the implicit signal more than once per 5 minutes
+  private implicitFiredAt: Map<string, number> = new Map()
+  private readonly IMPLICIT_COOLDOWN_MS = 300_000  // 5 minutes
+  private readonly IMPLICIT_REVISIT_THRESHOLD = 3
+  private readonly IMPLICIT_DWELL_THRESHOLD_MS = 180_000  // 3 minutes
+
   // Global mouse state received via window events
   private mouseState: GlobalMouseState = {
     x: 0, y: 0, vx: 0, vy: 0,
@@ -248,6 +255,7 @@ class Agent1_UnderstandingDetection {
       this.updateAllSectionScores(session)
       this.checkFireConditions(session)
       this.detectBreakthroughsAndEmit(session)
+      this.checkImplicitStruggle(session)
 
     }, 1000) // 1 second tick
   }
@@ -660,6 +668,56 @@ class Agent1_UnderstandingDetection {
       }
     })
     return loops.sort((a, b) => b.count - a.count)
+  }
+
+  // =============================================================================
+  // FEATURE 3: IMPLICIT STRUGGLE DETECTION
+  //
+  // Detects researchers who are stuck but haven't clicked "I'm stuck".
+  // Pattern: visitCount > 3 AND dwellTime > 3min AND no understood-highlight.
+  // This is the "7 re-reads in 12 minutes" signal from the design doc.
+  //
+  // Fires a distinct event 'agent1:implicit-struggle' so the UI can offer help
+  // gently — a soft nudge, not the full intervention card.
+  // =============================================================================
+
+  private checkImplicitStruggle(session: InteractionSession) {
+    const NOW = Date.now()
+
+    session.sectionInteractions.forEach((section, sectionId) => {
+      // Skip if already above the explicit fire threshold — A7 handles those
+      const state = this.sectionStates.get(sectionId)
+      if (state && state.score >= this.FIRE_THRESHOLD) return
+
+      // Skip sections that aren't actively being read
+      if (NOW - section.lastActiveTimestamp > this.ACTIVE_RECENCY_MS) return
+
+      // Check implicit struggle pattern
+      const revisitsExceeded = section.visitCount >= this.IMPLICIT_REVISIT_THRESHOLD
+      const dwellExceeded = section.totalTimeSpent >= this.IMPLICIT_DWELL_THRESHOLD_MS
+      const noUnderstoodSignal = section.understoodHighlights === 0
+
+      if (!revisitsExceeded || !dwellExceeded || !noUnderstoodSignal) return
+
+      // Cooldown — don't re-fire within 5 minutes for the same section
+      const lastFired = this.implicitFiredAt.get(sectionId) ?? 0
+      if (NOW - lastFired < this.IMPLICIT_COOLDOWN_MS) return
+
+      this.implicitFiredAt.set(sectionId, NOW)
+
+      const signal = {
+        sectionId,
+        visitCount: section.visitCount,
+        dwellTimeSeconds: Math.round(section.totalTimeSpent / 1000),
+        currentDs: state?.score ?? 0,
+        pattern: 'revisit-dwell-no-resolution',
+        // Human-readable for the help nudge
+        description: `Visited ${section.visitCount}× · ${Math.round(section.totalTimeSpent / 60000)}min on this section · no understood signal`,
+      }
+
+      console.log(`🔍 [Agent 1] Implicit struggle detected in ${sectionId}:`, signal)
+      this.emitEvent('implicit-struggle', signal)
+    })
   }
 }
 

@@ -304,11 +304,13 @@ export function useCollaboration({ documentId, userId, userName }: UseCollaborat
         consecutiveFailures = 0; // Reset on success
       } catch (error) {
         consecutiveFailures++;
-        console.error('Failed to poll for updates:', error)
-        // Optionally, stop polling after too many failures
+        // Only log after 3 failures to avoid noise on initial connection race
+        if (consecutiveFailures >= 3) {
+          console.warn(`[useCollaboration] Poll failed (${consecutiveFailures}/${maxFailures}):`, (error as Error).message)
+        }
         if (consecutiveFailures >= maxFailures) {
-          console.error('Too many consecutive failures, stopping polling')
-          clearInterval(pollInterval);
+          console.error('[useCollaboration] Too many consecutive poll failures — stopping. Check server is running on localhost:3000.')
+          clearInterval(pollInterval)
         }
       }
     }, 2000) // Poll every 2 seconds

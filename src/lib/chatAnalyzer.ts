@@ -16,7 +16,7 @@ export function analyzeChatMessage(
   message: string,
   userId: string,
   userName: string
-): { type: 'definition' | 'insight' | null; data?: WikiEntry | InsightEntry } {
+): { type: 'definition'; data: WikiEntry } | { type: 'insight'; data: InsightEntry } | { type: null } {
   const trimmed = message.trim()
   if (trimmed.length < 10) return { type: null }
 

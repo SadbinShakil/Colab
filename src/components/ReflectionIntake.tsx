@@ -2,12 +2,19 @@
 
 import React, { useState, useRef, useEffect } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
-import { Brain, Mic, Upload, X, FileText, CheckCircle2, Sparkles, AudioLines, ChevronRight, Loader2, ArrowLeft, Wand2, Target, ScanSearch } from 'lucide-react'
+import { Brain, Mic, Upload, X, FileText, CheckCircle2, Sparkles, AudioLines, ChevronRight, Loader2, ArrowLeft, Wand2, Target, ScanSearch, BookOpen } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { toast } from 'sonner'
 
 // Google Material 3 Spring Physics
 const SPRING_TRANSITION = { type: "spring", stiffness: 300, damping: 30 }
+
+interface ReaderSetup {
+    expertiseLevel: 'novice' | 'familiar' | 'expert'
+    readingGoal: 'overview' | 'deep' | 'methodology' | 'evaluate' | 'find-gaps'
+    priorKnowledge: string
+    completedAt: string
+}
 
 interface ReflectionIntakeProps {
     isOpen: boolean
@@ -16,9 +23,31 @@ interface ReflectionIntakeProps {
     onReset?: () => void
     reflectionSubmitted?: boolean
     currentReflection?: { type: 'text' | 'audio' | 'file', content: string } | null
+    readerSetup?: ReaderSetup | null
 }
 
-export default function ReflectionIntake({ isOpen, onClose, onSubmit, onReset, reflectionSubmitted, currentReflection }: ReflectionIntakeProps) {
+/** Convert a ReaderSetup into a natural-language reflection string for A10. */
+function buildReflectionFromSetup(setup: ReaderSetup): string {
+    const expertise: Record<ReaderSetup['expertiseLevel'], string> = {
+        novice: 'New to this subfield',
+        familiar: 'Familiar with the domain',
+        expert: 'Expert in this area',
+    }
+    const goal: Record<ReaderSetup['readingGoal'], string> = {
+        overview: 'reading for a high-level overview of the contribution',
+        deep: 'doing a deep read to fully understand the method and claims',
+        methodology: 'focused on scrutinising the methodology and experimental design',
+        evaluate: 'evaluating the paper as a reviewer — checking evidence-to-claim fidelity',
+        'find-gaps': 'reading to identify gaps and position future work',
+    }
+    const parts: string[] = [`${expertise[setup.expertiseLevel]}; ${goal[setup.readingGoal]}.`]
+    if (setup.priorKnowledge?.trim()) {
+        parts.push(`Prior knowledge: ${setup.priorKnowledge.trim()}.`)
+    }
+    return parts.join(' ')
+}
+
+export default function ReflectionIntake({ isOpen, onClose, onSubmit, onReset, reflectionSubmitted, currentReflection, readerSetup }: ReflectionIntakeProps) {
     const [reflectionType, setReflectionType] = useState<'text' | 'audio' | 'file' | null>(null)
     const [textContent, setTextContent] = useState(currentReflection?.type === 'text' ? currentReflection.content : '')
     const [isRecording, setIsRecording] = useState(false)
@@ -37,13 +66,14 @@ export default function ReflectionIntake({ isOpen, onClose, onSubmit, onReset, r
     const timerRef = useRef<NodeJS.Timeout | null>(null)
     const fileInputRef = useRef<HTMLInputElement>(null)
 
-    // SUGGESTION CHIPS to guide the user (Familiarity, Interest, Goals)
+    // SUGGESTION CHIPS — calibration signals for A10 section assignment
     const suggestions = [
-        "I'm new to this topic.",
-        "I'm an expert in this field.",
-        "Interested in methodology.",
-        "Focusing on results analysis.",
-        "Looking for research gaps."
+        "Expert in the methods; reading for contribution novelty",
+        "Familiar with the domain; scrutinizing the evaluation design",
+        "Reading as a reviewer — checking evidence-to-claim fidelity",
+        "New to this subfield; need mechanism before claims",
+        "Reviewing for related work — tracking citation gaps",
+        "Checking reproducibility: data, code, and parameter reporting",
     ]
 
     const handleTextSubmit = () => {
@@ -149,7 +179,7 @@ export default function ReflectionIntake({ isOpen, onClose, onSubmit, onReset, r
                         animate={{ scale: 1, opacity: 1, y: 0 }}
                         exit={{ scale: 0.95, opacity: 0, y: 30 }}
                         transition={SPRING_TRANSITION}
-                        className="relative w-full max-w-2xl bg-[#FCFCFC] rounded-[32px] shadow-2xl overflow-hidden flex flex-col max-h-[90vh] border border-[#E2E8F0]/80"
+                        className="relative w-full max-w-lg bg-[#FCFCFC] rounded-[28px] shadow-2xl overflow-hidden flex flex-col max-h-[90vh] border border-[#E2E8F0]/80"
                     >
                         {/* DECORATIVE HEADER */}
                         <div className="absolute top-0 left-0 right-0 h-40 bg-gradient-to-b from-blue-50/80 to-transparent pointer-events-none" />
@@ -181,15 +211,15 @@ export default function ReflectionIntake({ isOpen, onClose, onSubmit, onReset, r
                                     </div>
 
                                     <div className="space-y-2 max-w-sm">
-                                        <h3 className="text-xl font-semibold text-slate-900">
-                                            {analysisStep === 1 && "Analyzing Familiarity..."}
-                                            {analysisStep === 2 && "Calculating Section Scores..."}
-                                            {analysisStep === 3 && "Profile Aligned"}
+                                        <h3 className="text-lg font-semibold text-slate-900">
+                                            {analysisStep === 1 && "Reading your profile…"}
+                                            {analysisStep === 2 && "Aligning to document sections…"}
+                                            {analysisStep === 3 && "System calibrated"}
                                         </h3>
                                         <p className="text-slate-500 text-sm h-10">
-                                            {analysisStep === 1 && "Identifying expertise signals & user goals."}
-                                            {analysisStep === 2 && "Matching your profile to document sections (Introduction, Methodology, Results)."}
-                                            {analysisStep === 3 && "Optimization complete. System ready."}
+                                            {analysisStep === 1 && "Extracting expertise signals and reading goals."}
+                                            {analysisStep === 2 && "Scoring sections against your background — A10 assigning roles."}
+                                            {analysisStep === 3 && "CoRead is ready. Agents will now adapt to you."}
                                         </p>
                                     </div>
 
@@ -206,18 +236,18 @@ export default function ReflectionIntake({ isOpen, onClose, onSubmit, onReset, r
                             ) : (
                                 <>
                                     {/* STANDARD HEADER */}
-                                    <div className="px-8 pt-8 pb-2 text-center/left shrink-0">
-                                        <div className="flex items-center justify-center">
-                                            <div className="inline-flex items-center gap-2 px-4 py-1.5 rounded-full bg-blue-50 border border-blue-100 text-blue-700 text-xs font-bold uppercase tracking-wider mb-4">
-                                                <Target className="w-3.5 h-3.5" /> Session Calibration
+                                    <div className="px-8 pt-8 pb-2 shrink-0">
+                                        <div className="flex items-center justify-center mb-4">
+                                            <div className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-full bg-indigo-50 border border-indigo-100 text-indigo-700 text-[11px] font-bold uppercase tracking-widest">
+                                                <Target className="w-3 h-3" /> Phase I · Pre-Discussion
                                             </div>
                                         </div>
 
-                                        <h2 className="text-2xl font-semibold text-slate-900 mb-2 tracking-tight text-center">
-                                            {reflectionSubmitted ? 'Profile Active' : 'Align System to Your Expertise'}
+                                        <h2 className="text-xl font-semibold text-slate-900 mb-2 tracking-tight text-center">
+                                            {reflectionSubmitted ? 'Calibration active' : 'State your reading position'}
                                         </h2>
-                                        <p className="text-slate-500 text-sm max-w-md mx-auto leading-relaxed text-center hidden sm:block">
-                                            Describe your <span className="text-slate-800 font-medium">familiarity</span> and <span className="text-slate-800 font-medium">goals</span>. The system will prioritize document sections for you.
+                                        <p className="text-slate-500 text-sm max-w-sm mx-auto leading-relaxed text-center">
+                                            Your expertise profile calibrates when A7 intervenes, which sections A10 assigns to you, and when the system stays silent.
                                         </p>
                                     </div>
 
@@ -239,25 +269,53 @@ export default function ReflectionIntake({ isOpen, onClose, onSubmit, onReset, r
                                             </div>
                                         ) : !reflectionType ? (
                                             // === SELECTION MODE ===
-                                            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 h-full content-center">
-                                                <SelectionCard
-                                                    icon={<FileText className="w-7 h-7" />}
-                                                    title="Text Input"
-                                                    label="Write goals"
-                                                    onClick={() => setReflectionType('text')}
-                                                />
-                                                <SelectionCard
-                                                    icon={<Mic className="w-7 h-7" />}
-                                                    title="Voice Note"
-                                                    label="Speak naturally"
-                                                    onClick={() => setReflectionType('audio')}
-                                                />
-                                                <SelectionCard
-                                                    icon={<Upload className="w-7 h-7" />}
-                                                    title="Upload"
-                                                    label="Use existing file"
-                                                    onClick={() => setReflectionType('file')}
-                                                />
+                                            <div className="flex flex-col gap-3 h-full content-center">
+                                                {/* Briefing shortcut — 1-tap submit using PaperOrientationPanel data */}
+                                                {readerSetup && (
+                                                    <button
+                                                        onClick={() => startAnalysisFlow('text', buildReflectionFromSetup(readerSetup))}
+                                                        className="group w-full flex items-start gap-4 p-4 bg-indigo-50 hover:bg-indigo-100 border border-indigo-200 hover:border-indigo-400 rounded-2xl transition-all text-left"
+                                                    >
+                                                        <div className="w-10 h-10 rounded-xl bg-indigo-600 text-white flex items-center justify-center shrink-0 mt-0.5">
+                                                            <BookOpen className="w-5 h-5" />
+                                                        </div>
+                                                        <div className="flex-1 min-w-0">
+                                                            <div className="flex items-center gap-2 mb-0.5">
+                                                                <span className="text-sm font-semibold text-indigo-900">Use my briefing profile</span>
+                                                                <span className="text-[10px] font-bold uppercase tracking-wider text-indigo-500 bg-indigo-100 px-2 py-0.5 rounded-full">1-tap</span>
+                                                            </div>
+                                                            <p className="text-xs text-indigo-700 leading-relaxed line-clamp-2">
+                                                                {buildReflectionFromSetup(readerSetup)}
+                                                            </p>
+                                                        </div>
+                                                        <ChevronRight className="w-4 h-4 text-indigo-400 shrink-0 mt-1 group-hover:translate-x-0.5 transition-transform" />
+                                                    </button>
+                                                )}
+                                                <div className="grid grid-cols-3 gap-3">
+                                                    <SelectionCard
+                                                        icon={<FileText className="w-7 h-7" />}
+                                                        title="Text"
+                                                        label={readerSetup ? 'Edit & refine' : 'Write goals'}
+                                                        onClick={() => {
+                                                            if (readerSetup && !textContent.trim()) {
+                                                                setTextContent(buildReflectionFromSetup(readerSetup))
+                                                            }
+                                                            setReflectionType('text')
+                                                        }}
+                                                    />
+                                                    <SelectionCard
+                                                        icon={<Mic className="w-7 h-7" />}
+                                                        title="Voice"
+                                                        label="Speak naturally"
+                                                        onClick={() => setReflectionType('audio')}
+                                                    />
+                                                    <SelectionCard
+                                                        icon={<Upload className="w-7 h-7" />}
+                                                        title="Upload"
+                                                        label="Use existing file"
+                                                        onClick={() => setReflectionType('file')}
+                                                    />
+                                                </div>
                                             </div>
                                         ) : (
                                             // === INPUT MODE ===
@@ -276,27 +334,30 @@ export default function ReflectionIntake({ isOpen, onClose, onSubmit, onReset, r
                                                 {/* Text Mode Content */}
                                                 {reflectionType === 'text' && (
                                                     <div className="flex flex-col gap-4">
-                                                        {/* Smart Chips */}
-                                                        <div className="flex flex-wrap gap-2">
-                                                            {suggestions.map((s, i) => (
-                                                                <button
-                                                                    key={i}
-                                                                    onClick={() => addSuggestion(s)}
-                                                                    className="px-3 py-1.5 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 text-xs font-bold rounded-full transition-colors border border-indigo-100"
-                                                                >
-                                                                    + {s}
-                                                                </button>
-                                                            ))}
-                                                        </div>
-
                                                         {/* Input Area */}
                                                         <textarea
-                                                            className="w-full h-40 bg-slate-50 border border-slate-200 rounded-[24px] p-5 text-base text-slate-800 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all resize-none shadow-inner leading-relaxed"
-                                                            placeholder="e.g. I am familiar with the basics, but I want to understand the experimental setup deeply..."
+                                                            className="w-full h-36 bg-white border border-slate-200 rounded-2xl px-4 py-3.5 text-sm text-slate-800 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-400 transition-all resize-none leading-relaxed shadow-sm"
+                                                            placeholder="e.g. Expert in HCI methods; reading to assess whether the D_s signal weights are empirically justified or theoretically assumed..."
                                                             value={textContent}
                                                             onChange={(e) => setTextContent(e.target.value)}
                                                             autoFocus
                                                         />
+
+                                                        {/* Smart Chips */}
+                                                        <div>
+                                                            <p className="text-[11px] font-semibold text-slate-400 uppercase tracking-wide mb-2">Quick tags</p>
+                                                            <div className="flex flex-wrap gap-1.5">
+                                                                {suggestions.map((s, i) => (
+                                                                    <button
+                                                                        key={i}
+                                                                        onClick={() => addSuggestion(s)}
+                                                                        className="px-2.5 py-1 bg-slate-100 hover:bg-indigo-50 hover:text-indigo-700 hover:border-indigo-200 text-slate-600 text-xs font-medium rounded-full transition-colors border border-transparent"
+                                                                    >
+                                                                        {s}
+                                                                    </button>
+                                                                ))}
+                                                            </div>
+                                                        </div>
                                                     </div>
                                                 )}
 
@@ -309,10 +370,10 @@ export default function ReflectionIntake({ isOpen, onClose, onSubmit, onReset, r
 
                                                         <div className="text-center">
                                                             <h3 className="text-xl font-bold text-slate-900">
-                                                                {isRecording ? formatTime(recordingDuration) : "Describe your expertise"}
+                                                                {isRecording ? formatTime(recordingDuration) : "State your reading position"}
                                                             </h3>
                                                             <p className="text-slate-500 text-sm mt-1">
-                                                                We'll extract your goals to rank the document.
+                                                                Your expertise profile calibrates A10 section assignment and A7 silence routing.
                                                             </p>
                                                         </div>
                                                     </div>
@@ -337,25 +398,24 @@ export default function ReflectionIntake({ isOpen, onClose, onSubmit, onReset, r
                                     {!!reflectionType && !reflectionSubmitted && (
                                         <div className="p-6 pt-4 bg-white border-t border-slate-100 z-20 shrink-0">
                                             {reflectionType === 'text' && (
-                                                <Button onClick={handleTextSubmit} className="h-14 rounded-full bg-blue-600 hover:bg-blue-700 text-white font-semibold text-lg w-full shadow-lg shadow-blue-200">
-                                                    Analyze & Calibrate
+                                                <Button onClick={handleTextSubmit} disabled={!textContent.trim()} className="h-11 rounded-xl bg-indigo-600 hover:bg-indigo-700 disabled:opacity-40 text-white font-semibold text-sm w-full shadow-sm">
+                                                    Calibrate System →
                                                 </Button>
                                             )}
                                             {reflectionType === 'audio' && (
                                                 <Button onClick={isRecording ? stopRecording : startRecording}
-                                                    className={`w-full h-14 rounded-full text-lg font-bold transition-colors ${isRecording ? 'bg-slate-900 text-white' : 'bg-blue-600 text-white'}`}>
-                                                    {isRecording ? "Finish Recording" : "Start Speaking"}
+                                                    className={`w-full h-11 rounded-xl text-sm font-semibold transition-colors ${isRecording ? 'bg-red-600 hover:bg-red-700 text-white' : 'bg-indigo-600 hover:bg-indigo-700 text-white'}`}>
+                                                    {isRecording ? "Stop & Analyze" : "Start Speaking"}
                                                 </Button>
                                             )}
                                             {reflectionType === 'file' && hasFinished && (
-                                                <Button onClick={() => handleTextSubmit()} className="w-full h-14 rounded-full bg-green-600 hover:bg-green-700 text-white font-semibold text-lg shadow-lg shadow-green-200">
-                                                    Confirm
+                                                <Button onClick={() => handleTextSubmit()} className="w-full h-11 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-semibold text-sm shadow-sm">
+                                                    Confirm & Calibrate →
                                                 </Button>
                                             )}
-                                            {/* Show placeholder button when file is not selected yet to maintain layout consistency? Or just hide it. */}
                                             {reflectionType === 'file' && !hasFinished && (
-                                                <Button disabled className="w-full h-14 rounded-full bg-slate-100 text-slate-400 font-semibold text-lg cursor-not-allowed">
-                                                    Waiting for upload...
+                                                <Button disabled className="w-full h-11 rounded-xl bg-slate-100 text-slate-400 font-semibold text-sm cursor-not-allowed">
+                                                    Waiting for upload…
                                                 </Button>
                                             )}
                                         </div>

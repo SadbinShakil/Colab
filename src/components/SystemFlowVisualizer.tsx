@@ -55,6 +55,7 @@ export function SystemFlowVisualizer({
     const [isOpen, setIsOpen] = useState(false)
     const [hasOnboarded, setHasOnboarded] = useState(false)
     const [showSummary, setShowSummary] = useState(false)
+    const [summaryTab, setSummaryTab] = useState(0)
     const [showReport, setShowReport] = useState(false)
 
     // Helper to format timestamps to MM:SS
@@ -64,59 +65,231 @@ export function SystemFlowVisualizer({
         return `${m}:${s < 10 ? '0' : ''}${s}`
     }
 
-    // Helper to format summary content
-    const formatSummary = (data: any) => {
-        // ✅ FIXED: Show loading message instead of fake LitSense text
-        if (!data) return null
+    // Google design tokens
+    const G = {
+        text:    '#202124',
+        sub:     '#5F6368',
+        muted:   '#9AA0A6',
+        border:  '#DADCE0',
+        divider: '#F1F3F4',
+        surface: '#F8F9FA',
+        blue:    '#1a73e8',
+        blueBg:  '#E8F0FE',
+        green:   '#188038',
+        greenBg: '#E6F4EA',
+        amber:   '#B06000',
+        amberBg: '#FEF7E0',
+        red:     '#C5221F',
+        redBg:   '#FCE8E6',
+        purple:  '#6200EE',
+        purpleBg:'#F3E8FF',
+        teal:    '#007B5F',
+        tealBg:  '#E6F4F1',
+    }
 
-        if (typeof data === 'string') return data
+    const clean = (s: any): string => {
+        if (!s || typeof s !== 'string') return ''
+        const t = s.trimStart()
+        if (t.startsWith('{') || t.startsWith('[') || t.startsWith('"')) return ''
+        return s.replace(/\*\*(.*?)\*\*/g, '$1').replace(/^\p{Emoji}\s*/u, '').trim()
+    }
 
-        // ✅ Generic Object Formatter (Restores original look-and-feel)
-        return Object.entries(data).map(([key, value]) => {
-            if (key === 'Note') return null // Skip internal notes
+    const bullets = (text: string, max = 4): string[] => {
+        if (!text || typeof text !== 'string') return []
+        return text.split('\n')
+            .map(l => l.replace(/\*\*(.*?)\*\*/g, '$1').replace(/^[•\-\*]\s*/, '').replace(/^\p{Emoji}\s*/u, '').trim())
+            .filter(l => l.length > 15 && !l.endsWith(':'))
+            .slice(0, max)
+    }
 
-            // Skip internal metadata keys that clutter the view
-            if (key === 'totalPages' || key === 'estimatedReadingTime' || key === 'documentType') {
-                return null
-            }
+    const renderSummaryContent = (raw: any) => {
+        if (!raw) return null
+        let data = raw
+        if (typeof data === 'string') {
+            try { data = JSON.parse(data) } catch { return null }
+        }
+        if (!data || typeof data !== 'object') return null
 
-            let displayValue: React.ReactNode = String(value)
+        const title    = clean(data.title)
+        const authors  = clean(data.authors)
+        const year     = clean(data.year)
+        const journal  = clean(data.journal)
+        const abstract = clean(data.abstract)
 
-            // Handle arrays nicely (e.g. sections list)
-            if (Array.isArray(value)) {
-                if (value.length === 0) return null
+        const authorShort = authors
+            ? authors.split(',').map((a: string) => a.trim()).slice(0, 2).join(', ') + (authors.split(',').length > 2 ? ' et al.' : '')
+            : ''
 
-                displayValue = (
-                    <div className="flex flex-wrap gap-1 mt-1">
-                        {value.map((v, i) => {
-                            // Handle section objects specific to our new extractor
-                            const vStr = (typeof v === 'object' && v.name) ? `${v.name} (p.${v.page})` :
-                                (typeof v === 'object' ? JSON.stringify(v) : v)
+        // Tab definitions — each tab groups related insight categories
+        const TABS = [
+            {
+                id: 'overview',
+                label: 'Overview',
+                sections: [
+                    { key: 'motivation', label: 'Why It Matters', color: G.purple, bg: G.purpleBg, max: 3 },
+                    { key: 'summary',    label: 'Summary',        color: G.blue,   bg: G.blueBg,   max: 4 },
+                    { key: 'keyPoints',  label: 'Key Points',     color: G.blue,   bg: G.blueBg,   max: 4 },
+                ],
+            },
+            {
+                id: 'findings',
+                label: 'Findings',
+                sections: [
+                    { key: 'keyFindings', label: 'Key Findings', color: G.blue,  bg: G.blueBg,  max: 5 },
+                    { key: 'results',     label: 'Results',      color: G.amber, bg: G.amberBg, max: 4 },
+                ],
+            },
+            {
+                id: 'methods',
+                label: 'Methods',
+                sections: [
+                    { key: 'methods', label: 'Methodology', color: G.green, bg: G.greenBg, max: 5 },
+                ],
+            },
+            {
+                id: 'critique',
+                label: 'Critique',
+                sections: [
+                    { key: 'limitations', label: 'Limitations', color: G.red,  bg: G.redBg,  max: 4 },
+                    { key: 'futureWork',  label: 'Future Work', color: G.teal, bg: G.tealBg, max: 4 },
+                ],
+            },
+        ]
+
+        // Compute which tabs have content
+        const tabsWithContent = TABS.map(tab => ({
+            ...tab,
+            groups: tab.sections
+                .map(s => ({ ...s, items: bullets(data[s.key], s.max) }))
+                .filter(s => s.items.length > 0),
+        })).filter(tab => tab.groups.length > 0)
+
+        // Also check if abstract-only mode
+        const hasAbstractOnly = tabsWithContent.length === 0 && !!abstract
+
+        const activeTabIdx = Math.min(summaryTab, tabsWithContent.length - 1)
+        const activeTab = tabsWithContent[activeTabIdx]
+
+        const SectionBlock = ({ label, color, bg, items }: { label: string; color: string; bg: string; items: string[] }) => (
+            <div style={{ marginBottom: 20 }}>
+                <span style={{
+                    display: 'inline-flex',
+                    fontSize: 11,
+                    fontWeight: 600,
+                    color,
+                    background: bg,
+                    padding: '3px 10px',
+                    borderRadius: 100,
+                    letterSpacing: '0.02em',
+                    marginBottom: 10,
+                }}>
+                    {label}
+                </span>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 9 }}>
+                    {items.map((item, i) => (
+                        <div key={i} style={{ display: 'flex', gap: 10, alignItems: 'flex-start' }}>
+                            <svg style={{ flexShrink: 0, marginTop: 5 }} width="6" height="6" viewBox="0 0 6 6">
+                                <circle cx="3" cy="3" r="3" fill={color} opacity="0.85" />
+                            </svg>
+                            <span style={{ fontSize: 13, color: G.text, lineHeight: '20px', letterSpacing: '-0.003em' }}>
+                                {item}
+                            </span>
+                        </div>
+                    ))}
+                </div>
+            </div>
+        )
+
+        return (
+            <div style={{ fontFamily: "'Google Sans', Roboto, Arial, sans-serif", display: 'flex', flexDirection: 'column', height: '100%' }}>
+                {/* Paper identity block */}
+                {(title || authorShort || year) && (
+                    <div style={{ padding: '14px 16px 12px', borderBottom: `1px solid ${G.divider}`, flexShrink: 0 }}>
+                        {title && (
+                            <p style={{ fontSize: 13, fontWeight: 500, color: G.text, lineHeight: '20px', marginBottom: 4, letterSpacing: '-0.01em' }}>
+                                {title}
+                            </p>
+                        )}
+                        <p style={{ fontSize: 12, color: G.sub, lineHeight: '18px', marginBottom: journal ? 8 : 0 }}>
+                            {[authorShort, year].filter(Boolean).join(' · ')}
+                        </p>
+                        {journal && (
+                            <span style={{
+                                display: 'inline-block',
+                                fontSize: 11,
+                                fontWeight: 500,
+                                color: G.blue,
+                                background: G.blueBg,
+                                padding: '2px 10px',
+                                borderRadius: 100,
+                            }}>
+                                {journal.length > 48 ? journal.slice(0, 48) + '…' : journal}
+                            </span>
+                        )}
+                    </div>
+                )}
+
+                {/* Google-style tab bar */}
+                {tabsWithContent.length > 0 && (
+                    <div style={{
+                        display: 'flex',
+                        borderBottom: `1px solid ${G.divider}`,
+                        flexShrink: 0,
+                        padding: '0 8px',
+                        gap: 0,
+                    }}>
+                        {tabsWithContent.map((tab, i) => {
+                            const isActive = i === activeTabIdx
                             return (
-                                <span key={i} className="bg-gray-100 text-gray-700 px-2 py-1 rounded text-xs border border-gray-200">
-                                    {vStr}
-                                </span>
+                                <button
+                                    key={tab.id}
+                                    onClick={() => setSummaryTab(i)}
+                                    style={{
+                                        position: 'relative',
+                                        padding: '0 12px',
+                                        height: 40,
+                                        fontSize: 13,
+                                        fontWeight: isActive ? 500 : 400,
+                                        color: isActive ? G.blue : G.sub,
+                                        background: 'transparent',
+                                        border: 'none',
+                                        cursor: 'pointer',
+                                        borderBottom: isActive ? `2px solid ${G.blue}` : '2px solid transparent',
+                                        marginBottom: -1,
+                                        transition: 'color 0.15s',
+                                        letterSpacing: '-0.003em',
+                                        whiteSpace: 'nowrap',
+                                    }}
+                                    onMouseEnter={e => { if (!isActive) e.currentTarget.style.color = G.text }}
+                                    onMouseLeave={e => { if (!isActive) e.currentTarget.style.color = G.sub }}
+                                >
+                                    {tab.label}
+                                </button>
                             )
                         })}
                     </div>
-                )
-            } else if (typeof value === 'object' && value !== null) {
-                displayValue = JSON.stringify(value)
-            }
+                )}
 
-            // Capitalize first letter of key for better display
-            const displayKey = key.charAt(0).toUpperCase() + key.slice(1).replace(/([A-Z])/g, ' $1').trim()
-
-            return (
-                <div key={key} className="mb-3">
-                    <span className="font-bold text-indigo-700 uppercase text-xs tracking-wider block mb-1">{displayKey}</span>
-                    <div className="text-gray-700 text-sm leading-relaxed">{displayValue}</div>
+                {/* Tab content */}
+                <div style={{ flex: 1, overflowY: 'auto', padding: '16px 16px 8px', scrollbarWidth: 'thin' as const }}>
+                    {hasAbstractOnly ? (
+                        <>
+                            <p style={{ fontSize: 11, fontWeight: 600, color: G.muted, letterSpacing: '0.06em', textTransform: 'uppercase', marginBottom: 10 }}>Abstract</p>
+                            <p style={{ fontSize: 13, color: G.sub, lineHeight: '21px' }}>
+                                {abstract.slice(0, 400)}{abstract.length > 400 ? '…' : ''}
+                            </p>
+                        </>
+                    ) : activeTab ? (
+                        activeTab.groups.map(grp => (
+                            <SectionBlock key={grp.key} label={grp.label} color={grp.color} bg={grp.bg} items={grp.items} />
+                        ))
+                    ) : (
+                        <p style={{ fontSize: 13, color: G.muted, textAlign: 'center', marginTop: 32 }}>No data available</p>
+                    )}
                 </div>
-            )
-        })
+            </div>
+        )
     }
-
-    const displaySummaryContent = formatSummary(summary)
 
     // Polling for update
     useEffect(() => {
@@ -343,132 +516,93 @@ export function SystemFlowVisualizer({
             />
 
 
-            {/* MINIMIZED STATUS BAR (Click to Open) */}
+            {/* STATUS BAR */}
             <AnimatePresence>
-                {
-                    !isOpen && (
-                        <motion.div
-                            initial={{ y: 50 }}
-                            animate={{ y: 0 }}
-                            exit={{ y: 50 }}
-                            className="absolute bottom-0 left-0 right-0 z-[50] h-8 bg-white border-t border-gray-200 flex items-center justify-between px-4"
-                        >
-                            {/* Left: AI status + session stage */}
-                            <div className="flex items-center gap-2 cursor-pointer hover:opacity-80 transition-opacity" onClick={() => setIsOpen(true)}>
-                                <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${activeStage === 0 ? 'bg-gray-300' : activeStage >= 3 ? 'bg-green-500' : 'bg-blue-500 animate-pulse'}`} />
-                                <AnimatePresence mode="wait">
-                                    <motion.span
-                                        key={activeStage}
-                                        initial={{ opacity: 0, y: 4 }}
-                                        animate={{ opacity: 1, y: 0 }}
-                                        exit={{ opacity: 0, y: -4 }}
-                                        className="text-[11px] font-medium text-gray-500"
-                                    >
-                                        {activeStage === 0 && 'AI agents ready'}
-                                        {activeStage === 1 && 'Session · Reflect'}
-                                        {activeStage === 2 && 'Session · Assigning roles…'}
-                                        {activeStage === 3 && 'Session · Reading active'}
-                                        {activeStage === 4 && 'Session complete'}
-                                        {hasOnboarded && activeStage === 0 && 'AI agents active'}
-                                    </motion.span>
-                                </AnimatePresence>
-                                {activeStage >= 1 && activeStage <= 3 && (
-                                    <div className="flex items-center gap-1 ml-1">
-                                        {[1, 2, 3].map(s => (
-                                            <div key={s} className={`rounded-full transition-all ${s < activeStage ? 'w-1.5 h-1.5 bg-emerald-400' : s === activeStage ? 'w-2 h-2 bg-indigo-500' : 'w-1.5 h-1.5 bg-gray-200'}`} />
-                                        ))}
-                                    </div>
-                                )}
-                                {latestEvent && activeStage === 0 && (
-                                    <>
-                                        <div className="w-px h-3 bg-gray-200 ml-1" />
-                                        <span className="text-[11px] text-gray-400 truncate max-w-[260px]">{latestEvent.event}</span>
-                                    </>
-                                )}
-                            </div>
-
-                            {/* Right: Session action + Summary */}
-                            <div className="flex items-center gap-2">
-                                {activeStage === 0 && (
-                                    <button
-                                        onClick={() => (window as any).startSession()}
-                                        className="flex items-center gap-1.5 bg-indigo-600 hover:bg-indigo-700 text-white px-2.5 py-0.5 rounded-md text-[11px] font-semibold transition-colors"
-                                    >
-                                        <span className="w-1.5 h-1.5 rounded-full bg-white/60 animate-pulse" />
-                                        Start Session
-                                    </button>
-                                )}
-                                {activeStage === 1 && (
-                                    <button
-                                        onClick={(e) => { e.stopPropagation(); (window as any).skipPhase(); }}
-                                        className="text-[11px] font-semibold text-indigo-600 hover:text-indigo-700 transition-colors px-2"
-                                    >
-                                        Continue →
-                                    </button>
-                                )}
-                                {activeStage === 2 && (
-                                    <div className="w-3 h-3 border-2 border-indigo-400 border-t-transparent rounded-full animate-spin" />
-                                )}
-                                {activeStage === 3 && (
-                                    <button
-                                        onClick={(e) => { e.stopPropagation(); (window as any).skipPhase(); }}
-                                        className="text-[11px] text-gray-400 hover:text-gray-600 transition-colors"
-                                    >
-                                        End
-                                    </button>
-                                )}
-                                {activeStage === 4 && (
-                                    <button
-                                        onClick={(e) => { e.stopPropagation(); setShowReport(true); }}
-                                        className="text-[11px] font-semibold text-indigo-600 hover:text-indigo-700 transition-colors"
-                                    >
-                                        View Report
-                                    </button>
-                                )}
-                                <div className="w-px h-3 bg-gray-200" />
-                                <button
-                                    onClick={(e) => { e.stopPropagation(); setShowSummary(!showSummary); }}
-                                    className={`flex items-center gap-1 text-[11px] font-medium transition-colors ${showSummary ? 'text-indigo-600' : 'text-gray-400 hover:text-indigo-500'}`}
+                {!isOpen && (
+                    <motion.div
+                        initial={{ y: 50 }}
+                        animate={{ y: 0 }}
+                        exit={{ y: 50 }}
+                        className="absolute bottom-0 left-0 right-0 z-[50] h-10 bg-white border-t border-gray-100 flex items-center justify-between px-5"
+                        style={{ boxShadow: '0 -1px 0 rgba(0,0,0,0.04)' }}
+                    >
+                        {/* Left: status dot + human-readable label */}
+                        <div className="flex items-center gap-2.5 cursor-pointer group" onClick={() => setIsOpen(true)}>
+                            <span className={`w-2 h-2 rounded-full shrink-0 transition-colors ${
+                                activeStage === 0 ? 'bg-gray-300' :
+                                activeStage === 4 ? 'bg-emerald-500' :
+                                'bg-indigo-500 animate-pulse'
+                            }`} />
+                            <AnimatePresence mode="wait">
+                                <motion.span
+                                    key={activeStage}
+                                    initial={{ opacity: 0, y: 3 }}
+                                    animate={{ opacity: 1, y: 0 }}
+                                    exit={{ opacity: 0, y: -3 }}
+                                    className="text-xs font-medium text-gray-500 group-hover:text-gray-700 transition-colors"
                                 >
-                                    <svg xmlns="http://www.w3.org/2000/svg" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20" /><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z" /></svg>
-                                    Summary
-                                </button>
-                                <div className="w-px h-3 bg-gray-200" />
-                                <div onClick={() => setIsOpen(true)} className="text-gray-300 cursor-pointer hover:text-gray-500">
-                                    <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="m18 15-6-6-6 6" /></svg>
-                                </div>
-                            </div>
-                        </motion.div>
-                    )
-                }
-            </AnimatePresence >
+                                    {activeStage === 0 && 'AI agents ready'}
+                                    {activeStage === 1 && 'Phase I — Pre-reading reflection'}
+                                    {activeStage === 2 && 'Phase I — Assigning section roles…'}
+                                    {activeStage === 3 && 'Phase II — Reading in progress'}
+                                    {activeStage === 4 && 'Session complete'}
+                                </motion.span>
+                            </AnimatePresence>
+                        </div>
 
-            {/* ✅ PERSISTENT SUMMARY OVERLAY */}
-            <AnimatePresence>
-                {
-                    showSummary && (
-                        <motion.div
-                            initial={{ opacity: 0, scale: 0.95, y: 10 }}
-                            animate={{ opacity: 1, scale: 1, y: 0 }}
-                            exit={{ opacity: 0, scale: 0.95, y: 10 }}
-                            className="absolute bottom-20 left-1/2 -translate-x-1/2 z-[55] w-full max-w-xl bg-white/95 backdrop-blur-xl border border-gray-200 shadow-2xl rounded-xl p-6 pointer-events-auto overflow-hidden text-left"
-                        >
-                            <div className="flex items-center justify-between mb-4">
-                                <div className="flex items-center gap-2 text-xs font-bold text-indigo-600 uppercase tracking-widest">
-                                    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" /></svg>
-                                    AI Quick Summary
-                                </div>
-                                <button onClick={() => setShowSummary(false)} className="text-gray-400 hover:text-gray-600">
-                                    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
+                        {/* Right: actions */}
+                        <div className="flex items-center gap-3">
+                            {activeStage === 0 && (
+                                <button
+                                    onClick={() => (window as any).startSession()}
+                                    className="flex items-center gap-1.5 bg-indigo-600 hover:bg-indigo-700 active:bg-indigo-800 text-white px-3.5 py-1.5 rounded-full text-xs font-semibold transition-colors shadow-sm"
+                                >
+                                    <span className="w-1.5 h-1.5 rounded-full bg-white/70 animate-pulse" />
+                                    Start Session
                                 </button>
-                            </div>
-                            <div className="text-sm text-gray-700 leading-relaxed max-h-[60vh] overflow-y-auto pr-2 custom-scrollbar">
-                                {displaySummaryContent}
-                            </div>
-                        </motion.div>
-                    )
-                }
-            </AnimatePresence >
+                            )}
+                            {activeStage === 1 && (
+                                <button
+                                    onClick={(e) => { e.stopPropagation(); (window as any).skipPhase(); }}
+                                    className="text-xs font-semibold text-indigo-600 hover:text-indigo-700 transition-colors"
+                                >
+                                    Continue →
+                                </button>
+                            )}
+                            {activeStage === 2 && (
+                                <div className="w-3.5 h-3.5 border-2 border-indigo-300 border-t-indigo-600 rounded-full animate-spin" />
+                            )}
+                            {activeStage === 3 && (
+                                <button
+                                    onClick={(e) => { e.stopPropagation(); (window as any).skipPhase(); }}
+                                    className="text-xs font-medium text-gray-400 hover:text-gray-600 transition-colors"
+                                >
+                                    End session
+                                </button>
+                            )}
+                            {activeStage === 4 && (
+                                <button
+                                    onClick={(e) => { e.stopPropagation(); setShowReport(true); }}
+                                    className="text-xs font-semibold text-indigo-600 hover:text-indigo-700 transition-colors"
+                                >
+                                    View Report
+                                </button>
+                            )}
+
+                            <div className="w-px h-4 bg-gray-100" />
+
+                            <button
+                                onClick={(e) => { e.stopPropagation(); if (!showSummary) setSummaryTab(0); setShowSummary(!showSummary); }}
+                                className={`flex items-center gap-1.5 text-xs font-medium transition-colors ${showSummary ? 'text-indigo-600' : 'text-gray-400 hover:text-gray-600'}`}
+                            >
+                                <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20" /><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z" /></svg>
+                                Summary
+                            </button>
+                        </div>
+                    </motion.div>
+                )}
+            </AnimatePresence>
+
 
             <AnimatePresence>
                 {isOpen && (
@@ -497,6 +631,7 @@ export function SystemFlowVisualizer({
                                     <button
                                         onClick={(e) => {
                                             e.stopPropagation();
+                                            if (!showSummary) setSummaryTab(0);
                                             setShowSummary(!showSummary);
                                         }}
                                         className={`mr-4 text-xs font-semibold px-2 py-1 rounded border transition-colors ${showSummary ? 'bg-indigo-50 border-indigo-200 text-indigo-600' : 'border-gray-200 hover:bg-gray-100 text-gray-600'}`}
@@ -642,34 +777,95 @@ export function SystemFlowVisualizer({
                 )}
             </AnimatePresence >
 
-            {/* QUICK SUMMARY SIDE PANEL */}
+            {/* EXECUTIVE SUMMARY PANEL — Google Knowledge Panel style */}
             <AnimatePresence>
                 {showSummary && (
                     <motion.div
-                        initial={{ x: "100%", opacity: 0 }}
-                        animate={{ x: 0, opacity: 1 }}
-                        exit={{ x: "100%", opacity: 0 }}
-                        className="absolute top-24 right-6 w-80 bg-white/95 backdrop-blur-xl shadow-2xl rounded-2xl border border-white/20 z-[60] overflow-hidden flex flex-col max-h-[70vh]"
+                        initial={{ opacity: 0, scale: 0.97, y: -4 }}
+                        animate={{ opacity: 1, scale: 1, y: 0 }}
+                        exit={{ opacity: 0, scale: 0.97, y: -4 }}
+                        transition={{ duration: 0.15, ease: [0.4, 0, 0.2, 1] }}
+                        style={{
+                            position: 'fixed',
+                            top: 60,
+                            right: 16,
+                            width: 400,
+                            maxHeight: 'calc(100vh - 80px)',
+                            zIndex: 9999,
+                            display: 'flex',
+                            flexDirection: 'column',
+                            background: '#fff',
+                            borderRadius: 8,
+                            border: '1px solid #DADCE0',
+                            boxShadow: '0 1px 3px 0 rgba(60,64,67,.3), 0 4px 8px 3px rgba(60,64,67,.15)',
+                            overflow: 'hidden',
+                            fontFamily: "'Google Sans', Roboto, Arial, sans-serif",
+                        }}
                     >
-                        <div className="p-4 border-b border-gray-100 flex items-center justify-between bg-gradient-to-r from-indigo-50 to-white">
-                            <h3 className="font-bold text-gray-800 text-sm flex items-center gap-2">
-                                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="16" y1="13" x2="8" y2="13"></line><line x1="16" y1="17" x2="8" y2="17"></line><polyline points="10 9 9 9 8 9"></polyline></svg>
-                                Executive Summary
-                            </h3>
+                        {/* Header — matches Google Workspace sidebar header */}
+                        <div style={{
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'space-between',
+                            padding: '0 8px 0 16px',
+                            height: 52,
+                            borderBottom: '1px solid #DADCE0',
+                            flexShrink: 0,
+                            background: '#fff',
+                        }}>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                                    <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" fill="#E8F0FE" stroke="#1a73e8" strokeWidth="1.5" strokeLinejoin="round"/>
+                                    <polyline points="14 2 14 8 20 8" stroke="#1a73e8" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
+                                    <line x1="8" y1="13" x2="16" y2="13" stroke="#1a73e8" strokeWidth="1.5" strokeLinecap="round"/>
+                                    <line x1="8" y1="17" x2="13" y2="17" stroke="#1a73e8" strokeWidth="1.5" strokeLinecap="round"/>
+                                </svg>
+                                <span style={{ fontSize: 14, fontWeight: 500, color: '#202124', letterSpacing: '-0.01em' }}>
+                                    Paper Summary
+                                </span>
+                            </div>
                             <button
                                 onClick={() => setShowSummary(false)}
-                                className="text-gray-400 hover:text-gray-600 transition-colors p-1 hover:bg-gray-100 rounded-full"
+                                style={{
+                                    width: 36,
+                                    height: 36,
+                                    display: 'flex',
+                                    alignItems: 'center',
+                                    justifyContent: 'center',
+                                    borderRadius: '50%',
+                                    border: 'none',
+                                    background: 'transparent',
+                                    color: '#5F6368',
+                                    cursor: 'pointer',
+                                    transition: 'background 0.15s',
+                                }}
+                                onMouseEnter={e => (e.currentTarget.style.background = '#F1F3F4')}
+                                onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}
                             >
-                                <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
+                                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
+                                    <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
+                                </svg>
                             </button>
                         </div>
-                        <div className="p-5 overflow-y-auto text-sm text-gray-600 leading-relaxed custom-scrollbar">
-                            {displaySummaryContent}
-                            {!summary && (
-                                <div className="flex flex-col items-center justify-center py-10 text-center opacity-60">
-                                    <div className="animate-spin rounded-full h-6 w-6 border-2 border-indigo-500 border-t-transparent mb-3"></div>
-                                    <p className="text-xs font-medium text-indigo-800">Analyzing document structure...</p>
+
+                        {/* Body — scroll managed inside renderSummaryContent tab pane */}
+                        <div style={{ flex: 1, overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
+                            {!summary ? (
+                                <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: '48px 24px', gap: 12 }}>
+                                    <div
+                                        className="animate-spin"
+                                        style={{
+                                            width: 28,
+                                            height: 28,
+                                            borderRadius: '50%',
+                                            border: '3px solid #E8F0FE',
+                                            borderTopColor: '#1a73e8',
+                                        }}
+                                    />
+                                    <p style={{ fontSize: 13, color: '#5F6368', margin: 0 }}>Generating summary…</p>
                                 </div>
+                            ) : (
+                                renderSummaryContent(summary)
                             )}
                         </div>
                     </motion.div>
@@ -678,6 +874,7 @@ export function SystemFlowVisualizer({
         </>
     )
 }
+
 
 function ActivityLogItem({ agent, action, time, opacity = 1 }: any) {
     return (

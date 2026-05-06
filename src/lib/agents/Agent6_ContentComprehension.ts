@@ -3,32 +3,32 @@
 
 /**
  * AGENT 6: Content Comprehension
- * 
- * Role: Provides AI-powered explanations and content comprehension assistance
- * 
- * Responsibilities:
- * - Generate simple explanations of complex content
- * - Paraphrase difficult text
- * - Provide analogies and examples
- * - Answer comprehension questions
- * - Adapt explanations to user's level
- * 
- * Activation: Event-based (when AI help requested)
+ *
+ * Provides section-constrained AI explanations via y = LLM(q | C_s).
+ * Abstains and routes to peer if grounding validation fails.
+ *
+ * Activation: "Explain" click on ImplicitHelpCard, or A7 escalation
+ * Trigger for A2: grounded === false → peer routing
  */
+
+import type { A6ExplainRequest, A6ExplainResponse } from '@/app/api/a6-explain/route'
 
 export interface ExplanationRequest {
   requestId: string
   userId: string
-  content: string
+  content: string          // selected text or section passage
   sectionId: string
+  sectionText: string      // full C_s — the current section text
   requestType: 'explain' | 'paraphrase' | 'analogy' | 'example' | 'question'
   userLevel: 'beginner' | 'intermediate' | 'advanced'
+  dsAtTrigger: number
   timestamp: number
 }
 
 export interface ExplanationResponse {
   requestId: string
   explanation: string
+  grounded: boolean        // false → caller routes to peer
   type: 'simple' | 'detailed' | 'analogy' | 'example'
   confidence: number
   followUpSuggestions: string[]
@@ -44,23 +44,20 @@ export interface ComprehensionContext {
 }
 
 class Agent6_ContentComprehension {
-  private agentId = 'agent-6-content-comprehension'
+  private agentId = 'A6'
   private isActive = false
   private explanationHistory: Map<string, ExplanationResponse[]> = new Map()
   private userLevels: Map<string, 'beginner' | 'intermediate' | 'advanced'> = new Map()
 
-  // ============================================================================
-  // AGENT LIFECYCLE
-  // ============================================================================
+  // ── Lifecycle ──────────────────────────────────────────────────────────────
 
   activate() {
     this.isActive = true
-    console.log('🤖 [Agent 6] Content Comprehension activated')
+    console.log('🤖 [A6] Content Comprehension activated')
   }
 
   deactivate() {
     this.isActive = false
-    console.log('🤖 [Agent 6] Content Comprehension deactivated')
   }
 
   getStatus() {
@@ -69,217 +66,184 @@ class Agent6_ContentComprehension {
       name: 'Content Comprehension',
       active: this.isActive,
       type: 'event-based',
-      description: 'Provides AI-powered explanations',
-      totalExplanations: Array.from(this.explanationHistory.values()).reduce((sum, arr) => sum + arr.length, 0)
+      description: 'Section-constrained explanations with grounding validation',
+      totalExplanations: Array.from(this.explanationHistory.values())
+        .reduce((sum, arr) => sum + arr.length, 0),
     }
   }
 
-  // ============================================================================
-  // EXPLANATION GENERATION
-  // ============================================================================
+  // ── Core: y = LLM(q | C_s) ────────────────────────────────────────────────
 
   async generateExplanation(request: ExplanationRequest): Promise<ExplanationResponse> {
-    console.log(`🤖 [Agent 6] Generating ${request.requestType} for user: ${request.userId}`)
-    
-    // In real implementation, this would call Claude API
-    // For now, generate template-based explanations
-    
-    let explanation = ''
-    let type: 'simple' | 'detailed' | 'analogy' | 'example' = 'simple'
-    
-    switch (request.requestType) {
-      case 'explain':
-        explanation = this.generateSimpleExplanation(request.content, request.userLevel)
-        type = request.userLevel === 'beginner' ? 'simple' : 'detailed'
-        break
-        
-      case 'paraphrase':
-        explanation = this.generateParaphrase(request.content)
-        type = 'simple'
-        break
-        
-      case 'analogy':
-        explanation = this.generateAnalogy(request.content)
-        type = 'analogy'
-        break
-        
-      case 'example':
-        explanation = this.generateExample(request.content)
-        type = 'example'
-        break
-        
-      case 'question':
-        explanation = this.answerQuestion(request.content)
-        type = 'detailed'
-        break
+    console.log(`🤖 [A6] Generating ${request.requestType} for user=${request.userId} section=${request.sectionId} ds=${request.dsAtTrigger}`)
+
+    // Always log activation before making the call
+    this.emitEvent('explanation-requested', {
+      requestId: request.requestId,
+      userId: request.userId,
+      sectionId: request.sectionId,
+      requestType: request.requestType,
+      dsAtTrigger: request.dsAtTrigger,
+      timestamp: request.timestamp,
+    })
+
+    const payload: A6ExplainRequest = {
+      query: request.content,
+      sectionText: request.sectionText,
+      sectionId: request.sectionId,
+      userId: request.userId,
+      requestType: request.requestType,
+      userLevel: request.userLevel,
+      dsAtTrigger: request.dsAtTrigger,
     }
-    
+
+    let apiResponse: A6ExplainResponse
+
+    try {
+      const res = await fetch('/api/a6-explain', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      })
+
+      if (!res.ok) {
+        throw new Error(`A6 API returned ${res.status}`)
+      }
+
+      apiResponse = await res.json()
+    } catch (err) {
+      console.error('[A6] API call failed:', err)
+      // Fail safe: abstain and route to peer
+      const failResponse: ExplanationResponse = {
+        requestId: request.requestId,
+        explanation: '',
+        grounded: false,
+        type: 'simple',
+        confidence: 0,
+        followUpSuggestions: [],
+        timestamp: Date.now(),
+      }
+      this.emitEvent('grounding-failed', { requestId: request.requestId, reason: 'API error' })
+      return failResponse
+    }
+
     const response: ExplanationResponse = {
       requestId: request.requestId,
-      explanation,
-      type,
-      confidence: 0.85,
-      followUpSuggestions: this.generateFollowUpSuggestions(request.requestType),
-      timestamp: Date.now()
+      explanation: apiResponse.explanation,
+      grounded: apiResponse.grounded,
+      type: request.requestType === 'analogy' ? 'analogy'
+          : request.requestType === 'example' ? 'example'
+          : request.userLevel === 'beginner' ? 'simple' : 'detailed',
+      confidence: apiResponse.confidence,
+      followUpSuggestions: apiResponse.followUpSuggestions,
+      timestamp: Date.now(),
     }
-    
+
+    if (!response.grounded) {
+      // Grounding failed — log and signal A2 to route to peer
+      console.log(`🤖 [A6] Grounding failed — routing to peer. reason=${apiResponse.groundingFailureReason}`)
+      this.emitEvent('grounding-failed', {
+        requestId: request.requestId,
+        userId: request.userId,
+        sectionId: request.sectionId,
+        reason: apiResponse.groundingFailureReason,
+        dsAtTrigger: request.dsAtTrigger,
+      })
+      return response
+    }
+
     // Store in history
     const history = this.explanationHistory.get(request.userId) || []
     history.push(response)
     this.explanationHistory.set(request.userId, history)
-    
-    // Emit event
-    this.emitEvent('explanation-generated', response)
-    
+
+    this.emitEvent('explanation-generated', {
+      requestId: request.requestId,
+      userId: request.userId,
+      sectionId: request.sectionId,
+      grounded: true,
+      dsAtTrigger: request.dsAtTrigger,
+    })
+
     return response
   }
 
-  private generateSimpleExplanation(content: string, level: 'beginner' | 'intermediate' | 'advanced'): string {
-    // Template-based explanation
-    // In real system, would use Claude API
-    
-    if (level === 'beginner') {
-      return `Let me break this down in simple terms:\n\nThis section explains ${content.substring(0, 50)}...\n\nThe main idea is: [AI would provide simplified explanation here]\n\nThink of it like: [AI would provide analogy here]`
-    } else if (level === 'intermediate') {
-      return `Here's what this means:\n\n${content.substring(0, 50)}...\n\n[AI would provide detailed explanation with technical terms]\n\nKey points:\n- [Point 1]\n- [Point 2]\n- [Point 3]`
-    } else {
-      return `Technical explanation:\n\n${content.substring(0, 50)}...\n\n[AI would provide in-depth analysis]\n\nRelated concepts: [AI would connect to related ideas]`
-    }
-  }
-
-  private generateParaphrase(content: string): string {
-    return `Here's another way to say it:\n\n[AI would paraphrase: ${content.substring(0, 50)}...]\n\nIn other words: [AI would provide alternative wording]`
-  }
-
-  private generateAnalogy(content: string): string {
-    return `Think of it like this:\n\n[AI would create analogy for: ${content.substring(0, 50)}...]\n\nJust as [familiar concept], this concept works by [explanation]`
-  }
-
-  private generateExample(content: string): string {
-    return `Here's a concrete example:\n\n[AI would provide example for: ${content.substring(0, 50)}...]\n\nFor instance: [specific example]\n\nThis shows how: [explanation]`
-  }
-
-  private answerQuestion(question: string): string {
-    return `Good question! Let me answer that:\n\n${question}\n\n[AI would provide answer]\n\nDoes that help clarify things?`
-  }
-
-  private generateFollowUpSuggestions(requestType: string): string[] {
-    const suggestions: string[] = []
-    
-    switch (requestType) {
-      case 'explain':
-        suggestions.push(
-          'Can you give me an example?',
-          'Can you explain it in simpler terms?',
-          'How does this relate to the previous section?'
-        )
-        break
-        
-      case 'paraphrase':
-        suggestions.push(
-          'Can you explain what this means?',
-          'Can you give me an analogy?'
-        )
-        break
-        
-      case 'analogy':
-        suggestions.push(
-          'Can you give me a real-world example?',
-          'How accurate is this analogy?'
-        )
-        break
-        
-      case 'example':
-        suggestions.push(
-          'Can you give me another example?',
-          'Can you explain the general principle?'
-        )
-        break
-        
-      case 'question':
-        suggestions.push(
-          'Can you elaborate on that?',
-          'I have a follow-up question'
-        )
-        break
-    }
-    
-    return suggestions
-  }
-
-  // ============================================================================
-  // USER LEVEL ADAPTATION
-  // ============================================================================
+  // ── User level inference ───────────────────────────────────────────────────
 
   setUserLevel(userId: string, level: 'beginner' | 'intermediate' | 'advanced') {
     this.userLevels.set(userId, level)
   }
 
-  inferUserLevel(userId: string, context: ComprehensionContext): 'beginner' | 'intermediate' | 'advanced' {
-    // Infer level based on understanding score and confusion points
-    
-    if (context.userUnderstanding < 40) {
-      return 'beginner'
-    } else if (context.userUnderstanding < 70) {
-      return 'intermediate'
-    } else {
-      return 'advanced'
-    }
+  inferUserLevel(context: ComprehensionContext): 'beginner' | 'intermediate' | 'advanced' {
+    if (context.userUnderstanding < 40) return 'beginner'
+    if (context.userUnderstanding < 70) return 'intermediate'
+    return 'advanced'
   }
 
-  getUserLevel(userId: string, defaultLevel: 'intermediate' = 'intermediate'): 'beginner' | 'intermediate' | 'advanced' {
-    return this.userLevels.get(userId) || defaultLevel
+  getUserLevel(userId: string): 'beginner' | 'intermediate' | 'advanced' {
+    return this.userLevels.get(userId) || 'intermediate'
   }
 
-  // ============================================================================
-  // CONTEXTUAL ASSISTANCE
-  // ============================================================================
+  // ── Context helpers ────────────────────────────────────────────────────────
 
   prepareContext(sectionId: string, userId: string): ComprehensionContext {
-    // Gather context for better explanations
-    // Would use data from interactionCollector
-    
     return {
       sectionId,
       userUnderstanding: 50,
       confusionPoints: [],
       previousExplanations: this.explanationHistory.get(userId)?.length || 0,
-      strugglingWith: []
+      strugglingWith: [],
     }
   }
 
   suggestExplanationType(context: ComprehensionContext): 'explain' | 'analogy' | 'example' {
-    // Suggest best explanation type based on context
-    
-    if (context.previousExplanations === 0) {
-      return 'explain' // Start with basic explanation
-    } else if (context.userUnderstanding < 40) {
-      return 'analogy' // Use analogies for struggling users
-    } else {
-      return 'example' // Use examples for intermediate understanding
+    if (context.previousExplanations === 0) return 'explain'
+    if (context.userUnderstanding < 40) return 'analogy'
+    return 'example'
+  }
+
+  // ── Quick helpers (keep same public API as before) ─────────────────────────
+
+  async explainText(userId: string, text: string, sectionId: string, sectionText: string, dsAtTrigger = 0): Promise<string> {
+    const request: ExplanationRequest = {
+      requestId: `req-${Date.now()}`,
+      userId,
+      content: text,
+      sectionId,
+      sectionText,
+      requestType: 'explain',
+      userLevel: this.getUserLevel(userId),
+      dsAtTrigger,
+      timestamp: Date.now(),
     }
+    const response = await this.generateExplanation(request)
+    return response.explanation
   }
 
-  // ============================================================================
-  // EXPLANATION QUALITY TRACKING
-  // ============================================================================
-
-  trackExplanationHelpfulness(requestId: string, helpful: boolean) {
-    // Track if explanation was helpful (for improving future explanations)
-    console.log(`🤖 [Agent 6] Explanation ${requestId} marked as ${helpful ? 'helpful' : 'not helpful'}`)
+  async getAnalogy(userId: string, concept: string, sectionId: string, sectionText: string, dsAtTrigger = 0): Promise<string> {
+    const request: ExplanationRequest = {
+      requestId: `req-${Date.now()}`,
+      userId,
+      content: concept,
+      sectionId,
+      sectionText,
+      requestType: 'analogy',
+      userLevel: this.getUserLevel(userId),
+      dsAtTrigger,
+      timestamp: Date.now(),
+    }
+    const response = await this.generateExplanation(request)
+    return response.explanation
   }
 
-  // ============================================================================
-  // QUERY METHODS (Called by Coordination Core)
-  // ============================================================================
+  // ── Analytics ──────────────────────────────────────────────────────────────
 
   getExplanationHistory(userId: string): ExplanationResponse[] {
     return this.explanationHistory.get(userId) || []
   }
 
-  getRecentExplanations(userId: string, count: number = 5): ExplanationResponse[] {
-    const history = this.explanationHistory.get(userId) || []
-    return history.slice(-count)
+  getRecentExplanations(userId: string, count = 5): ExplanationResponse[] {
+    return (this.explanationHistory.get(userId) || []).slice(-count)
   }
 
   getTotalExplanations(userId: string): number {
@@ -288,58 +252,28 @@ class Agent6_ContentComprehension {
 
   getExplanationStats() {
     const totalUsers = this.explanationHistory.size
-    const totalExplanations = Array.from(this.explanationHistory.values()).reduce((sum, arr) => sum + arr.length, 0)
-    
+    const totalExplanations = Array.from(this.explanationHistory.values())
+      .reduce((sum, arr) => sum + arr.length, 0)
     return {
       totalUsers,
       totalExplanations,
-      avgExplanationsPerUser: totalUsers > 0 ? Math.round(totalExplanations / totalUsers) : 0
+      avgExplanationsPerUser: totalUsers > 0 ? Math.round(totalExplanations / totalUsers) : 0,
     }
   }
 
-  private emitEvent(eventType: string, data: any) {
+  trackExplanationHelpfulness(requestId: string, helpful: boolean) {
+    console.log(`🤖 [A6] Explanation ${requestId} marked ${helpful ? 'helpful' : 'not helpful'}`)
+    this.emitEvent('helpfulness-rated', { requestId, helpful })
+  }
+
+  // ── Event bus ──────────────────────────────────────────────────────────────
+
+  private emitEvent(eventType: string, data: unknown) {
     if (typeof window !== 'undefined') {
       window.dispatchEvent(new CustomEvent(`agent6:${eventType}`, { detail: data }))
     }
   }
-
-  // ============================================================================
-  // QUICK HELPERS
-  // ============================================================================
-
-  async explainText(userId: string, text: string, sectionId: string): Promise<string> {
-    const request: ExplanationRequest = {
-      requestId: `req-${Date.now()}`,
-      userId,
-      content: text,
-      sectionId,
-      requestType: 'explain',
-      userLevel: this.getUserLevel(userId),
-      timestamp: Date.now()
-    }
-    
-    const response = await this.generateExplanation(request)
-    return response.explanation
-  }
-
-  async getAnalogy(userId: string, concept: string, sectionId: string): Promise<string> {
-    const request: ExplanationRequest = {
-      requestId: `req-${Date.now()}`,
-      userId,
-      content: concept,
-      sectionId,
-      requestType: 'analogy',
-      userLevel: this.getUserLevel(userId),
-      timestamp: Date.now()
-    }
-    
-    const response = await this.generateExplanation(request)
-    return response.explanation
-  }
 }
 
-// Export singleton instance
 export const agent6_contentComprehension = new Agent6_ContentComprehension()
-
-// Export types
 export type { Agent6_ContentComprehension }

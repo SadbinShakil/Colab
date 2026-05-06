@@ -18,12 +18,12 @@ export async function POST(request: NextRequest) {
       messages,
       documentTitle,
       documentContent,
-      analysisType = 'insights'
+      analysisType = 'unresolved'
     }: {
       messages: ChatMessage[]
       documentTitle?: string
       documentContent?: string
-      analysisType?: 'insights' | 'summary' | 'gaps' | 'consensus'
+      analysisType?: 'divergence' | 'overreach' | 'unresolved' | 'consensus' | 'insights' | 'summary' | 'gaps'
     } = await request.json()
 
     if (!messages || messages.length === 0) {
@@ -32,10 +32,14 @@ export async function POST(request: NextRequest) {
 
     if (!process.env.OPENAI_API_KEY || process.env.OPENAI_API_KEY === 'sk-your-openai-api-key-here') {
       const demoResponses: Record<string, string> = {
-        insights: `**Key Insights from Discussion**\n\n• The group engaged with the core methodology and raised thoughtful questions about applicability\n• Several participants connected the paper's approach to prior work in the field\n• The experimental design section generated the most discussion\n\n**Open Questions**\n• How does this scale to larger datasets?\n• What are the reproducibility implications?\n\n*Demo mode — add OPENAI_API_KEY for real analysis*`,
-        summary: `**Discussion Summary**\n\n• Team covered the abstract, methodology, and results sections\n• General agreement on the paper's main contribution\n• Some uncertainty around the evaluation metrics used\n\n*Demo mode — add OPENAI_API_KEY for real analysis*`,
-        gaps: `**Knowledge Gaps Identified**\n\n• The statistical significance of results was not discussed\n• Background on related work (cited papers) wasn't explored\n• Limitations section deserves more attention\n\n*Demo mode — add OPENAI_API_KEY for real analysis*`,
-        consensus: `**Team Consensus**\n\n• Main contribution: A novel approach that advances the state of the art\n• Methodology: Sound experimental design with clear baselines\n• Limitations: Acknowledged by the authors; scope is reasonable\n• Overall: Worth reading in full; relevant to the team's research\n\n*Demo mode — add OPENAI_API_KEY for real analysis*`
+        divergence: `**Interpretive Divergence Map**\n\n• **Mechanism interpretation**: Reader A reads the D_s threshold as empirically calibrated; Reader B reads it as theoretically motivated — the authors claim both, but Table 2 only validates the former\n• **Scope disagreement**: The group disagreed whether the sample (N=12 sessions) supports the generalizability claim in the abstract\n• **Framing conflict**: "proactive" vs. "reactive-on-demand" — at least two participants interpreted the intervention timing differently\n\n*Demo mode — add OPENAI_API_KEY for real analysis*`,
+        overreach: `**Evidence-to-Claim Gaps**\n\n• The abstract claims "timely intervention improves comprehension" — the discussion accepted this without noting it is based on self-report measures only, not objective comprehension tests\n• The group cited the 90.5% grounding pass rate as strong without questioning the validator's own error rate\n• The dismissal rate (4.8%) was interpreted as user satisfaction rather than selection bias (compliant participants only)\n\n*Demo mode — add OPENAI_API_KEY for real analysis*`,
+        unresolved: `**Unresolved Claims from Discussion**\n\n• What happens to D_s when a reader is expert-fluent but deliberately rereads for citation purposes — should silence routing fire?\n• The group raised the tau_fire threshold (0.72) as potentially arbitrary but didn't resolve how it was derived\n• Agent 8 fact-checking was mentioned but its interaction with Agent 6's grounding validation was left unexamined\n\n*Demo mode — add OPENAI_API_KEY for real analysis*`,
+        consensus: `**Reconstructed Shared Model**\n\n• **Contribution**: The group collectively agrees the core contribution is the D_s signal model and the three-tier routing (self → peer → group), not the UI\n• **Evidence**: The 63 interventions / 4.8% dismissal rate is considered suggestive but not conclusive without a comparison condition\n• **Open question the group accepts**: Whether the silence routing (14 suppressions) represents correct expert detection or a calibration artifact\n\n*Demo mode — add OPENAI_API_KEY for real analysis*`,
+        // Legacy modes kept for backward compatibility
+        insights: `**Key Insights from Discussion**\n\n• The group engaged with the core methodology and raised thoughtful questions about applicability\n\n*Demo mode — add OPENAI_API_KEY for real analysis*`,
+        summary: `**Discussion Summary**\n\n• Team covered the main contribution and methodology\n\n*Demo mode — add OPENAI_API_KEY for real analysis*`,
+        gaps: `**Knowledge Gaps**\n\n• Statistical significance of results was not critically examined\n\n*Demo mode — add OPENAI_API_KEY for real analysis*`,
       }
       return NextResponse.json({
         success: true,
@@ -56,78 +60,117 @@ export async function POST(request: NextRequest) {
     let systemPrompt = ''
     let userPrompt = ''
 
-    if (analysisType === 'insights') {
-      systemPrompt = `You are an expert research discussion analyst. Analyze collaborative conversations between researchers reading academic papers and extract actionable insights.
+    if (analysisType === 'divergence') {
+      systemPrompt = `You are analyzing a collaborative discussion among PhD researchers reading an academic paper. Your task: identify interpretive divergence — points where two or more readers reached different conclusions from the same text.
 
-Focus on:
-- Key concepts or terms the group collectively understands or is confused about
-- Important questions raised that deserve deeper exploration
-- Connections made between the paper and other work
-- Misconceptions that may need correction
-- Moments of genuine insight or understanding
+Rules:
+- Only report genuine divergence in interpretation, not phrasing differences
+- For each divergence, state what each position is and what textual evidence each position could claim
+- Rate each divergence: 'surface' (about terminology), 'methodological' (about what the design actually shows), or 'fundamental' (about whether the core claim is supported)
+- Do not report consensus masquerading as divergence
+- PhD-level language. No hedging. Quote the discussion.`
 
-Be specific and direct. Reference actual things people said.`
-
-      userPrompt = `Analyze this collaborative discussion about "${documentTitle || 'a research paper'}".
+      userPrompt = `Map the interpretive divergences in this discussion about "${documentTitle || 'a research paper'}".
 
 Participants: ${participantNames}
 
 Discussion:
 ${conversationText}
 
-${documentContent ? `Paper Context:\n${documentContent.substring(0, 2000)}` : ''}
+${documentContent ? `Paper text context:\n${documentContent.substring(0, 3000)}` : ''}
 
-Extract:
-1. Key insights or "aha moments" from the discussion
-2. Open questions the group raised
-3. Concepts the group understood well
-4. Areas of confusion or disagreement
-5. Most valuable contributions from each participant
+For each divergence found:
+**Divergence [N]:** [the claim in contention]
+**Position A** ([name]): [what they think it means]
+**Position B** ([name]): [what they think it means]
+**Type:** surface | methodological | fundamental
+**What would resolve it:** [specific passage or additional evidence that would settle this]
 
-Keep it concise and actionable.`
+If no genuine divergence exists, say so explicitly.`
 
-    } else if (analysisType === 'summary') {
-      systemPrompt = `You are a research discussion summarizer. Create clear, structured summaries of academic paper discussions.`
+    } else if (analysisType === 'overreach') {
+      systemPrompt = `You are a critical reader analyzing a group discussion for evidence-to-claim gaps — instances where researchers accepted or endorsed a claim the paper's evidence does not fully support.
 
-      userPrompt = `Summarize this collaborative reading discussion about "${documentTitle || 'a research paper'}".
+Rules:
+- Only flag gaps that are genuinely present in the paper AND unaddressed in the discussion
+- Be specific: quote the claim, state what evidence actually shows, and explain the inferential gap
+- Rate each gap: 'minor' (small scope extension), 'moderate' (qualification needed), 'major' (conclusion not supported)
+- Do not penalize researchers for discussing limitations they correctly identified`
 
-Discussion:
-${conversationText}
+      userPrompt = `Analyze this discussion for evidence-to-claim overreach.
 
-Provide:
-- 3-5 bullet points of the main discussion themes
-- Key conclusions or agreements reached
-- Any unresolved questions`
-
-    } else if (analysisType === 'gaps') {
-      systemPrompt = `You are an academic discussion analyst specializing in identifying knowledge gaps and misunderstandings in research paper discussions.`
-
-      userPrompt = `Review this discussion about "${documentTitle || 'a research paper'}" and identify:
+Paper: "${documentTitle || 'a research paper'}"
+Participants: ${participantNames}
 
 Discussion:
 ${conversationText}
 
-${documentContent ? `Paper Content:\n${documentContent.substring(0, 2000)}` : ''}
+${documentContent ? `Paper text:\n${documentContent.substring(0, 3000)}` : ''}
 
-1. Misunderstandings or incorrect interpretations
-2. Important paper concepts not discussed yet
-3. Questions that were raised but not answered
-4. Areas where the group seems uncertain
+For each overreach found:
+**Overreach [N]:** [the accepted claim]
+**What the evidence actually shows:** [what the data, N, or design actually supports]
+**Gap severity:** minor | moderate | major
+**Whether the group caught it:** yes | no | partially
 
-Be specific. Quote the discussion when relevant.`
+End with a one-sentence assessment: did this group read critically, or did they accept the paper's framing without challenge?`
+
+    } else if (analysisType === 'unresolved') {
+      systemPrompt = `You are a research discussion facilitator identifying claims, questions, and tensions that arose in a group discussion but were never resolved or answered.
+
+Rules:
+- Only report genuinely unresolved items — not items that were resolved elsewhere in the thread
+- Distinguish: (a) questions raised and dropped, (b) disagreements that ended without resolution, (c) claims made without evidence check
+- For each, suggest the specific follow-up that would resolve it: a paper passage, a methodological check, or a peer who might know`
+
+      userPrompt = `Identify unresolved claims and questions from this discussion about "${documentTitle || 'a research paper'}".
+
+Participants: ${participantNames}
+
+Discussion:
+${conversationText}
+
+For each unresolved item:
+**Unresolved [N]:** [the question or claim]
+**Raised by:** [who raised it]
+**Why unresolved:** [dropped / contradictory responses / out of scope]
+**What would resolve it:** [specific action — quote from paper, external reference, or methodological check]
+
+Order by how much the unresolved item affects the group's understanding of the paper's core claim.`
 
     } else if (analysisType === 'consensus') {
-      systemPrompt = `You are a research moderator. Synthesize what a group of researchers collectively agreed upon after discussing a paper.`
+      systemPrompt = `You are a research moderator reconstructing the shared mental model a group of PhD researchers built from a collaborative paper discussion.
 
-      userPrompt = `Based on this discussion about "${documentTitle || 'a research paper'}", synthesize:
+Rules:
+- Report only what the group collectively demonstrated understanding of — not what the paper says they should understand
+- Distinguish: things explicitly agreed on, things implicitly accepted without challenge, and things that appeared consensual but may not be
+- Flag any false consensus: agreement that masked an underlying divergence`
+
+      userPrompt = `Reconstruct the shared understanding this group built from their discussion of "${documentTitle || 'a research paper'}".
+
+Participants: ${participantNames}
 
 Discussion:
 ${conversationText}
 
-1. What the group collectively agrees the paper's main contribution is
-2. Shared understanding of the methodology
-3. Common view on the paper's limitations
-4. Group's overall assessment`
+Report:
+**Explicit consensus:** [claims all participants explicitly endorsed]
+**Implicit consensus (unchallenged):** [claims nobody questioned — flag if these warrant scrutiny]
+**False consensus (apparent agreement, real divergence):** [if any]
+**Contribution framing agreed upon:** [how the group characterized the paper's main claim]
+**Evaluation agreed upon:** [the group's collective verdict on evidence quality]
+
+One-sentence bottom line: what mental model did this group leave with?`
+
+    } else if (analysisType === 'insights') {
+      // Legacy fallback
+      systemPrompt = `You are a PhD-level research discussion analyst. Extract the most significant analytical insights from this academic paper discussion — not summaries, but genuine critical observations.`
+      userPrompt = `Analyze this discussion about "${documentTitle || 'a research paper'}".\n\nParticipants: ${participantNames}\n\nDiscussion:\n${conversationText}\n\nExtract the 3 most analytically significant observations made. Quote the discussion. Rate each: empirical, theoretical, or methodological.`
+
+    } else if (analysisType === 'summary' || analysisType === 'gaps') {
+      // Legacy fallback
+      systemPrompt = `You are a PhD-level research discussion analyst. Be precise, specific, and direct.`
+      userPrompt = `Analyze this discussion about "${documentTitle || 'a research paper'}".\n\nParticipants: ${participantNames}\n\nDiscussion:\n${conversationText}\n\nProvide a structured critical analysis.`
     }
 
     const completion = await openai.chat.completions.create({

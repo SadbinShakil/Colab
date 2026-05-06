@@ -4,7 +4,7 @@ import dynamic from 'next/dynamic'
 import type { PDFViewerCoreHandle } from './PDFViewerCore'
 // Dynamic import with ssr:false — react-pdf uses DOMMatrix which is browser-only
 const PDFViewerCore = dynamic(() => import('./PDFViewerCore'), { ssr: false })
-import { useEffect, useRef, useState, useCallback } from 'react'
+import { useEffect, useRef, useState, useCallback, useMemo } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 // import { useRealtimeHighlights } from '@/app/hooks/useRealtimeHighlights'
 import { eyeTracker } from '@/lib/eyeTracking'
@@ -49,15 +49,17 @@ import { agent3_discussionFacilitator } from '@/lib/agents/Agent3_DiscussionFaci
 import { agent5_storyboardCurator } from '@/lib/agents/Agent5_StoryboardCurator'
 import { agent7_implicitAssistance } from '@/lib/agents/Agent7_ImplicitAssistance'
 import { agent8_factChecking } from '@/lib/agents/Agent8_FactChecking'
-import ImplicitHelpCard, { type ImplicitHelpTrigger } from '@/components/ImplicitHelpCard'
+import ImplicitHelpCard, { type ImplicitHelpTrigger, type PageSectionInfo } from '@/components/ImplicitHelpCard'
 import ReadingTrajectoryMap from '@/components/ReadingTrajectoryMap'
 import SessionPrimingCard from '@/components/SessionPrimingCard'
 import SectionSummaryCard from '@/components/SectionSummaryCard'
 import ContentDetectionNudge, { type ContentFlag, shouldShowNudge, markNudgeShown } from '@/components/ContentDetectionNudge'
+import LiveActivityFeed, { emitLiveActivity, type ActivityItem } from '@/components/LiveActivityFeed'
 import { detectDivergence, type LocalHighlight } from '@/lib/divergenceDetector'
 
 import InteractionAnalysisDashboard from '@/components/InteractionAnalysisDashboard'
 import ChatSidebar from './ChatSidebar'
+import PDFMinimap, { type PeerPosition, type PageDsSignal } from './PDFMinimap'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
@@ -129,6 +131,8 @@ import JourneyReplayPanel from './JourneyReplayPanel'
 import CollectiveWikiPanel, { WikiEntry, InsightEntry, Activity as WikiActivity } from './CollectiveWikiPanel'
 import ComprehensionCheck from './ComprehensionCheck'
 import SessionSummaryPanel from './SessionSummaryPanel'
+import ClaimConsistencyPanel, { detectClaimInMessage } from './ClaimConsistencyPanel'
+import SessionDeltaPanel from './SessionDeltaPanel'
 import { createPaperSummaryGenerator, type PaperSummary } from '@/lib/paperSummaryGenerator'
 import { analyzeChatMessage } from '@/lib/chatAnalyzer'
 import { isMathematicalContent } from '../utils/contentDetector'
@@ -203,6 +207,16 @@ interface ApryseWebViewerProps {
   // Three-phase session state — drives the Phase I gate
   sessionPhase?: 'I' | 'II' | 'III'
   onPhaseAdvance?: (phase: 'II' | 'III') => void
+  // Live Activity modal — controlled from page.tsx status bar
+  showLiveActivity?: boolean
+  onCloseLiveActivity?: () => void
+  // A10 allocation result — passed from page.tsx after Phase I completes
+  a10Assignments?: Array<{ sectionId: string; sectionName: string; assignedTo: string; assignedName: string; isAI: boolean }>
+  // Callback fired when real PDF sections are extracted — page.tsx passes them to PhaseIPanel.
+  // startPage is included so page.tsx can navigate to the assigned section on Phase II entry.
+  onSectionsExtracted?: (sections: Array<{ id: string; name: string; preview: string; startPage: number }>) => void
+  // ReaderSetup from PaperOrientationPanel — pre-fills reflection if available
+  readerSetup?: { expertiseLevel: 'novice' | 'familiar' | 'expert'; readingGoal: 'overview' | 'deep' | 'methodology' | 'evaluate' | 'find-gaps'; priorKnowledge: string; completedAt: string } | null
 }
 
 interface Collaborator {
@@ -273,6 +287,11 @@ export default function ApryseWebViewer({
   onAskAI,
   sessionPhase,
   onPhaseAdvance,
+  showLiveActivity,
+  onCloseLiveActivity,
+  a10Assignments,
+  onSectionsExtracted,
+  readerSetup,
 }: ApryseWebViewerProps) {
   const viewer = useRef<HTMLDivElement>(null)
   const webViewerRef = useRef<any>(null) // ✅ Ref to hold latest instance avoiding stale closures
@@ -320,6 +339,7 @@ export default function ApryseWebViewer({
   const currentPageRef = useRef(1) // kept in sync with currentPage for use in stable closures
   const isJumpingRef = useRef(false)  // ✅ ADD THIS LINE RIGHT AFTER
   const [totalPages, setTotalPages] = useState(0)
+  const [pdfZoom, setPdfZoom] = useState(1.0)
 
   // DEBUG STATE
   const [isDebugMode, setIsDebugMode] = useState(false) // Toggle with Ctrl+Shift+D or UI button if you prefer
@@ -329,6 +349,11 @@ export default function ApryseWebViewer({
   const [copied, setCopied] = useState(false)
   const [collaborators, setCollaborators] = useState<Collaborator[]>([])
   const [showCollaborators, setShowCollaborators] = useState(true)
+  // Minimap state — peer positions + D_s heatmap per page
+  const [numPages, setNumPages] = useState(0)
+  const [peerPagePositions, setPeerPagePositions] = useState<Map<string, PeerPosition>>(new Map())
+  const [pageDs, setPageDs] = useState<Map<number, PageDsSignal>>(new Map())
+  const minimapScrollRef = useRef<HTMLDivElement | null>(null)
   const [showInviteModal, setShowInviteModal] = useState(false)
   const [newMessage, setNewMessage] = useState('')
   const [unreadMessages, setUnreadMessages] = useState<Map<string, number>>(new Map())
@@ -367,6 +392,11 @@ export default function ApryseWebViewer({
     documentId: string
     sectionId?: string
   }>>([])
+
+  // Claim consistency — surfaces when a chat message contains a verifiable claim
+  const [activeClaim, setActiveClaim] = useState<string | null>(null)
+  // Session delta — shown at session end
+  const [showSessionDelta, setShowSessionDelta] = useState(false)
 
   // ✅ NEW: Implicit Image Help State
   const [imageHelpPrompt, setImageHelpPrompt] = useState<{ x: number, y: number, visible: boolean } | null>(null)
@@ -507,6 +537,9 @@ export default function ApryseWebViewer({
   // DEV MODE: reflectionSubmitted starts as true to skip Phase I setup — set false before study
   const [showReflectionIntake, setShowReflectionIntake] = useState(false)
   const [reflectionSubmitted, setReflectionSubmitted] = useState(true)
+  // gateSkipped: user dismissed the Phase I overlay without completing it.
+  // Hides the gate but keeps reflectionSubmitted=false so "Set Context" stays visible in sidebar.
+  const [gateSkipped, setGateSkipped] = useState(false)
   const [reflectionData, setReflectionData] = useState<{ type: 'text' | 'audio' | 'file', content: string } | null>(null)
   const [collaboratorReflections, setCollaboratorReflections] = useState<Map<string, { type: string, content: string, userName: string }>>(new Map())
   const reflectionTimerRef = useRef<NodeJS.Timeout | null>(null)
@@ -653,16 +686,31 @@ export default function ApryseWebViewer({
   // ✅ LISTEN FOR NAVIGATION REQUESTS
   useEffect(() => {
     const handleNavigationRequest = (evt: Event) => {
-      const e = evt as CustomEvent
-      const { pageNumber, position } = e.detail
-      // console.log('🧭 Navigation request received:', pageNumber, position)
+      const e = evt as CustomEvent<{
+        pageNumber?: number
+        position?: { x: number; y: number }
+        highlight?: string   // passage text or section name to flash amber after jump
+      }>
+      const { pageNumber, position, highlight } = e.detail
 
+      // Navigate via PDFViewerCore (react-pdf path — used in most sessions)
+      if (pageNumber) {
+        pdfViewerRef.current?.goToPage?.(pageNumber)
+        // Amber flash: if a highlight string is provided, fire it after a short
+        // delay so the page has had time to scroll into view and render its text layer.
+        if (highlight) {
+          setTimeout(() => {
+            pdfViewerRef.current?.highlightPassage?.(pageNumber, highlight)
+          }, 350)
+        }
+      }
+
+      // Also drive the Apryse documentViewer when it is active (fallback / dual-mode)
       if (webViewerInstance && webViewerInstance.Core) {
         const { documentViewer } = webViewerInstance.Core
         if (pageNumber) {
           documentViewer.setCurrentPage(pageNumber)
           if (position) {
-            // Optional: Zoom or scroll to position
             documentViewer.zoomTo(1.5, position.x, position.y)
           }
         }
@@ -795,6 +843,16 @@ export default function ApryseWebViewer({
   const [showSectionAssignment, setShowSectionAssignment] = useState(false)
 
   const [sectionAssignments, setSectionAssignments] = useState<SectionAssignment[]>([])
+
+  // A10 section awareness — "not your section" banner + roles strip
+  // useRef so dismissed state survives React strict-mode double-mount and component re-renders.
+  // Trigger re-render manually via a counter when the set changes.
+  const dismissedForeignSectionsRef = useRef<Set<string>>(new Set())
+  const [dismissedForeignSectionsVersion, setDismissedForeignSectionsVersion] = useState(0)
+  const dismissForeignSection = useCallback((sectionId: string) => {
+    dismissedForeignSectionsRef.current.add(sectionId)
+    setDismissedForeignSectionsVersion(v => v + 1)
+  }, [])
 
   // General Explainer state
   const [showGeneralExplainer, setShowGeneralExplainer] = useState(false)
@@ -932,6 +990,29 @@ export default function ApryseWebViewer({
   useEffect(() => {
     pdfSectionsRef.current = pdfSections
   }, [pdfSections])
+
+  // Shared helper: fuzzy-match an A10 assignment to a PDF section heading.
+  // Used by the roles strip pill lookup, the foreign-section banner, and section-page navigation.
+  // Centralised here so all three stay in sync.
+  const matchAssignmentToSection = useCallback(
+    (assignmentName: string, sectionText: string): boolean => {
+      const a = assignmentName.toLowerCase()
+      const s = sectionText.toLowerCase()
+      return a === s || a.includes(s) || s.includes(a)
+    },
+    []
+  )
+
+  // Derived: which A10 assignment owns the current page?
+  // Memoised — only recomputes when the page or assignments change, not on every render tick.
+  const currentPageAssignment = useMemo(() => {
+    if (!a10Assignments || a10Assignments.length === 0) return null
+    const section = pdfSections.find(s => s.startPage <= currentPage && s.endPage >= currentPage)
+    if (!section) return null
+    return a10Assignments.find(a =>
+      matchAssignmentToSection(a.sectionName, section.heading.text)
+    ) ?? null
+  }, [a10Assignments, currentPage, pdfSections, matchAssignmentToSection])
 
   // Fetch marginal note count for current page (badge on toolbar button)
   useEffect(() => {
@@ -1090,16 +1171,30 @@ export default function ApryseWebViewer({
   }, [documentId, userId, lastSelectedText, selectedText, sectionComplexity]) // eslint-disable-line react-hooks/exhaustive-deps
 
   // Track live D_s score from Agent 1 events — used for pre/post comparison
+  // Also broadcast to peers so their minimap heatmap updates in real time
   useEffect(() => {
     const handler = (e: Event) => {
       const detail = (e as CustomEvent).detail
       if (detail?.confidence !== undefined) {
         currentDsRef.current = detail.confidence
+        // Broadcast D_s snapshot to peers for their confusion heatmap
+        // Only emit meaningful signals (above 0.4 to avoid noise)
+        if (detail.confidence >= 0.4) {
+          const sock = (window as any).io
+          if (sock?.connected) {
+            sock.emit('ds-snapshot', {
+              documentId,
+              userId,
+              page: currentPageRef.current,
+              ds: detail.confidence,
+            })
+          }
+        }
       }
     }
     window.addEventListener('agent1:struggle-detected', handler)
     return () => window.removeEventListener('agent1:struggle-detected', handler)
-  }, [])
+  }, [documentId, userId])
 
   // Feature 3: Listen for implicit struggle signal — show ambient nudge
   useEffect(() => {
@@ -1881,6 +1976,13 @@ export default function ApryseWebViewer({
     broadcastPeerMessage(messageData)
     setPeerChatMessages(prev => [...prev, messageData])
 
+    // Surface own chat message in Live Activity feed
+    emitLiveActivity('peer-chat', {
+      fromUserId: messageData.fromUserId,
+      fromUserName: messageData.fromUserName,
+      message: messageData.message,
+      timestamp: messageData.timestamp,
+    })
   }
 
   // Derived from collaborators state — recomputes on every render when collaborators changes.
@@ -1946,6 +2048,16 @@ export default function ApryseWebViewer({
 
         console.log('📡 Broadcasting highlight with reason:', highlightData);
         broadcastHighlight(highlightData);
+
+        // Surface own highlight in Live Activity feed
+        emitLiveActivity('peer-highlight', {
+          id: annotation.Id,
+          userId: userId,
+          userName: userName,
+          pageNumber: pageNumber,
+          text: highlightedText,
+          reason: reasonData.label,
+        })
 
         // Your existing callback
         if (onHighlightAdd) {
@@ -2199,6 +2311,8 @@ export default function ApryseWebViewer({
 
         // Register passage highlight for divergence detection across readers
         const secInfo = getSectionForPage(pageNumber)
+        // passageKey: normalised text fingerprint — same passage produces the same key across users
+        const passageKey = highlightedText.toLowerCase().replace(/\s+/g, ' ').trim().slice(0, 120)
         fetch('/api/socket', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -2207,6 +2321,7 @@ export default function ApryseWebViewer({
             documentId,
             userId,
             userName,
+            passageKey,
             passageText: highlightedText,
             sectionId: secInfo.id,
             sectionName: secInfo.name,
@@ -2354,13 +2469,13 @@ export default function ApryseWebViewer({
         console.log(`🧠 [ImplicitHelp] Routing to 3-stage card — stage based on severity`)
 
         // Map notification priority to UI stage
-        // low/medium → chip (stage 2), high → full card (stage 3)
-        // First occurrence always starts at ambient dot (stage 1)
+        // All automatic triggers cap at stage 2 (chip/pill) — never auto-open full card
+        // Stage 3 (full card) only via explicit user click on the chip
         const existingTrigger = implicitHelpTrigger
         let stage: 1 | 2 | 3 = 1
         if (existingTrigger?.sectionId === notification.sectionId) {
-          // Already showing something for this section — escalate
-          stage = Math.min(3, ((existingTrigger as any).stage ?? 1) + 1) as 1 | 2 | 3
+          // Already showing something for this section — escalate to chip, not full card
+          stage = Math.min(2, ((existingTrigger as any).stage ?? 1) + 1) as 1 | 2 | 3
         } else if (notification.priority === 'high') {
           stage = 2  // High priority → skip dot, show chip immediately
         } else {
@@ -2506,6 +2621,9 @@ export default function ApryseWebViewer({
         console.log('✅ Socket.io userId:', userId)
         console.log('✅ Socket.io userName:', userName)
         console.log('✅ Socket.io documentId:', documentId)
+        // Give the coordination core a reference to this socket so A2 peer
+        // notifications can be delivered cross-user via the server room map.
+        aiCoordinationCore.setSocket(socket)
 
         // Join document room
         // socket.emit('join-document', { documentId, userName, userId })
@@ -2559,6 +2677,13 @@ export default function ApryseWebViewer({
         console.log(`✨ [Socket] highlight-added from peer: ${highlight.user}`)
         if (highlight.action !== 'click') {
           window.dispatchEvent(new CustomEvent('__highlight-added', { detail: highlight }))
+          emitLiveActivity('peer-highlight', {
+            id: highlight.id,
+            userId: highlight.userId,
+            userName: highlight.user || highlight.userName,
+            pageNumber: highlight.pageNumber,
+            text: highlight.text,
+          })
         }
       })
 
@@ -2626,6 +2751,41 @@ export default function ApryseWebViewer({
         })
 
         console.log(`✅ [Invitation] Notification added for ${data.fromUserName}`)
+      })
+
+      // A2 peer-notification — cross-user delivery via server room map.
+      // Renders as an A7 smart notification card for the helper.
+      socket.on('peer-notification', (data: {
+        targetUserId: string
+        type: string
+        title: string
+        message: string
+        priority: string
+        sectionId: string
+        sectionName?: string
+        documentId: string
+        actionButton?: { label: string; action: string }
+        invitationData?: Record<string, unknown>
+      }) => {
+        console.log('🔔 [Socket] peer-notification received:', data.title)
+        // Guard: server already routes to the right socket, but double-check
+        if (String(data.targetUserId) !== String(userId)) return
+        setSmartNotifications(prev => {
+          // Dedup: one active notification per section+type — avoids stacking on repeated socket events
+          const id = `peer-notif-${data.sectionId}-${data.type || 'peer-suggestion'}`
+          if (prev.some(n => n.id === id)) return prev
+          return [...prev, {
+            id,
+            type: data.type || 'peer-suggestion',
+            title: data.title,
+            message: data.message,
+            targetUserId: userId,
+            sectionId: data.sectionId,
+            sectionName: data.sectionName,
+            invitationData: data.invitationData,
+            actionButton: data.actionButton,
+          }]
+        })
       })
 
       // Listen for accepted invitations
@@ -2701,6 +2861,24 @@ export default function ApryseWebViewer({
         console.log('💬 [Socket] Received peer message:', data)
         setPeerChatMessages(prev => [...prev, data])
 
+        // Detect verifiable claims in peer messages — surface internal consistency check
+        if (!data.toUserId) {  // group messages only
+          const detected = detectClaimInMessage(data.message || '')
+          if (detected && !activeClaim) {
+            // Debounce: only surface if no active claim already showing
+            setTimeout(() => setActiveClaim(detected), 800)
+          }
+        }
+
+        const _msgSec2 = pdfSectionsRef.current.find(s => s.heading.id === data.sectionId)
+        emitLiveActivity('peer-chat', {
+          fromUserId: data.fromUserId,
+          fromUserName: data.fromUserName,
+          message: data.message,
+          sectionName: _msgSec2?.heading.text,
+          timestamp: data.timestamp,
+        })
+
         // Auto-open chat if message is for us and chat is closed
         if (data.toUserId === String(userId) && !peerChatOpen) {
           const _msgSec = pdfSectionsRef.current.find(s => s.heading.id === data.sectionId)
@@ -2767,6 +2945,19 @@ export default function ApryseWebViewer({
 
         console.log('✅ Setting collaborators from Socket.io (deduplicated):', activeCollaborators)
         setCollaborators(activeCollaborators)
+
+        // Sync identity colors into minimap peer positions
+        setPeerPagePositions(prev => {
+          const next = new Map(prev)
+          users.forEach((u: any) => {
+            if (u.userId === userId) return // skip self
+            const existing = next.get(u.userId)
+            if (existing) {
+              next.set(u.userId, { ...existing, color: u.userColor || existing.color, userName: u.userName })
+            }
+          })
+          return next
+        })
       })
 
       socket.on('assignment-updated', (data) => {
@@ -2792,10 +2983,53 @@ export default function ApryseWebViewer({
         // Update will come via users-update event
       })
 
-      // Track peer page positions for ReadingTrajectoryMap
+      // Track peer page positions for ReadingTrajectoryMap + minimap
       socket.on('peer-page-changed', (data: { userId: string; userName: string; pageNumber: number; sectionId?: string; sectionName?: string }) => {
-        // Update peer highlights ref for divergence detection — position update only
         console.log(`📍 [Socket] Peer page changed: ${data.userName} → page ${data.pageNumber}`)
+        emitLiveActivity('page-change', {
+          userId: data.userId,
+          userName: data.userName,
+          pageNumber: data.pageNumber,
+          sectionName: data.sectionName,
+        })
+        // Update minimap peer position — color from collaborators or fallback
+        setPeerPagePositions(prev => {
+          const next = new Map(prev)
+          next.set(data.userId, {
+            userId: data.userId,
+            userName: data.userName,
+            color: '#10b981', // will be overridden when collaborators state syncs
+            page: data.pageNumber,
+            currentSectionName: data.sectionName,
+          })
+          return next
+        })
+      })
+
+      // D_s snapshots from peers — feeds the confusion heatmap
+      // Each peer emits { documentId, userId, page, ds } when their D_s changes significantly
+      socket.on('ds-snapshot', (data: { userId: string; page: number; ds: number }) => {
+        setPageDs(prev => {
+          const next = new Map(prev)
+          const existing = next.get(data.page)
+          if (existing) {
+            // Aggregate: take max D_s, increment peer count if new peer
+            const knownPeers = (existing as any)._peers as Set<string> ?? new Set()
+            knownPeers.add(data.userId)
+            const newDs = Math.max(existing.ds, data.ds)
+            const entry: PageDsSignal & { _peers: Set<string> } = {
+              page: data.page, ds: newDs, peerCount: knownPeers.size, _peers: knownPeers,
+            }
+            next.set(data.page, entry)
+          } else {
+            const peers = new Set([data.userId])
+            const entry: PageDsSignal & { _peers: Set<string> } = {
+              page: data.page, ds: data.ds, peerCount: 1, _peers: peers,
+            }
+            next.set(data.page, entry)
+          }
+          return next
+        })
       })
 
       // Divergence signal from server (when server detects two readers flagged same passage)
@@ -2830,6 +3064,54 @@ export default function ApryseWebViewer({
           })
         } catch (err) {
           console.warn('[divergence-signal] Failed to trigger debate:', err)
+        }
+      })
+
+      // ── Discussion Navigator — AI-driven page sync for active group discussions ──
+      // When the group's chat reveals they're discussing a specific section/concept,
+      // the server navigates all readers to that page and highlights the relevant passage.
+      socket.on('discussion-navigate', async (data: {
+        page: number; label: string; highlightLabel: string; confidence: string; reason: string
+      }) => {
+        if (!data.page) return
+        console.log(`🧭 [DiscussionNav] Navigating to page ${data.page}: "${data.label}"`)
+
+        // Navigate
+        pdfViewerRef.current?.goToPage?.(data.page)
+
+        // Show a brief non-intrusive banner
+        toast(`Navigated to p.${data.page} — ${data.label}`, {
+          description: data.reason || 'AI detected group discussion about this section',
+          duration: 6000,
+          style: { background: '#f0fdf4', border: '1px solid #86efac', color: '#15803d' },
+        })
+
+        // Highlight the relevant passage via the same GPT-locate pipeline
+        const pageText = pageTextsRef.current.get(data.page) || ''
+        if (pageText && data.highlightLabel) {
+          try {
+            const res = await fetch('/api/highlight-locate', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                pageText,
+                label: data.highlightLabel,
+                summary: data.reason || '',
+                page: data.page,
+              }),
+            })
+            const locateData = await res.json()
+            const excerpts: Array<{ text: string }> = locateData.excerpts || []
+            if (excerpts.length > 0) {
+              excerpts.forEach((excerpt, i) => {
+                setTimeout(() => {
+                  pdfViewerRef.current?.highlightPassage?.(data.page, excerpt.text)
+                }, i * 200)
+              })
+            }
+          } catch {
+            // If locate fails, at least we navigated
+          }
         }
       })
 
@@ -2977,13 +3259,23 @@ export default function ApryseWebViewer({
         promptLines = '\n\n' + fallback.slice(0, 3).map((s, i) => `${i + 1}. ${s.text}`).join('\n\n')
       }
 
-      const message =
-        `**A3 · ${sectionName}**  ${routingReason ? `· *${routingReason}*` : ''}${dsLabel}` +
-        passageClause +
-        divergenceClause +
-        `\n\nThree paper-grounded questions to focus your discussion:` +
-        promptLines +
-        `\n\nTag **@AI** at any point to ask CoRead a question scoped to this section.`
+      // Build clean structured message — no raw markdown leaking, no system metadata
+      const questionLines = promptLines
+        .split('\n')
+        .map(l => l.replace(/^\d+\.\s*/, '').trim())
+        .filter(l => l.length > 0)
+
+      // Structured payload so the renderer can lay it out properly
+      const message = JSON.stringify({
+        _type: 'a3-facilitator',
+        sectionName,
+        routingReason: routingReason ?? null,
+        sharedPassage: passageClause ? sharedPassage ?? null : null,
+        divergence: divergenceClause
+          ? { myReason: myReason ?? null, peerReason: peerReason ?? null, peerName: peerChatData.peerName }
+          : null,
+        questions: questionLines.slice(0, 3),
+      })
 
       setPeerChatMessages(prev => [
         ...prev,
@@ -3103,6 +3395,60 @@ export default function ApryseWebViewer({
       },
     })
   }, [webViewerInstance])
+
+  // ── 'coread:highlight-passage' → GPT-locate then highlight ──
+  // 1. Get the clean page text from pageTextsRef (extracted by pdfjs on load)
+  // 2. Ask /api/highlight-locate to return verbatim sentences from that page
+  //    that are semantically relevant to the label/summary
+  // 3. Highlight each returned sentence via PDFViewerCore imperative handle
+  useEffect(() => {
+    const handle = async (e: Event) => {
+      const { text, summary, label, page } = (e as CustomEvent<{
+        text?: string; summary?: string; label?: string; page: number
+      }>).detail
+      if (!page) return
+
+      // Scroll immediately — don't wait for the API call
+      pdfViewerRef.current?.goToPage?.(page)
+
+      const pageText = pageTextsRef.current.get(page) || ''
+      if (!pageText) {
+        // No page text yet — fall back to direct needle match
+        const needle = (text || summary || '').trim()
+        if (needle) pdfViewerRef.current?.highlightPassage?.(page, needle)
+        return
+      }
+
+      try {
+        const res = await fetch('/api/highlight-locate', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ pageText, label: label || summary || text || '', summary: summary || text || '', page }),
+        })
+        const data = await res.json()
+        // Each excerpt has { text, start, end } — verified verbatim from pageText
+        const excerpts: Array<{ text: string; start: number; end: number }> = data.excerpts || []
+
+        if (excerpts.length > 0) {
+          excerpts.forEach((excerpt, i) => {
+            setTimeout(() => {
+              // Pass the verified text — PDFViewerCore will find it in the span token string
+              pdfViewerRef.current?.highlightPassage?.(page, excerpt.text)
+            }, i * 200)
+          })
+        } else {
+          // API found nothing relevant — fall back to direct needle
+          const needle = (text || summary || '').trim()
+          if (needle) pdfViewerRef.current?.highlightPassage?.(page, needle)
+        }
+      } catch {
+        const needle = (text || summary || '').trim()
+        if (needle) pdfViewerRef.current?.highlightPassage?.(page, needle)
+      }
+    }
+    window.addEventListener('coread:highlight-passage', handle as EventListener)
+    return () => window.removeEventListener('coread:highlight-passage', handle as EventListener)
+  }, [])
 
   // Button handler: extract text → fetch definitions → highlight immediately
   const handleShowDefinitions = useCallback(async () => {
@@ -3830,24 +4176,88 @@ export default function ApryseWebViewer({
     }
   }, [collaborators, userId, currentPage])
 
-  // ✅ KEY FIX: Whenever Agent 1 fires a struggle signal, sync mock peers to the EXACT sectionId
-  // so that Agent 2's strict sectionId match always succeeds
+  // Whenever Agent 1 fires a struggle signal, sync mock peers to the EXACT sectionId
+  // AND run expertise-aware routing if readerSetup data is available
   useEffect(() => {
-    const handleStruggleSync = (e: any) => {
-      const { sectionId } = e.detail || {}
+    const handleStruggleSync = async (e: any) => {
+      const { sectionId, dsScore, sectionName } = e.detail || {}
       if (!sectionId) return
 
       collaborators.forEach(collab => {
         if (collab.userId && collab.userId !== userId) {
-          // Patch mock peer to the exact section the struggling user is on
           agent2_collaborationOrchestrator.updatePeerStatus(collab.userId, sectionId, 85)
-          console.log(`🔄 [PeerSync] Synced mock peer ${collab.name} → sectionId: ${sectionId}`)
+          console.log(`🔄 [PeerSync] Synced peer ${collab.name} → sectionId: ${sectionId}`)
         }
       })
+
+      // Expertise-aware routing — only if we have Phase I data and live peers
+      if (!readerSetup || collaborators.filter(c => !c.isCurrentUser && c.status === 'online').length === 0) return
+
+      const sectionText = pageTextsRef.current.get(currentPageRef.current) || ''
+      const livePeers = collaborators
+        .filter(c => !c.isCurrentUser && c.status === 'online')
+        .map(c => ({
+          userId: c.userId || c.id,
+          userName: c.name,
+          expertiseLevel: 'familiar' as const,  // peers' expertise not locally known — server could provide
+          readingGoal: 'deep',
+          priorKnowledge: '',
+          currentSection: sectionId,
+          currentSectionName: sectionName || sectionId,
+          dsScore: 0.3,  // assume peer is not struggling
+          explainerScore: 60,
+        }))
+
+      if (livePeers.length === 0) return
+
+      try {
+        const res = await fetch('/api/expertise-route', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            helpee: {
+              userId: String(userId),
+              userName: userName || 'You',
+              expertiseLevel: readerSetup.expertiseLevel,
+              readingGoal: readerSetup.readingGoal,
+              priorKnowledge: readerSetup.priorKnowledge,
+              currentSection: sectionId,
+              currentSectionName: sectionName || sectionId,
+              currentSectionText: sectionText.slice(0, 800),
+              dsScore: dsScore || 0.75,
+            },
+            peers: livePeers,
+            documentTitle,
+          }),
+        })
+        const data = await res.json()
+        if (data.match) {
+          console.log(`🎯 [ExpertiseRoute] Best peer: ${data.match.userName} — ${data.match.reason}`)
+          // Surface the suggestion as a smart notification
+          setSmartNotifications(prev => [...prev, {
+            id: `expertise-route-${Date.now()}`,
+            type: 'peer-suggestion',
+            priority: 'medium',
+            title: `Ask ${data.match.userName}`,
+            message: data.match.suggestedPrompt || data.match.reason,
+            timestamp: Date.now(),
+            targetUserId: String(userId),
+            sectionId,
+            actionButton: { label: 'Start conversation', action: 'connect-peer' },
+            invitationData: {
+              helperUserId: data.match.userId,
+              helperUserName: data.match.userName,
+              sectionId,
+            },
+          }])
+        }
+      } catch (err) {
+        console.warn('[ExpertiseRoute] failed:', err)
+      }
     }
     window.addEventListener('agent1:route-struggle', handleStruggleSync)
     return () => window.removeEventListener('agent1:route-struggle', handleStruggleSync)
-  }, [collaborators, userId])
+  }, [collaborators, userId, readerSetup, documentTitle])
 
 
 
@@ -4466,6 +4876,15 @@ export default function ApryseWebViewer({
             };
             onAnnotationAdd(aiAnnotation);
           }
+
+          // Surface annotation in Live Activity feed
+          emitLiveActivity('peer-highlight', {
+            id: annotation.Id,
+            userId: userId,
+            userName: userName,
+            pageNumber: annotation.PageNumber || 1,
+            text: comment,
+          })
 
           interactionCollector.trackAnnotation({
             id: annotation.Id,
@@ -5606,6 +6025,13 @@ ${documentContent}
               if (sections.length > 0) {
                 setPdfSections(sections)
                 console.log('📚 Extracted sections:', sections)
+                // Surface real sections to PhaseIPanel for grounded A10 allocation
+                onSectionsExtracted?.(sections.map(s => ({
+                  id: s.heading.id,
+                  name: s.heading.text,
+                  preview: (s.content || '').slice(0, 400),
+                  startPage: s.startPage,
+                })))
                 // Feature 7: Build knowledge dependency graph (async, idempotent)
                 fetch('/api/knowledge-graph', {
                   method: 'POST',
@@ -6862,6 +7288,7 @@ ${documentContent}
   }
 
   return (
+    <>
     <div className="flex h-full bg-white">
       {/* Simple Progress Indicator - Top of Screen */}
       {isProcessing && (
@@ -7237,9 +7664,23 @@ ${documentContent}
                 </div>
               </button>
 
+              {/* Session Delta — Phase III understanding delta report */}
+              <button
+                onClick={() => setShowSessionDelta(true)}
+                className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl border border-gray-100 bg-white hover:border-violet-200 hover:bg-violet-50/40 transition-all group/t text-left"
+              >
+                <div className="w-7 h-7 rounded-lg bg-violet-50 flex items-center justify-center shrink-0 group-hover/t:bg-violet-100 transition-colors">
+                  <Brain className="w-3.5 h-3.5 text-violet-500" />
+                </div>
+                <div className="min-w-0">
+                  <div className="text-xs font-semibold text-gray-800 leading-tight">Understanding Delta</div>
+                  <div className="text-[10px] text-gray-400 leading-tight truncate">What changed · what caused it · open questions</div>
+                </div>
+              </button>
+
               {/* Section Role Assignment (A10) */}
               <button
-                onClick={() => { if (pdfSections.length > 0) setShowSectionAssignment(true); else toast.error('Wait for analysis\u2026'); }}
+                onClick={() => { if (pdfSections.length > 0 || a10Assignments?.length) setShowSectionAssignment(true); else toast.error('Wait for analysis\u2026'); }}
                 className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl border border-gray-100 bg-white hover:border-rose-200 hover:bg-rose-50/40 transition-all group/t text-left"
               >
                 <div className="w-7 h-7 rounded-lg bg-rose-50 flex items-center justify-center shrink-0 group-hover/t:bg-rose-100 transition-colors">
@@ -7277,15 +7718,15 @@ ${documentContent}
           {/* Reading Context */}
           {!reflectionSubmitted ? (
             <button
-              onClick={() => setShowReflectionIntake(true)}
+              onClick={() => { setGateSkipped(false); setShowReflectionIntake(true) }}
               className="w-full flex items-center gap-2.5 px-3 py-2.5 rounded-xl bg-gradient-to-r from-blue-50 to-indigo-50 border border-blue-100 hover:border-blue-200 transition-all group/ctx text-left"
             >
               <div className="w-8 h-8 rounded-full bg-gradient-to-br from-blue-500 to-indigo-600 flex items-center justify-center shrink-0">
                 <NotebookPen className="w-4 h-4 text-white" />
               </div>
               <div className="flex-1 min-w-0">
-                <div className="text-[12px] font-semibold text-gray-800">Set Context</div>
-                <div className="text-[11px] text-gray-500 truncate">Your reading goals</div>
+                <div className="text-[12px] font-semibold text-gray-800">Set Reading Context</div>
+                <div className="text-[11px] text-gray-500 truncate">{gateSkipped ? 'Skipped — tap to set goals + calibrate A2/A10' : 'Reading goals · peer calibration'}</div>
               </div>
               <ChevronRight className="w-3.5 h-3.5 text-blue-400 group-hover/ctx:translate-x-0.5 transition-transform shrink-0" />
             </button>
@@ -7369,7 +7810,7 @@ ${documentContent}
 
       {/* Section Assignment Panel - Slides out next to sidebar */}
       {
-        showSectionAssignment && pdfSections.length > 0 && (
+        showSectionAssignment && (pdfSections.length > 0 || a10Assignments?.length) && (
           <div className="fixed right-4 top-20 w-[420px] h-[calc(100vh-100px)] z-[9999]">
             <div className="h-full bg-white rounded-lg shadow-2xl overflow-visible border border-gray-200">
               <div className="flex items-center justify-between p-4 border-b bg-gradient-to-r from-rose-50 to-pink-50">
@@ -7389,6 +7830,7 @@ ${documentContent}
               <div className="overflow-y-auto" style={{ height: 'calc(100% - 73px)' }}>
                 <SectionAssignmentPanel
                   sections={pdfSections}
+                  a10Assignments={a10Assignments}
                   collaborators={(() => {
                     // Create a Map to deduplicate by userId
                     const uniqueCollabs = new Map()
@@ -7544,6 +7986,63 @@ ${documentContent}
         </div>
       )}
 
+      {/* Claim Consistency Panel — floats in bottom-left of PDF area, dismissable */}
+      {activeClaim && (
+        <div className="fixed bottom-6 left-[320px] z-[100] w-[420px] animate-in slide-in-from-bottom-4 fade-in duration-300">
+          <ClaimConsistencyPanel
+            claim={activeClaim}
+            documentTitle={documentTitle}
+            pageTexts={pageTextsRef.current}
+            onNavigateToPage={(page) => pdfViewerRef.current?.goToPage?.(page)}
+            onDismiss={() => setActiveClaim(null)}
+            onAddToDiscussion={(text) => {
+              setActiveClaim(null)
+              // Pre-fill the peer chat input if open
+              if (peerChatOpen) {
+                window.dispatchEvent(new CustomEvent('coread:prefill-chat', { detail: { text } }))
+              }
+            }}
+          />
+        </div>
+      )}
+
+      {/* Session Delta Panel — full-screen modal at session end */}
+      {showSessionDelta && (
+        <SessionDeltaPanel
+          documentTitle={documentTitle}
+          participants={[
+            // Include self
+            {
+              userId: String(userId),
+              userName: userName || 'You',
+              expertiseLevel: readerSetup?.expertiseLevel || 'familiar',
+              readingGoal: readerSetup?.readingGoal || 'deep',
+              priorKnowledge: readerSetup?.priorKnowledge || '',
+            },
+            // Include online collaborators
+            ...collaborators
+              .filter(c => !c.isCurrentUser && c.status === 'online')
+              .map(c => ({
+                userId: c.userId || c.id,
+                userName: c.name,
+                expertiseLevel: 'familiar' as const,  // peers' expertise not locally available
+                readingGoal: 'deep',
+                priorKnowledge: '',
+              })),
+          ]}
+          chatMessages={peerChatMessages.map(m => ({
+            userId: m.fromUserId,
+            userName: m.fromUserName,
+            content: m.message,
+            timestamp: m.timestamp,
+          }))}
+          annotations={[]}  // TODO: pass local highlights when annotation store is available
+          pageTexts={pageTextsRef.current}
+          onNavigateToPage={(page) => pdfViewerRef.current?.goToPage?.(page)}
+          onClose={() => setShowSessionDelta(false)}
+        />
+      )}
+
       {/* Session Summary Panel */}
       {showSessionSummary && (
         <div className="fixed right-0 top-0 h-full w-[420px] z-[50] shadow-2xl bg-gray-50 border-l border-gray-200 flex flex-col animate-in slide-in-from-right-10 fade-in duration-300">
@@ -7562,9 +8061,9 @@ ${documentContent}
             <SessionSummaryPanel
               documentTitle={documentTitle}
               documentContent={documentContent}
+              paperText={documentContent}
               chatMessages={peerChatMessages.map(m => ({ userName: m.fromUserName || 'Researcher', content: m.message, type: 'chat' }))}
               participantNames={collaborators.filter(c => c.status === 'online').map(c => c.name)}
-              sectionsRead={pdfSections.filter(s => s.startPage <= currentPage).map(s => s.heading.text)}
               sessionDurationMinutes={30}
               onClose={() => setShowSessionSummary(false)}
             />
@@ -7589,8 +8088,9 @@ ${documentContent}
           <div className="flex-1 overflow-y-auto p-4">
             <ComprehensionCheck
               sectionName={activeSummarySection?.sectionName || journeyReplaySectionName || 'Current Section'}
-              sectionContent={activeSummarySection?.sectionText || documentContent?.substring(0, 4000) || ''}
+              sectionContent={activeSummarySection?.sectionText || documentContent?.substring(0, 5000) || ''}
               documentTitle={documentTitle}
+              fullDocumentText={documentContent || undefined}
               onClose={() => setShowComprehensionCheck(false)}
             />
           </div>
@@ -7761,7 +8261,7 @@ ${documentContent}
                flag still controls this gate. */}
           {(sessionPhase !== undefined
             ? false  // page.tsx right-panel handles Phase I; overlay not shown
-            : !reflectionSubmitted) && (
+            : !reflectionSubmitted && !gateSkipped) && (
             <div className="absolute inset-0 z-40 bg-white/95 backdrop-blur-sm flex flex-col items-center justify-center">
               <div className="max-w-md w-full mx-auto px-6 text-center">
                 <div className="w-14 h-14 bg-indigo-50 rounded-2xl flex items-center justify-center mx-auto mb-4 shadow-sm">
@@ -7793,7 +8293,13 @@ ${documentContent}
                   <Brain className="w-4 h-4" />
                   Start Phase I Reflection
                 </button>
-                <p className="text-xs text-gray-400 mt-3">
+                <button
+                  className="w-full text-xs text-gray-400 hover:text-gray-600 transition-colors py-2 mt-1"
+                  onClick={() => setGateSkipped(true)}
+                >
+                  Skip setup — start reading now
+                </button>
+                <p className="text-xs text-gray-400 mt-1">
                   Phase I · Pre-Discussion Alignment
                 </p>
               </div>
@@ -7805,14 +8311,55 @@ ${documentContent}
             className="absolute inset-0 w-full overflow-hidden"
             onClick={() => { if (defPopup) setDefPopup(null) }}
           >
+            {/* Collaborative minimap — peer positions + confusion heatmap */}
+            {numPages > 0 && (
+              <PDFMinimap
+                numPages={numPages}
+                currentPage={currentPage}
+                peers={Array.from(peerPagePositions.values()).filter(p => p.userId !== userId)}
+                pageDs={pageDs}
+                onNavigate={(page) => {
+                  const section = pdfSections.find(s => s.startPage <= page && s.endPage >= page)
+                  window.dispatchEvent(new CustomEvent('document-viewer-navigate', {
+                    detail: { pageNumber: page, highlight: section?.heading.text || undefined }
+                  }))
+                }}
+                containerRef={minimapScrollRef}
+              />
+            )}
+
+            {/* Zoom controls — shifted left to clear the minimap (minimap = 20px on right edge) */}
+            <div className="absolute bottom-4 right-7 z-50 flex flex-col gap-1 items-center" style={{ pointerEvents: 'all' }}>
+              <button
+                onClick={(e) => { e.stopPropagation(); setPdfZoom(z => Math.min(+(z + 0.15).toFixed(2), 2.5)) }}
+                className="w-8 h-8 rounded-lg bg-white border border-gray-200 shadow-md flex items-center justify-center text-gray-600 hover:bg-gray-50 hover:border-gray-300 active:bg-gray-100 transition-all text-base font-medium select-none"
+                title="Zoom in"
+              >+</button>
+              <button
+                onClick={(e) => { e.stopPropagation(); setPdfZoom(1.0) }}
+                className="w-8 h-8 rounded-lg bg-white border border-gray-200 shadow-md flex items-center justify-center text-gray-400 hover:bg-gray-50 hover:border-gray-300 active:bg-gray-100 transition-all select-none"
+                title="Reset zoom"
+                style={{ fontSize: '9px', fontWeight: 600, letterSpacing: '-0.02em' }}
+              >{Math.round(pdfZoom * 100)}%</button>
+              <button
+                onClick={(e) => { e.stopPropagation(); setPdfZoom(z => Math.max(+(z - 0.15).toFixed(2), 0.4)) }}
+                className="w-8 h-8 rounded-lg bg-white border border-gray-200 shadow-md flex items-center justify-center text-gray-600 hover:bg-gray-50 hover:border-gray-300 active:bg-gray-100 transition-all text-base font-medium select-none"
+                title="Zoom out"
+              >−</button>
+            </div>
+
             <PDFViewerCore
               ref={pdfViewerRef}
               url={currentDocumentUrl}
               scale={1.4}
+              zoomFactor={pdfZoom}
               userName={userName}
               documentId={documentId}
               userId={userId}
-              onDocumentLoaded={(numPages) => {
+              onDocumentLoaded={(n) => {
+                setNumPages(n)
+                // Sync scroll container to minimap after document loads
+                minimapScrollRef.current = pdfViewerRef.current?.getScrollContainer?.() ?? null
                 if (onDocumentLoaded) onDocumentLoaded()
                 // Seed the section tracker so Agent 1's heartbeat has a section from the first second
                 const initialPage = currentPageRef.current || 1
@@ -7827,6 +8374,16 @@ ${documentContent}
               }}
               onPageTextsExtracted={(pageTexts) => {
                 pageTextsRef.current = pageTexts
+                // Sync page texts to server so discussion-navigator can identify discussed pages
+                if (socketInstance?.connected) {
+                  const textRecord: Record<string, string> = {}
+                  pageTexts.forEach((text, page) => { textRecord[String(page)] = text.slice(0, 500) })
+                  socketInstance.emit('page-texts-sync', {
+                    documentId,
+                    documentTitle,
+                    pageTexts: textRecord,
+                  })
+                }
               }}
               onAnnotationAdd={(ann) => {
                 if (onAnnotationAdd) onAnnotationAdd(ann)
@@ -7850,6 +8407,15 @@ ${documentContent}
                 }
                 console.log('[collab] broadcasting highlight, isConnected:', isConnected, payload)
                 broadcastHighlight(payload)
+
+                // Surface in Live Activity feed (react-pdf viewer path)
+                emitLiveActivity('peer-highlight', {
+                  id: data.annotationId,
+                  userId: userId,
+                  userName: userName,
+                  pageNumber: data.pageNumber,
+                  text: data.text,
+                })
 
                 // Auto-save to shared Team Notes so all readers see highlights/comments
                 if (data.text && data.text.trim().length >= 5) {
@@ -7991,6 +8557,49 @@ ${documentContent}
                 }
               }}
             />
+
+            {/* ── Peer Reading Position Ribbon ─────────────────────────────────────────
+                 One coloured bookmark per connected peer, positioned proportionally
+                 along the right edge of the PDF container based on their current page.
+                 Clicking a peer's bookmark navigates to their page + flashes amber.
+                 Only rendered in collaborative mode with 2+ readers.
+            ──────────────────────────────────────────────────────────────────────── */}
+            {sessionMode === 'collaborative' && numPages > 0 && Array.from(peerPagePositions.values())
+              .filter(p => p.userId !== userId)
+              .map((peer, idx) => {
+                const pct = numPages > 1 ? (peer.page - 1) / (numPages - 1) : 0
+                // Prefer server-assigned identity color; fall back to what the socket stored
+                const serverUser = connectedUsers.find((u: any) => u.userId === peer.userId)
+                const color = serverUser?.userColor || peer.color || '#6366f1'
+                const initials = (peer.userName || '?').slice(0, 2).toUpperCase()
+                return (
+                  <button
+                    key={peer.userId}
+                    onClick={() => {
+                      const section = pdfSections.find(s => s.startPage <= peer.page && s.endPage >= peer.page)
+                      window.dispatchEvent(new CustomEvent('document-viewer-navigate', {
+                        detail: { pageNumber: peer.page, highlight: section?.heading.text || undefined }
+                      }))
+                    }}
+                    title={`${peer.userName} — p.${peer.page}${peer.currentSectionName ? ` §${peer.currentSectionName}` : ''}`}
+                    style={{
+                      position: 'absolute',
+                      right: `-${28 + idx * 32}px`,
+                      top: `calc(${pct * 100}% - 14px)`,
+                      backgroundColor: color,
+                      transition: 'top 0.6s cubic-bezier(0.25, 0.46, 0.45, 0.94)',
+                      zIndex: 100,
+                    }}
+                    className="w-7 h-7 rounded-l-full flex items-center justify-center text-white text-[9px] font-bold shadow-md hover:w-28 hover:rounded-lg hover:px-2 overflow-hidden group transition-all duration-200"
+                  >
+                    <span className="shrink-0">{initials}</span>
+                    <span className="ml-1 text-[9px] font-medium whitespace-nowrap opacity-0 group-hover:opacity-100 max-w-0 group-hover:max-w-[80px] overflow-hidden transition-all duration-200">
+                      p.{peer.page}
+                    </span>
+                  </button>
+                )
+              })
+            }
 
             {/* Stuck Markers Overlay — kept as absolute overlay above PDF */}
             {stuckMarkers
@@ -8606,88 +9215,216 @@ ${documentContent}
 
 
 
-        {/* ✅ GOOGLE-QUALITY IMPLICIT HELP — 3-stage ambient assistance */}
-        <ImplicitHelpCard
-          trigger={implicitHelpTrigger}
-          documentTitle={documentTitle}
-          documentContent={cachedDocumentContent}
-          onDismiss={() => setImplicitHelpTrigger(null)}
-          onHelpChosen={(type, text) => {
-            // Map to the appropriate help panel action
-            setHelpPanelContext({
-              sectionId: implicitHelpTrigger?.sectionId || '',
-              sectionName: implicitHelpTrigger?.sectionName || '',
-              confusedHighlights: [],
-              specificText: text,
-              initialQuestion: type === 'explain'
-                ? `In §${implicitHelpTrigger?.sectionName}: trace the causal mechanism and identify the load-bearing assumption. Where else in the paper does this connect? "${text.slice(0, 100)}"`
-                : type === 'example'
-                  ? `In §${implicitHelpTrigger?.sectionName}: what is the strongest objection to this claim, and what evidence would resolve it? "${text.slice(0, 100)}"`
-                  : `${text.slice(0, 300)}`
-            })
-            setShowHelpPanel(true)
-            setImplicitHelpTrigger(null)
-          }}
-        />
 
-        {/* ── Lower-priority nudges — only shown when no smart notification is active ──
-             They share the same bottom-6 right-6 slot as the smart notification.
-             Priority: contentNudge > pageNoteNudge (content explanation is more actionable).
-        ──────────────────────────────────────────────────────────────────────────────── */}
-        {(() => {
-          const hasActiveSmartNotif = smartNotifications
-            .filter(n => !dismissedNotifications.has(n.id))
-            .some(n => n.targetUserId === userId || n.targetUserIds?.includes(userId))
-
-          // Content detection nudge — figure/table/equation detected
-          if (contentNudge && !hasActiveSmartNotif) {
+        {/* ── Foreign Section Banner — shown when reader navigates to someone else's section ──
+             Non-blocking. One-time per section. "Read anyway" permanently dismisses for that section.
+        ─────────────────────────────────────────────────────────────────────── */}
+        <AnimatePresence>
+          {(() => {
+            if (!a10Assignments || a10Assignments.length === 0) return null
+            if (sessionPhase !== 'II') return null
+            if (sessionMode !== 'collaborative') return null
+            if (!currentPageAssignment) return null
+            if (currentPageAssignment.assignedTo === userId) return null
+            if (currentPageAssignment.isAI) return null
+            const sectionId = currentPageAssignment.sectionId
+            // dismissedForeignSectionsVersion is read to force re-evaluation when set changes
+            void dismissedForeignSectionsVersion
+            if (dismissedForeignSectionsRef.current.has(sectionId)) return null
             return (
-              <ContentDetectionNudge
-                sectionId={contentNudge.sectionId}
-                sectionName={contentNudge.sectionName}
-                sectionText={contentNudge.sectionText}
-                flags={contentNudge.flags}
-                documentTitle={documentTitle}
-                onDismiss={() => setContentNudge(null)}
-              />
-            )
-          }
-
-          // Marginal note nudge — previous reader left a note on this page
-          if (pageNoteNudge && !hasActiveSmartNotif && !contentNudge) {
-            return (
-              <div className="fixed bottom-6 right-6 z-[185] flex items-center gap-2 animate-in slide-in-from-right-4 fade-in duration-200">
-                <button
-                  onClick={() => { setShowMarginalNotes(true); setPageNoteNudge(null) }}
-                  className="flex items-center gap-2 pl-2.5 pr-3.5 py-2 rounded-full text-white text-[12.5px] font-medium shadow-lg hover:opacity-90 transition-opacity active:scale-95"
-                  style={{ background: 'linear-gradient(135deg, #7c3aed 0%, #4f46e5 100%)', boxShadow: '0 4px 16px rgba(124,58,237,0.28)', letterSpacing: '-0.01em', maxWidth: 260 }}
+              <motion.div
+                key={`foreign-${sectionId}`}
+                initial={{ opacity: 0, y: -8 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -8 }}
+                transition={{ type: 'spring', damping: 28, stiffness: 320 }}
+                className="fixed top-24 left-1/2 -translate-x-1/2 z-[200] pointer-events-auto"
+              >
+                <div
+                  className="flex items-center gap-3 px-3.5 py-2.5 rounded-2xl border border-amber-200 shadow-sm"
+                  style={{ background: 'rgba(255,251,235,0.97)', backdropFilter: 'blur(12px)' }}
                 >
-                  <svg className="w-3.5 h-3.5 opacity-90 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                    <path strokeLinecap="round" strokeLinejoin="round" d="M7 8h10M7 12h4m1 8l-4-4H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-3l-4 4z" />
-                  </svg>
-                  <span className="truncate">
-                    {pageNoteNudge.count === 1
-                      ? `${pageNoteNudge.author}: note on p.${pageNoteNudge.page}`
-                      : `${pageNoteNudge.count} reader notes on p.${pageNoteNudge.page}`}
-                  </span>
-                  <svg className="w-3.5 h-3.5 opacity-70 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                    <path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" />
-                  </svg>
-                </button>
-                <button
-                  onClick={() => setPageNoteNudge(null)}
-                  className="w-7 h-7 rounded-full bg-white border border-slate-200 flex items-center justify-center text-slate-400 hover:text-slate-600 shadow-sm transition-colors shrink-0"
-                >
-                  <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                    <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
-                  </svg>
-                </button>
-              </div>
+                  <div className="w-6 h-6 rounded-full bg-emerald-100 flex items-center justify-center shrink-0">
+                    <span className="text-[10px] font-bold text-emerald-700">
+                      {currentPageAssignment.assignedName.charAt(0).toUpperCase()}
+                    </span>
+                  </div>
+                  <p className="text-[12px] text-amber-800 font-medium">
+                    <span className="font-semibold">§{currentPageAssignment.sectionName}</span>
+                    {' '}is {currentPageAssignment.assignedName}&apos;s section
+                  </p>
+                  <div className="flex items-center gap-1.5 ml-1">
+                    <button
+                      onClick={() => dismissForeignSection(sectionId)}
+                      className="px-2.5 py-1 rounded-lg bg-amber-100 hover:bg-amber-200 text-amber-700 text-[11px] font-semibold transition-colors"
+                    >
+                      Read anyway
+                    </button>
+                    <button
+                      onClick={() => dismissForeignSection(sectionId)}
+                      className="w-5 h-5 rounded-full flex items-center justify-center text-amber-400 hover:text-amber-600 transition-colors"
+                    >
+                      <X className="w-3 h-3" />
+                    </button>
+                  </div>
+                </div>
+              </motion.div>
             )
-          }
+          })()}
+        </AnimatePresence>
 
-          return null
-        })()}
+        {/* ── Notification tray — all ambient notifications visible simultaneously ──
+             Fixed anchor: bottom-20 right-6. Each notification stacks upward.
+             Nothing else should use fixed bottom-* right-6.
+        ─────────────────────────────────────────────────────────────────────── */}
+        <div className="fixed bottom-20 right-6 z-[210] flex flex-col items-end gap-2 pointer-events-auto">
+
+          {/* Smart notification pills — A7, shared confusion, peer routing (one per active notif) */}
+          <AnimatePresence>
+            {smartNotifications
+              .filter(n => !dismissedNotifications.has(n.id))
+              .filter(n => n.targetUserId === userId || n.targetUserIds?.includes(userId))
+              .map(notif => (
+                <motion.div
+                  key={notif.id}
+                  initial={{ opacity: 0, x: 40, scale: 0.95 }}
+                  animate={{ opacity: 1, x: 0, scale: 1 }}
+                  exit={{ opacity: 0, x: 40, scale: 0.95 }}
+                  transition={{ type: 'spring', damping: 26, stiffness: 320 }}
+                  className="flex items-center gap-2"
+                >
+                  <button
+                    onClick={() => handleNotificationAction(notif)}
+                    className="flex items-center gap-2 pl-2.5 pr-3.5 py-2 rounded-full text-white text-[12.5px] font-medium shadow-lg transition-opacity hover:opacity-90 active:scale-95"
+                    style={{
+                      background: 'linear-gradient(135deg, #4f46e5 0%, #7c3aed 100%)',
+                      boxShadow: '0 4px 16px rgba(79,70,229,0.32)',
+                      maxWidth: 280,
+                      letterSpacing: '-0.01em',
+                    }}
+                  >
+                    <Sparkles className="w-3.5 h-3.5 opacity-80 shrink-0" />
+                    <span className="truncate">{notif.title}</span>
+                    {notif.actionButton && (
+                      <span className="ml-1 px-2 py-0.5 rounded-full bg-white/20 text-[11px] font-semibold whitespace-nowrap">
+                        {notif.actionButton.label}
+                      </span>
+                    )}
+                  </button>
+                  <button
+                    onClick={() => {
+                      setDismissedNotifications(prev => new Set(prev).add(notif.id))
+                      setSmartNotifications(prev => prev.filter(n => n.id !== notif.id))
+                    }}
+                    className="w-7 h-7 rounded-full bg-white border border-slate-200 flex items-center justify-center text-slate-400 hover:text-slate-600 shadow-sm transition-colors shrink-0"
+                  >
+                    <X className="w-3.5 h-3.5" />
+                  </button>
+                </motion.div>
+              ))
+            }
+          </AnimatePresence>
+
+          {/* ImplicitHelpCard — A7 behavioural signal card */}
+          {implicitHelpTrigger && (
+            <ImplicitHelpCard
+              trigger={implicitHelpTrigger}
+              documentTitle={documentTitle}
+              documentContent={cachedDocumentContent}
+              pageSections={pdfSections
+                .filter(s => s.startPage <= currentPage && s.endPage >= currentPage)
+                .map(s => ({ id: s.heading.id, name: s.heading.text, fullText: s.content || '' }))}
+              onNavigate={(page, highlight) => {
+                window.dispatchEvent(new CustomEvent('document-viewer-navigate', {
+                  detail: { pageNumber: page, highlight: highlight || undefined }
+                }))
+              }}
+              allSections={pdfSections.map(s => ({ name: s.heading.text, startPage: s.startPage }))}
+              onDismiss={() => setImplicitHelpTrigger(null)}
+              onHelpChosen={(type, text) => {
+                setHelpPanelContext({
+                  sectionId: implicitHelpTrigger?.sectionId || '',
+                  sectionName: implicitHelpTrigger?.sectionName || '',
+                  confusedHighlights: [],
+                  specificText: text,
+                  initialQuestion: type === 'explain'
+                    ? `In §${implicitHelpTrigger?.sectionName}: trace the causal mechanism and identify the load-bearing assumption. Where else in the paper does this connect? "${text.slice(0, 100)}"`
+                    : type === 'example'
+                      ? `In §${implicitHelpTrigger?.sectionName}: what is the strongest objection to this claim, and what evidence would resolve it? "${text.slice(0, 100)}"`
+                      : `${text.slice(0, 300)}`
+                })
+                setShowHelpPanel(true)
+                setImplicitHelpTrigger(null)
+              }}
+            />
+          )}
+
+          {/* Content detection nudge — figure/table/equation detected on current page */}
+          {contentNudge && (
+            <ContentDetectionNudge
+              sectionId={contentNudge.sectionId}
+              sectionName={contentNudge.sectionName}
+              sectionText={contentNudge.sectionText}
+              flags={contentNudge.flags}
+              documentTitle={documentTitle}
+              documentContent={cachedDocumentContent}
+              capturePageImage={async () => {
+                try {
+                  if (!webViewerInstance?.Core?.documentViewer) return null
+                  const doc = webViewerInstance.Core.documentViewer.getDocument()
+                  if (!doc) return null
+                  const pageNum = webViewerInstance.Core.documentViewer.getCurrentPage()
+                  return await new Promise<string | null>((resolve) => {
+                    doc.loadCanvas({
+                      pageNumber: pageNum,
+                      drawComplete: (canvas: HTMLCanvasElement) => {
+                        try {
+                          resolve(canvas.toDataURL('image/jpeg', 0.85))
+                        } catch {
+                          resolve(null)
+                        }
+                      },
+                      zoom: 1.5,
+                    })
+                  })
+                } catch {
+                  return null
+                }
+              }}
+              onDismiss={() => setContentNudge(null)}
+            />
+          )}
+
+          {/* Marginal note nudge — a previous reader left a note on this page */}
+          {pageNoteNudge && (
+            <div className="flex items-center gap-2 animate-in slide-in-from-right-4 fade-in duration-200">
+              <button
+                onClick={() => { setShowMarginalNotes(true); setPageNoteNudge(null) }}
+                className="flex items-center gap-2 pl-2.5 pr-3.5 py-2 rounded-full text-white text-[12.5px] font-medium shadow-lg hover:opacity-90 transition-opacity active:scale-95"
+                style={{ background: 'linear-gradient(135deg, #7c3aed 0%, #4f46e5 100%)', boxShadow: '0 4px 16px rgba(124,58,237,0.28)', letterSpacing: '-0.01em', maxWidth: 260 }}
+              >
+                <svg className="w-3.5 h-3.5 opacity-90 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M7 8h10M7 12h4m1 8l-4-4H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-3l-4 4z" />
+                </svg>
+                <span className="truncate">
+                  {pageNoteNudge.count === 1
+                    ? `${pageNoteNudge.author}: note on p.${pageNoteNudge.page}`
+                    : `${pageNoteNudge.count} reader notes on p.${pageNoteNudge.page}`}
+                </span>
+                <svg className="w-3.5 h-3.5 opacity-70 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" />
+                </svg>
+              </button>
+              <button
+                onClick={() => setPageNoteNudge(null)}
+                className="w-7 h-7 rounded-full bg-white border border-slate-200 flex items-center justify-center text-slate-400 hover:text-slate-600 shadow-sm transition-colors shrink-0"
+              >
+                <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
+            </div>
+          )}
 
         {/* ── Inline Definition Popup ─────────────────────────────────────── */}
         <AnimatePresence>
@@ -8764,69 +9501,7 @@ ${documentContent}
           )}
         </AnimatePresence>
 
-        {/* ── Unified notification stack ─────────────────────────────────────────
-             All ambient nudges share one slot: bottom-6 right-6.
-             Priority order (highest first): smart-notification > contentNudge > pageNoteNudge > implicitHelp chip.
-             The smart notification renders here; lower-priority nudges render below only when this is empty.
-        ──────────────────────────────────────────────────────────────────────── */}
-
-        {/* Smart Notifications from Agent 7 — compact pill, never a wide card */}
-        <AnimatePresence>
-          {smartNotifications.length > 0 && (
-            <div className="fixed bottom-6 right-6 z-[210] flex flex-col items-end gap-2 pointer-events-none">
-              {smartNotifications
-                .filter(n => !dismissedNotifications.has(n.id))
-                .filter(n => {
-                  if (n.targetUserId === userId) return true
-                  if (n.targetUserIds && n.targetUserIds.includes(userId)) return true
-                  return false
-                })
-                .slice(-1)
-                .map((notif) => (
-                  <motion.div
-                    key={notif.id}
-                    initial={{ opacity: 0, x: 40, scale: 0.95 }}
-                    animate={{ opacity: 1, x: 0, scale: 1 }}
-                    exit={{ opacity: 0, x: 40, scale: 0.95 }}
-                    transition={{ type: 'spring', damping: 26, stiffness: 320 }}
-                    className="pointer-events-auto flex items-center gap-2"
-                  >
-                    {/* Pill button */}
-                    <button
-                      onClick={() => handleNotificationAction(notif)}
-                      className="flex items-center gap-2 pl-2.5 pr-3.5 py-2 rounded-full text-white text-[12.5px] font-medium shadow-lg transition-opacity hover:opacity-90 active:scale-95"
-                      style={{
-                        background: 'linear-gradient(135deg, #4f46e5 0%, #7c3aed 100%)',
-                        boxShadow: '0 4px 16px rgba(79,70,229,0.32)',
-                        maxWidth: 280,
-                        letterSpacing: '-0.01em',
-                      }}
-                    >
-                      <Sparkles className="w-3.5 h-3.5 opacity-80 shrink-0" />
-                      <span className="truncate">{notif.title}</span>
-                      {notif.actionButton && (
-                        <span className="ml-1 px-2 py-0.5 rounded-full bg-white/20 text-[11px] font-semibold whitespace-nowrap">
-                          {notif.actionButton.label}
-                        </span>
-                      )}
-                    </button>
-
-                    {/* Dismiss */}
-                    <button
-                      onClick={() => {
-                        setDismissedNotifications(prev => new Set(prev).add(notif.id))
-                        setSmartNotifications(prev => prev.filter(n => n.id !== notif.id))
-                      }}
-                      className="w-7 h-7 rounded-full bg-white border border-slate-200 flex items-center justify-center text-slate-400 hover:text-slate-600 shadow-sm transition-colors shrink-0"
-                    >
-                      <X className="w-3.5 h-3.5" />
-                    </button>
-                  </motion.div>
-                ))}
-            </div>
-          )}
-        </AnimatePresence>
-
+        </div>{/* unified notification column */}
 
 
 
@@ -8988,185 +9663,256 @@ ${documentContent}
 
         {/* ── Peer Chat Window ─────────────────────────────────────────────── */}
         <AnimatePresence>
-          {peerChatOpen && peerChatData && (
-            <motion.div
-              initial={{ opacity: 0, y: 24, scale: 0.97 }}
-              animate={{ opacity: 1, y: 0, scale: 1 }}
-              exit={{ opacity: 0, y: 16, scale: 0.97 }}
-              transition={{ type: 'spring', stiffness: 340, damping: 30 }}
-              className="fixed bottom-0 right-16 z-[150] w-[400px] flex flex-col bg-white rounded-t-2xl shadow-[0_8px_32px_rgba(0,0,0,0.14)] ring-1 ring-slate-200 overflow-hidden"
-              style={{ maxHeight: '560px' }}
-            >
-              {/* Header — section + peer identity */}
-              <div className="shrink-0 bg-white border-b border-slate-100">
-                {/* Top row: title + close */}
-                <div className="flex items-center gap-2.5 px-4 pt-3 pb-2">
-                  <div className="w-7 h-7 rounded-lg bg-gradient-to-br from-indigo-500 to-violet-600 flex items-center justify-center shrink-0">
-                    <MessageSquare className="w-3.5 h-3.5 text-white" />
+          {peerChatOpen && peerChatData && (() => {
+            const peerChatInputRef = { current: null as HTMLInputElement | null }
+
+            const handleAskA6Together = async () => {
+              const question = `Explain the key claim in §${peerChatData.sectionName} and identify the load-bearing assumption the argument depends on.`
+              setPeerChatMessages(prev => [...prev, {
+                fromUserId: 'ai-facilitator', fromUserName: 'CoRead',
+                message: `⏳ Asking A6 to explain §${peerChatData.sectionName}…`,
+                timestamp: Date.now(), documentId, sectionId: peerChatData.sectionId,
+              }])
+              try {
+                const res = await fetch('/api/ai-help', {
+                  method: 'POST', headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify({ question, documentContent: peerChatData.sectionText || documentContentRef.current, documentTitle: peerChatData.sectionName, sectionName: peerChatData.sectionName }),
+                })
+                const data = await res.json()
+                const answer = data.response?.answer || data.answer || 'No explanation returned.'
+                setPeerChatMessages(prev => {
+                  const updated = [...prev]
+                  updated[updated.length - 1] = { fromUserId: 'ai-facilitator', fromUserName: 'A6 · Explanation', message: answer, timestamp: Date.now(), documentId, sectionId: peerChatData.sectionId }
+                  return updated
+                })
+              } catch {
+                setPeerChatMessages(prev => prev.slice(0, -1))
+              }
+            }
+
+            const handleResolve = () => {
+              const summary = peerChatMessages.filter(m => m.fromUserId !== 'ai-facilitator').map(m => m.message).join(' ').slice(0, 400)
+              setPeerChatMessages(prev => [...prev, {
+                fromUserId: 'ai-facilitator', fromUserName: 'CoRead',
+                message: JSON.stringify({ _type: 'resolved', sectionName: peerChatData.sectionName, summary }),
+                timestamp: Date.now(), documentId, sectionId: peerChatData.sectionId,
+              }])
+              setTimeout(() => setPeerChatOpen(false), 2000)
+            }
+
+            return (
+              <motion.div
+                initial={{ opacity: 0, y: 24, scale: 0.97 }}
+                animate={{ opacity: 1, y: 0, scale: 1 }}
+                exit={{ opacity: 0, y: 16, scale: 0.97 }}
+                transition={{ type: 'spring', stiffness: 340, damping: 30 }}
+                className="fixed bottom-0 right-16 z-[150] w-[400px] flex flex-col bg-white rounded-t-2xl shadow-[0_8px_40px_rgba(0,0,0,0.16)] ring-1 ring-slate-200 overflow-hidden"
+                style={{ maxHeight: '600px' }}
+              >
+                {/* ── Header ── */}
+                <div className="shrink-0 bg-gradient-to-r from-indigo-600 to-violet-600 px-4 pt-3 pb-3">
+                  <div className="flex items-center gap-2.5">
+                    <div className="w-8 h-8 rounded-full bg-white/20 flex items-center justify-center shrink-0 text-white font-bold text-sm">
+                      {peerChatData.peerName.charAt(0).toUpperCase()}
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <p className="text-[13px] font-semibold text-white leading-tight truncate">{peerChatData.peerName}</p>
+                      <p className="text-[11px] text-indigo-200 truncate">§ {peerChatData.sectionName}</p>
+                    </div>
+                    {peerChatData.myDsScore != null && (
+                      <div className="shrink-0 px-2 py-0.5 rounded-full text-[10px] font-bold bg-white/20 text-white border border-white/30">
+                        D_s {peerChatData.myDsScore.toFixed(2)}
+                      </div>
+                    )}
+                    <button
+                      onClick={() => {
+                        setPeerChatOpen(false)
+                        if (activeCaptureIdRef.current && peerChatData) {
+                          const captureId = activeCaptureIdRef.current
+                          setTimeout(() => setExplanationCapture({ captureId, helperName: peerChatData.peerName, sectionName: peerChatData.sectionName, dsAtStart: currentDsRef.current, role: 'helpee' }), 10000)
+                        }
+                      }}
+                      className="shrink-0 w-6 h-6 rounded-full flex items-center justify-center text-white/70 hover:text-white hover:bg-white/20 transition-colors"
+                    >
+                      <X className="w-3.5 h-3.5" />
+                    </button>
                   </div>
-                  <div className="flex-1 min-w-0">
-                    <p className="text-[13px] font-semibold text-slate-900 leading-tight truncate">
-                      {peerChatData.peerName}
+
+                  {/* Confusion context row */}
+                  <div className="mt-2 flex items-center gap-2 flex-wrap">
+                    {peerChatData.myReason && peerChatData.peerReason && peerChatData.myReason !== peerChatData.peerReason ? (
+                      <>
+                        <span className="text-[10px] text-indigo-200 uppercase tracking-wide font-semibold">Divergence</span>
+                        <span className="text-[11px] px-2 py-0.5 rounded-full bg-white/20 text-white font-medium">You: {peerChatData.myReason}</span>
+                        <span className="text-[10px] text-indigo-300">vs</span>
+                        <span className="text-[11px] px-2 py-0.5 rounded-full bg-white/20 text-white font-medium">{peerChatData.peerName}: {peerChatData.peerReason}</span>
+                      </>
+                    ) : peerChatData.myReason ? (
+                      <span className="text-[11px] px-2 py-0.5 rounded-full bg-amber-400/30 text-amber-100 font-medium">Both confused: {peerChatData.myReason}</span>
+                    ) : peerChatData.routingReason ? (
+                      <span className="text-[11px] text-indigo-200">{peerChatData.routingReason}</span>
+                    ) : null}
+                  </div>
+                </div>
+
+                {/* ── Shared passage — always visible, pinned ── */}
+                {peerChatData.sharedPassage && (
+                  <div className="shrink-0 mx-3 mt-2.5 mb-0 rounded-xl bg-amber-50 border border-amber-200 px-3 py-2.5">
+                    <p className="text-[9px] font-bold uppercase tracking-wider text-amber-600 mb-1">Shared passage</p>
+                    <p className="text-[12px] text-slate-700 italic leading-relaxed">
+                      "{peerChatData.sharedPassage.slice(0, 220)}{peerChatData.sharedPassage.length > 220 ? '…' : ''}"
                     </p>
-                    <p className="text-[11px] text-slate-400 truncate">{peerChatData.sectionName}</p>
                   </div>
-                  {/* D_s badge */}
-                  {peerChatData.myDsScore != null && (
-                    <div className="shrink-0 px-2 py-0.5 rounded-full text-[10px] font-bold tracking-wide border"
-                      style={{
-                        backgroundColor: peerChatData.myDsScore >= 0.88 ? '#fef2f2' : '#fffbeb',
-                        borderColor:     peerChatData.myDsScore >= 0.88 ? '#fca5a5' : '#fde68a',
-                        color:           peerChatData.myDsScore >= 0.88 ? '#dc2626' : '#b45309',
-                      }}>
-                      D_s {peerChatData.myDsScore.toFixed(2)}
+                )}
+
+                {/* ── Action bar — Ask A6 + Resolve ── */}
+                <div className="shrink-0 flex items-center gap-2 px-3 py-2 border-b border-slate-100">
+                  <button
+                    onClick={handleAskA6Together}
+                    className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-indigo-50 hover:bg-indigo-100 border border-indigo-200 text-indigo-700 text-[11px] font-semibold transition-colors"
+                  >
+                    <Brain className="w-3 h-3" />
+                    Ask A6 together
+                  </button>
+                  <button
+                    onClick={handleResolve}
+                    className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-emerald-50 hover:bg-emerald-100 border border-emerald-200 text-emerald-700 text-[11px] font-semibold transition-colors"
+                  >
+                    <CheckCircle className="w-3 h-3" />
+                    Mark resolved
+                  </button>
+                  <div className="flex-1" />
+                  <span className="text-[10px] text-slate-400">@AI for scoped help</span>
+                </div>
+
+                {/* ── Messages ── */}
+                <div className="flex-1 overflow-y-auto px-3 py-2 space-y-2 min-h-0">
+                  {peerChatMessages.length === 0 && (
+                    <div className="flex items-center justify-center h-16">
+                      <div className="flex gap-1">
+                        {[0, 0.15, 0.3].map((d, i) => (
+                          <div key={i} className="w-1.5 h-1.5 bg-indigo-300 rounded-full animate-bounce" style={{ animationDelay: `${d}s` }} />
+                        ))}
+                      </div>
                     </div>
                   )}
-                  <button
-                    onClick={() => {
-                      setPeerChatOpen(false)
-                      if (activeCaptureIdRef.current && peerChatData) {
-                        const captureId = activeCaptureIdRef.current
-                        setTimeout(() => {
-                          setExplanationCapture({
-                            captureId,
-                            helperName: peerChatData.peerName,
-                            sectionName: peerChatData.sectionName,
-                            dsAtStart: currentDsRef.current,
-                            role: 'helpee',
-                          })
-                        }, 10000)
-                      }
-                    }}
-                    className="shrink-0 w-6 h-6 rounded-full flex items-center justify-center text-slate-400 hover:text-slate-700 hover:bg-slate-100 transition-colors"
-                  >
-                    <X className="w-3.5 h-3.5" />
-                  </button>
-                </div>
+                  {peerChatMessages.map((msg, i) => {
+                    const isMe = msg.fromUserId === userId
+                    const isAI = msg.fromUserId === 'ai-facilitator' || msg.fromUserId === 'ai-assistant'
 
-                {/* Shared passage + divergence context — only shown when available */}
-                {(peerChatData.sharedPassage || (peerChatData.myReason && peerChatData.peerReason)) && (
-                  <div className="mx-3 mb-2.5 rounded-xl bg-amber-50 border border-amber-200 px-3 py-2">
-                    {peerChatData.sharedPassage && (
-                      <p className="text-[11px] text-slate-600 italic leading-relaxed line-clamp-2 mb-1.5">
-                        "{peerChatData.sharedPassage.slice(0, 140)}{peerChatData.sharedPassage.length > 140 ? '…' : ''}"
-                      </p>
-                    )}
-                    {peerChatData.myReason && peerChatData.peerReason && peerChatData.myReason !== peerChatData.peerReason && (
-                      <div className="flex items-center gap-2 flex-wrap">
-                        <span className="text-[10px] font-semibold text-slate-500 uppercase tracking-wide">Divergence:</span>
-                        <span className="text-[11px] px-1.5 py-0.5 rounded-md bg-white border border-amber-200 text-amber-800 font-medium">
-                          You: {peerChatData.myReason}
-                        </span>
-                        <span className="text-[10px] text-slate-400">vs</span>
-                        <span className="text-[11px] px-1.5 py-0.5 rounded-md bg-white border border-violet-200 text-violet-800 font-medium">
-                          {peerChatData.peerName}: {peerChatData.peerReason}
-                        </span>
-                      </div>
-                    )}
-                    {peerChatData.myReason && peerChatData.peerReason && peerChatData.myReason === peerChatData.peerReason && (
-                      <p className="text-[11px] text-amber-700 font-medium">
-                        Both marked as <span className="font-semibold">{peerChatData.myReason}</span> — shared confusion signal
-                      </p>
-                    )}
-                  </div>
-                )}
+                    // Resolved card
+                    let resolvedData: { _type: string; sectionName: string; summary: string } | null = null
+                    // A3 facilitator card
+                    let a3Data: { _type: string; sectionName: string; routingReason: string | null; sharedPassage: string | null; divergence: { myReason: string | null; peerReason: string | null; peerName: string } | null; questions: string[] } | null = null
 
-                {/* Routing reason chip */}
-                {peerChatData.routingReason && !(peerChatData.sharedPassage || (peerChatData.myReason && peerChatData.peerReason)) && (
-                  <div className="mx-3 mb-2.5">
-                    <p className="text-[10px] text-slate-400 italic">{peerChatData.routingReason}</p>
-                  </div>
-                )}
-              </div>
+                    if (isAI) {
+                      try {
+                        const parsed = JSON.parse(msg.message)
+                        if (parsed._type === 'a3-facilitator') a3Data = parsed
+                        else if (parsed._type === 'resolved') resolvedData = parsed
+                      } catch { /* plain text */ }
+                    }
 
-              {/* Chat messages */}
-              <div className="flex-1 overflow-y-auto px-3 py-2 space-y-2 min-h-0" style={{ maxHeight: '320px' }}>
-                {peerChatMessages.length === 0 && (
-                  <div className="flex items-center justify-center h-20">
-                    <div className="flex gap-1">
-                      {[0, 0.15, 0.3].map((d, i) => (
-                        <div key={i} className="w-1.5 h-1.5 bg-indigo-300 rounded-full animate-bounce" style={{ animationDelay: `${d}s` }} />
-                      ))}
-                    </div>
-                  </div>
-                )}
-                {peerChatMessages.map((msg, i) => {
-                  const isMe = msg.fromUserId === userId
-                  const isAI = msg.fromUserId === 'ai-facilitator' || msg.fromUserId === 'ai-assistant'
-                  return (
-                    <div key={i} className={`flex flex-col ${isMe ? 'items-end' : 'items-start'}`}>
-                      {!isMe && (
-                        <p className="text-[10px] font-semibold text-slate-400 px-1 mb-0.5">
-                          {isAI ? 'A3 · Facilitator' : msg.fromUserName}
-                        </p>
-                      )}
-                      <div className={`px-3 py-2 rounded-2xl text-[13px] leading-relaxed max-w-[88%] whitespace-pre-wrap break-words ${
-                        isMe
-                          ? 'bg-indigo-600 text-white rounded-tr-sm'
-                          : isAI
-                            ? 'bg-slate-50 border border-slate-200 text-slate-800 rounded-tl-sm'
-                            : 'bg-slate-100 text-slate-800 rounded-tl-sm'
-                      }`}>
-                        {isAI && (
-                          <div className="flex items-center gap-1 mb-1 text-[10px] font-bold text-indigo-500 uppercase tracking-widest">
-                            <Brain className="w-2.5 h-2.5" /> CoRead
+                    // Resolved card
+                    if (resolvedData) {
+                      return (
+                        <div key={i} className="w-full bg-emerald-50 border border-emerald-200 rounded-xl px-3 py-2.5 flex items-start gap-2">
+                          <CheckCircle className="w-4 h-4 text-emerald-600 shrink-0 mt-0.5" />
+                          <div>
+                            <p className="text-[12px] font-semibold text-emerald-800">Confusion resolved · §{resolvedData.sectionName}</p>
+                            <p className="text-[11px] text-emerald-600 mt-0.5">Insight captured in the Collective Knowledge Base.</p>
                           </div>
-                        )}
-                        {msg.message}
-                      </div>
-                    </div>
-                  )
-                })}
-              </div>
+                        </div>
+                      )
+                    }
 
-              {/* Input */}
-              <div className="shrink-0 px-3 py-2.5 border-t border-slate-100 bg-white">
-                <div className="flex items-center gap-2 bg-slate-50 rounded-xl px-3 py-1.5 border border-slate-200 focus-within:border-indigo-300 focus-within:ring-1 focus-within:ring-indigo-200 transition-all">
-                  <input
-                    className="flex-1 bg-transparent text-[13px] text-slate-800 placeholder:text-slate-400 outline-none"
-                    placeholder={`Message ${peerChatData.peerName}… or tag @AI`}
-                    onKeyDown={e => {
-                      if (e.key === 'Enter' && !e.shiftKey) {
-                        e.preventDefault()
-                        const v = (e.target as HTMLInputElement).value.trim()
-                        if (!v) return
-                        handlePeerChatMessageSend(v);
-                        // If @AI tag — ask CoRead scoped to section text
-                        if (v.toLowerCase().includes('@ai')) {
-                          const question = v.replace(/@ai/gi, '').trim()
-                          fetch('/api/ai-help', {
-                            method: 'POST',
-                            headers: { 'Content-Type': 'application/json' },
-                            body: JSON.stringify({
-                              question,
-                              documentContent: peerChatData.sectionText || documentContentRef.current,
-                              documentTitle: peerChatData.sectionName,
-                              sectionName: peerChatData.sectionName,
-                            }),
-                          }).then(r => r.json()).then(data => {
-                            const answer = data.response?.answer || data.answer || ''
-                            if (answer) {
-                              setPeerChatMessages(prev => [...prev, {
-                                fromUserId: 'ai-facilitator',
-                                fromUserName: 'CoRead',
-                                message: answer,
-                                timestamp: Date.now(),
-                                documentId,
-                                sectionId: peerChatData.sectionId,
-                              }])
-                            }
-                          }).catch(() => {})
-                        }
-                        ;(e.target as HTMLInputElement).value = ''
-                      }
-                    }}
-                  />
-                  <Send className="w-3.5 h-3.5 text-slate-300 shrink-0" />
+                    // A3 facilitator card with interactive questions
+                    if (a3Data) {
+                      return (
+                        <div key={i} className="flex flex-col items-start w-full">
+                          <p className="text-[10px] font-semibold text-slate-400 px-1 mb-1">A3 · Discussion Facilitator</p>
+                          <div className="w-full bg-slate-50 border border-slate-200 rounded-xl overflow-hidden">
+                            {/* Divergence callout */}
+                            {a3Data.divergence && (
+                              <div className="px-3 py-2 bg-amber-50 border-b border-amber-100">
+                                <p className="text-[11px] text-amber-800 leading-snug">
+                                  You marked this as <span className="font-semibold">{a3Data.divergence.myReason}</span> — {a3Data.divergence.peerName} marked it as <span className="font-semibold">{a3Data.divergence.peerReason}</span>. Start there.
+                                </p>
+                              </div>
+                            )}
+                            {/* Questions — each tappable to send as message */}
+                            <div className="px-3 pt-2.5 pb-2 space-y-1.5">
+                              <p className="text-[10px] font-semibold text-slate-400 uppercase tracking-wider mb-2">Start with one of these</p>
+                              {a3Data.questions.map((q, qi) => (
+                                <button
+                                  key={qi}
+                                  onClick={() => handlePeerChatMessageSend(q)}
+                                  className="w-full text-left flex items-start gap-2 px-2.5 py-2 rounded-lg bg-white hover:bg-indigo-50 border border-slate-200 hover:border-indigo-300 transition-all group"
+                                >
+                                  <span className="text-[11px] font-bold text-indigo-400 shrink-0 mt-0.5">{qi + 1}.</span>
+                                  <p className="text-[12px] text-slate-700 leading-snug group-hover:text-indigo-800 flex-1">{q}</p>
+                                  <Send className="w-3 h-3 text-slate-300 group-hover:text-indigo-400 shrink-0 mt-0.5 transition-colors" />
+                                </button>
+                              ))}
+                            </div>
+                          </div>
+                        </div>
+                      )
+                    }
+
+                    // Plain message
+                    return (
+                      <div key={i} className={`flex flex-col ${isMe ? 'items-end' : 'items-start'}`}>
+                        {!isMe && (
+                          <p className="text-[10px] font-semibold text-slate-400 px-1 mb-0.5">
+                            {isAI ? 'CoRead' : msg.fromUserName}
+                          </p>
+                        )}
+                        <div className={`px-3 py-2 rounded-2xl text-[13px] leading-relaxed max-w-[88%] whitespace-pre-wrap break-words ${
+                          isMe ? 'bg-indigo-600 text-white rounded-tr-sm'
+                            : isAI ? 'bg-slate-100 border border-slate-200 text-slate-800 rounded-tl-sm'
+                            : 'bg-slate-100 text-slate-800 rounded-tl-sm'
+                        }`}>
+                          {msg.message}
+                        </div>
+                      </div>
+                    )
+                  })}
                 </div>
-                <p className="text-[10px] text-slate-400 mt-1 px-1">Tag @AI to ask CoRead · scoped to {peerChatData.sectionName}</p>
-              </div>
-            </motion.div>
-          )}
+
+                {/* ── Input ── */}
+                <div className="shrink-0 px-3 py-2.5 border-t border-slate-100 bg-white">
+                  <div className="flex items-center gap-2 bg-slate-50 rounded-xl px-3 py-1.5 border border-slate-200 focus-within:border-indigo-300 focus-within:ring-1 focus-within:ring-indigo-200 transition-all">
+                    <input
+                      ref={peerChatInputRef}
+                      className="flex-1 bg-transparent text-[13px] text-slate-800 placeholder:text-slate-400 outline-none"
+                      placeholder={`Message ${peerChatData.peerName}… or @AI`}
+                      onKeyDown={e => {
+                        if (e.key === 'Enter' && !e.shiftKey) {
+                          e.preventDefault()
+                          const v = (e.target as HTMLInputElement).value.trim()
+                          if (!v) return
+                          handlePeerChatMessageSend(v)
+                          if (v.toLowerCase().includes('@ai')) {
+                            const question = v.replace(/@ai/gi, '').trim()
+                            fetch('/api/ai-help', {
+                              method: 'POST', headers: { 'Content-Type': 'application/json' },
+                              body: JSON.stringify({ question, documentContent: peerChatData.sectionText || documentContentRef.current, documentTitle: peerChatData.sectionName, sectionName: peerChatData.sectionName }),
+                            }).then(r => r.json()).then(data => {
+                              const answer = data.response?.answer || data.answer || ''
+                              if (answer) setPeerChatMessages(prev => [...prev, { fromUserId: 'ai-facilitator', fromUserName: 'CoRead', message: answer, timestamp: Date.now(), documentId, sectionId: peerChatData.sectionId }])
+                            }).catch(() => {})
+                          }
+                          ;(e.target as HTMLInputElement).value = ''
+                        }
+                      }}
+                    />
+                    <Send className="w-3.5 h-3.5 text-slate-300 shrink-0" />
+                  </div>
+                </div>
+              </motion.div>
+            )
+          })()}
         </AnimatePresence>
         {/* Async marginal notes sidebar */}
         {showMarginalNotes && (
@@ -9231,7 +9977,7 @@ ${documentContent}
           isOpen={showConsensusPrompt}
           sectionName={(() => {
             const s = pdfSectionsRef.current.find(s => s.startPage <= currentPage && s.endPage >= currentPage)
-            return s?.heading.text || `Page ${currentPage}`
+            return s?.heading.text || 'this section'
           })()}
           sectionId={(() => {
             const s = pdfSectionsRef.current.find(s => s.startPage <= currentPage && s.endPage >= currentPage)
@@ -9372,6 +10118,7 @@ ${documentContent}
           onClose={() => setShowReflectionIntake(false)}
           reflectionSubmitted={reflectionSubmitted}
           currentReflection={reflectionData}
+          readerSetup={readerSetup}
           onReset={() => {
             setReflectionSubmitted(false)
             setReflectionData(null)
@@ -9407,5 +10154,48 @@ ${documentContent}
       </div>
     </div >
 
+    {/* ── Live Activity Modal — always mounted so feed state persists across open/close ── */}
+    <div
+      className="fixed inset-0 z-[300] flex items-center justify-center p-4"
+      style={{ display: showLiveActivity ? 'flex' : 'none' }}
+    >
+      {/* Backdrop */}
+      <div className="absolute inset-0 bg-black/50 backdrop-blur-sm" onClick={onCloseLiveActivity} />
+
+      <div className="relative bg-white rounded-2xl shadow-2xl max-w-3xl w-full overflow-hidden max-h-[85vh] flex flex-col">
+        <div className="px-5 py-4 border-b border-gray-100 flex items-center justify-between shrink-0">
+          <div className="flex items-center gap-2.5">
+            <div className="w-7 h-7 rounded-lg bg-orange-50 flex items-center justify-center">
+              <Users className="w-4 h-4 text-orange-600" />
+            </div>
+            <div>
+              <h2 className="text-sm font-semibold text-gray-900">Live Activity</h2>
+              <p className="text-[11px] text-gray-400">Real session events — agents, highlights, peer movement</p>
+            </div>
+          </div>
+          <button
+            onClick={onCloseLiveActivity}
+            className="p-1.5 rounded-lg hover:bg-gray-100 transition-colors text-gray-400 hover:text-gray-600"
+          >
+            <X className="w-4 h-4" />
+          </button>
+        </div>
+        <div className="flex-1 overflow-auto p-4 min-h-0">
+          {/* Always mounted — never unmounts so activity state is preserved across open/close */}
+          <LiveActivityFeed
+            documentId={documentId}
+            isVisible={true}
+            documentTitle={documentTitle}
+            documentContent={documentContentRef.current.slice(0, 3000)}
+            onNavigateToPage={(pageNumber) => {
+              onCloseLiveActivity?.()
+              window.dispatchEvent(new CustomEvent('document-viewer-navigate', { detail: { pageNumber } }))
+            }}
+          />
+        </div>
+      </div>
+    </div>
+
+    </>
   )
 }

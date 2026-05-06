@@ -108,7 +108,7 @@ class InteractionCollectorService {
   // ✅ INCREASED: 5 minutes. A user staring at a hard section is NOT idle.
   // The old 60s threshold fired during normal focused reading.
   private readonly IDLE_THRESHOLD = 5 * 60 * 1000 // 5 minutes
-  private readonly STORAGE_KEY = 'litsense_interaction_data'
+  private readonly STORAGE_KEY = 'coread_interaction_data'
 
   // ========================================================================
   // SESSION MANAGEMENT
@@ -620,7 +620,7 @@ class InteractionCollectorService {
     const url = URL.createObjectURL(blob)
     const a = document.createElement('a')
     a.href = url
-    a.download = `litsense-session-${this.currentSession.sessionId}.json`
+    a.download = `coread-session-${this.currentSession.sessionId}.json`
     a.click()
     URL.revokeObjectURL(url)
   }

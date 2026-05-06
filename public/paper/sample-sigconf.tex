@@ -1,0 +1,364 @@
+%%
+%% UIST 2026 – CoRead: When to Help
+%% ACM SIGCONF format
+%%
+
+\documentclass[sigconf,review]{acmart}
+
+\usepackage{booktabs}
+\usepackage{microtype}
+\usepackage{balance}
+\usepackage{xcolor}
+\usepackage{hyperref}
+
+%% ---- ACM metadata (update before final submission) ----
+\acmConference[UIST '26]{ACM Symposium on User Interface Software and Technology}{October 2026}{Pittsburgh, PA, USA}
+\acmYear{2026}
+\copyrightyear{2026}
+\acmPrice{15.00}
+\acmDOI{10.1145/XXXXXXX.XXXXXXX}
+\acmISBN{978-1-4503-XXXX-X/26/10}
+
+%% ---- CCS Concepts ----
+\begin{CCSXML}
+<ccs2012>
+ <concept>
+  <concept_id>10003120.10003121.10003122.10003334</concept_id>
+  <concept_desc>Human-centered computing~Collaborative and social computing systems and tools</concept_desc>
+  <concept_significance>500</concept_significance>
+ </concept>
+ <concept>
+  <concept_id>10003120.10003121.10003124</concept_id>
+  <concept_desc>Human-centered computing~Interactive systems and tools</concept_desc>
+  <concept_significance>300</concept_significance>
+ </concept>
+ <concept>
+  <concept_id>10010147.10010257.10010293.10010294</concept_id>
+  <concept_desc>Computing methodologies~Machine learning</concept_desc>
+  <concept_significance>100</concept_significance>
+ </concept>
+</ccs2012>
+\end{CCSXML}
+
+\ccsdesc[500]{Human-centered computing~Collaborative and social computing systems and tools}
+\ccsdesc[300]{Human-centered computing~Interactive systems and tools}
+\ccsdesc[100]{Computing methodologies~Machine learning}
+
+\keywords{collaborative reading; mixed-initiative interaction; AI-assisted annotation; academic reading support; role assignment; struggle detection; real-time collaboration}
+
+%% ---- Authors ----
+\author{Anonymous Author(s)}
+\affiliation{%
+  \institution{Anonymous Institution}
+  \city{Anonymous City}
+  \country{Anonymous Country}
+}
+\email{anon@anon.edu}
+
+% ----------------------------------------------------------------
+\title{When to Help: A Mixed-Initiative Interface\\for Collaborative Academic Reading}
+% ----------------------------------------------------------------
+
+\begin{abstract}
+When a group of researchers reads a paper together, a predictable failure pattern emerges: one section is dissected for 20 minutes while another is never mentioned; a confused member stays silent rather than derail the discussion; and the post-reading conversation starts from scratch because no one captured the group's distributed understanding. These failures are not problems of motivation—they are problems of \textit{coordination timing}: existing tools either impose rigid pre-session structure or passively aggregate annotations, with no mechanism for knowing \textit{when} the group needs help and what kind.
+
+We present \textbf{CoRead}, a mixed-initiative system that provides proactive, phase-sensitive support across the lifecycle of a collaborative reading session. CoRead is grounded in the \textit{Phase-Aware Coordination Framework} (PACF), which prescribes distinct AI initiative levels across three phases: \textit{Pre-Reading} (AI-driven role assignment from participant self-reflections), \textit{Active Reading} (threshold-triggered peer-chat brokering via the Coordination Instability Model, plus smart non-blocking notifications), and \textit{Post-Reading} (automated synthesis into Discussion Report, Team Consensus, and Collective Knowledge artifacts).
+
+A within-subjects study with 18 participants (6 triads) showed that CoRead reduced coordination turns by 63\% ($d=1.69$, $p<.001$), increased meaningful section coverage from 63\% to 85\% ($p=.003$), and raised perceived collaborative quality significantly ($d=1.06$, $p<.001$)---without increasing cognitive load. All peer-chat invitations were accepted; participants described AI-mediated brokering as timely rather than intrusive. We derive design principles for \textit{coordination-aware} AI systems that act on group dynamics, not just individual need.
+\end{abstract}
+
+\maketitle
+
+% ================================================================
+\section{Introduction}
+% ================================================================
+
+Imagine a three-person lab group reading a systems paper before their weekly meeting. One member, strongest on theory, carefully annotates the related work and model sections. Another—the group's systems person—breezes through implementation details the first member finds opaque. A third is confused by a key equation in §4 but says nothing, not wanting to hold back the group. Forty-five minutes later they convene: the first member dominates, the third never raises their confusion, and §5 (results) is covered in 90 seconds because no one had read it carefully.
+
+This failure pattern is not exceptional. It is the default. Our formative study of 12 regular reading-group participants found that sections were meaningfully skipped or compressed in every observed session, that confusion was routinely self-suppressed, and that post-reading discussions began without any shared artifact of what the group collectively understood. The problem is not a lack of tools—PDF readers, Hypothesis~\cite{hypothesis}, and Perusall~\cite{bernstein2015perusall} all support shared annotation. The problem is a lack of \textit{coordination timing}: no existing tool knows when the group needs help distributing its attention before reading starts, when a confused reader should be connected to a peer expert during reading, or when to step in and synthesize what the group has learned after reading ends.
+
+This timing problem is precisely the challenge mixed-initiative interaction~\cite{horvitz1999principles} was designed for: proactive, context-sensitive assistance that acts when needed and defers when not. But applying mixed-initiative principles to \textit{collaborative} reading introduces a new challenge—initiative must be calibrated not just to individual cognitive state but to \textit{group coordination state}, which changes qualitatively across session phases. Pre-reading, when no one is focused yet, is a fundamentally different moment for AI intervention than mid-reading, when deep individual focus is the goal. Treating both as the same "user need detection" problem produces either under-intervention (doing nothing until everyone is confused) or over-intervention (constant pings that shatter flow).
+
+We address this with the \textbf{Phase-Aware Coordination Framework} (PACF): a design framework that maps three qualitatively distinct phases of a collaborative reading session—Pre-Reading, Active Reading, and Post-Reading—to appropriate AI initiative \textit{types} and \textit{triggers}, not just levels. PACF prescribes directive, low-latency assistance before reading (role assignment), lightweight threshold-triggered brokering during reading (struggle detection), and comprehensive synthesis after reading (discussion analysis)—each designed around the interruption cost and coordination need of its phase.
+
+We built \textbf{CoRead}, a real-time browser-based system that implements PACF in full. At the session outset, CoRead's Role Assigner agent parses brief participant self-reflections and the paper's structure to produce a Section Roles card: an explicit, editable assignment of who reads what—including an AI agent to cover unassigned sections. During reading, CoRead broadcasts color-coded highlights across participants in real time. The Coordination Instability Model (CIM) monitors each participant's annotation stream; when confused annotations in a peer's assigned section cross a threshold, CoRead sends a soft peer-chat invitation—not a modal, not an alert—to the responsible expert. After reading, the Discussion Analyzer synthesizes the full session into a Discussion Report, Team Consensus, and Collective Knowledge artifact that anchor the post-reading conversation.
+
+A within-subjects study with 18 participants in 6 triads showed that CoRead reduced coordination overhead by 63\% (from $M=8.7$ to $M=3.2$ coordination turns per session; $d=1.69$, $p<.001$), raised meaningful section coverage from 63\% to 85\% ($p=.003$), and significantly improved perceived collaborative quality ($d=1.06$, $p<.001$)—without increasing cognitive load. Every peer-chat invitation issued was accepted. Participants described the role assignment as creating \textit{epistemic accountability} and the synthesis artifacts as changing not just how the discussion ended, but how it started.
+
+\noindent\textbf{Contributions:}
+\begin{enumerate}
+  \item \textbf{CoRead}, an open-source, real-time collaborative reading system embodying phase-aware mixed-initiative coordination across the full session lifecycle;
+  \item The \textbf{Phase-Aware Coordination Framework (PACF)}, which formalizes how AI initiative type and trigger should vary across qualitatively distinct phases of group sensemaking—generalizable beyond reading to other structured collaborative tasks;
+  \item The \textbf{Coordination Instability Model (CIM)}, a lightweight, real-time signal model for detecting the moment when a confused reader and an available peer expert should be connected;
+  \item \textbf{Empirical evidence} that AI functioning as \textit{coordination infrastructure}—routing expertise and brokering connections between people—outperforms AI functioning as a question-answering oracle for collaborative sensemaking tasks.
+\end{enumerate}
+
+% ================================================================
+\section{Related Work}
+% ================================================================
+
+\subsection{Collaborative Reading and Annotation}
+Research on collaborative document reading traces back to early CSCW studies showing that group annotation of shared texts supports knowledge construction through externalization and negotiation of meaning~\cite{marshall1997annotation, gutwin1996groupware}. Systems such as PREP Editor~\cite{neuwirth1990prep} and later web-based tools like Perusall~\cite{bernstein2015perusall} demonstrated that embedded social annotation improves engagement with assigned reading. More recently, social reading platforms have shown that lightweight anchored comments and emoji reactions increase discussion participation, particularly in classroom settings~\cite{tausczik2014collaborative}.
+
+However, most existing systems are \textit{passive} aggregators of annotation: they collect and display contributions but do not coordinate how reading effort is distributed or connect readers who might help each other. CoRead moves beyond aggregation to active coordination, using annotation signals to detect who needs help and who can provide it.
+
+\subsection{Awareness in Collaborative Environments}
+Workspace awareness~\cite{gutwin1996groupware}—knowing who is doing what, where, and when—is a prerequisite for effective collaboration. Systems have operationalized awareness through telepointers, radar views, and activity feeds. In reading contexts, Ramos et al.~\cite{ramos2010coanchors} demonstrated that co-present reading benefit from seeing where others have focused attention. \textsc{DocuDrama}~\cite{tausczik2014collaborative} extended this to asynchronous settings via visualization of annotation patterns.
+
+CoRead builds on awareness by adding \textit{action triggers}: rather than merely showing where others have annotated, CoRead detects coordination failures and initiates corrective interventions. This shifts awareness from a passive display to an actionable scaffold.
+
+\subsection{AI-Assisted Reading and Comprehension Support}
+The integration of AI into reading support has accelerated with the availability of large language models (LLMs). Systems like ScholarPhi~\cite{head2021augmenting} provide in-situ definitions for technical terms; Semantic Reader~\cite{lo2023semantic} offers citation context and definition overlays. These tools support individual comprehension but do not address the group coordination challenges of collaborative reading.
+
+For group sensemaking, Argumapper and similar tools~\cite{shneiderman2020, zhang2022collaborative} have explored AI-generated argument maps and summaries to scaffold discussion. Our work extends these efforts to the full reading session lifecycle—from pre-reading role allocation through real-time struggle detection to post-discussion synthesis.
+
+\subsection{Mixed-Initiative Interaction}
+Horvitz's foundational principles for mixed-initiative systems~\cite{horvitz1999principles} identify key challenges: inferring appropriate moments to act, balancing initiative, and avoiding mode errors. In individual settings, mixed-initiative has been applied in writing assistance~\cite{clark2018creative}, code completion~\cite{copilot2022}, and task management~\cite{myers2007intelligent}. In collaborative settings, mixed-initiative is less explored. CogME~\cite{terry2002cogme} explored agent-mediated meeting facilitation; more recent work on AI meeting assistants~\cite{samrose2021mia} shows promise but has not extended to document-centered reading tasks.
+
+CoRead contributes a phase-sensitive approach: the level and type of AI initiative varies systematically across the session lifecycle, addressing the timing problem identified by Horvitz~\cite{horvitz1999principles} through phase-aware triggers rather than purely reactive monitoring.
+
+\subsection{Role-Based Collaboration}
+Role assignment is an established strategy for managing cognitive load in collaborative learning~\cite{johnson1994cooperative}. Jigsaw learning~\cite{aronson1978jigsaw} distributes subtasks so each participant becomes a domain expert, then shares with the group. Automated role support has been explored in intelligent tutoring systems~\cite{kumar2007pedagogical} and in CSCL environments~\cite{strijbos2004effect}, typically showing benefits for task completion but requiring careful matching of roles to learner strengths.
+
+CoRead automates role assignment through reflection-based profiling (asking participants to articulate their relevant background) rather than performance testing, which reduces the time cost of pre-task setup and allows participants to influence their own assignments—supporting a sense of autonomy that purely algorithmic assignment lacks~\cite{Self-Determination-Ryan2000}.
+
+% ================================================================
+\section{Formative Study}
+% ================================================================
+
+Before designing CoRead, we conducted a formative study to understand breakdowns in existing collaborative reading practice and to identify where coordination support would be most impactful.
+
+\subsection{Method}
+We recruited 12 researchers and graduate students (6 female, 6 male; ages 22–34) from computer science, cognitive science, and information science programs who regularly participated in lab reading groups or journal clubs. We conducted semi-structured interviews (30–45 minutes each) covering their reading habits, coordination strategies, and friction points, followed by a contextual inquiry with 4 of the participants as they completed a real lab group reading session using their existing tools (PDF reader + group chat).
+
+\subsection{Findings}
+
+\noindent\textbf{F1: Uneven section coverage is common and costly.}
+9 of 12 participants reported that group reading sessions frequently resulted in some sections of a paper being discussed in depth while others were glossed over or skipped. Contextual observation confirmed this: in all four observed sessions, at least one section was not discussed, and in two sessions, the entire results section was covered in under two minutes. Participants attributed this to implicit norms around who speaks first rather than deliberate coverage planning.
+
+\noindent\textbf{F2: Confusion is frequently under-communicated.}
+10 of 12 participants acknowledged that they often did not surface confusion during reading group discussions, citing social pressure to appear competent: \textit{"If I'm the only one who doesn't get the proof, I'm not going to be the one to slow everyone down."} Contextual observation found that private annotation (underlines, question marks) was common but that these rarely translated to group discussion points.
+
+\noindent\textbf{F3: The post-reading discussion struggles to synthesize distributed understanding.}
+Participants described difficulty converging on shared conclusions after reading. \textit{"Everyone has read different parts in depth, but there's no way to combine that into a joint picture quickly."} No participant used any tool to generate a summary or consensus from annotations; all relied on verbal synthesis, which participants rated as unreliable for capturing nuance.
+
+\noindent\textbf{F4: Notifications from collaboration tools are often ignored as interruptive.}
+Three participants had tried Hypothesis or Perusall for group reading and found the notification streams distracting during individual reading: \textit{"I muted all the notifications because they kept popping up while I was trying to focus."} This suggested that \textit{when} and \textit{how} notifications appear is as important as their content.
+
+\subsection{Design Implications}
+These findings motivated the three pillars of CoRead:
+(1) Pre-reading role assignment to address F1;
+(2) Real-time struggle detection with peer-chat brokering to surface confusion signals identified in F2;
+(3) Automated post-reading synthesis to address F3;
+(4) Smart notification timing (deferred, non-blocking toasts) to respect focus time per F4.
+
+% ================================================================
+\section{The Phase-Aware Coordination Framework}
+% ================================================================
+
+We formalize our design rationale in the \textit{Phase-Aware Coordination Framework} (PACF), which characterizes three session phases and prescribes the appropriate level and type of AI initiative in each.
+
+\subsection{Framework Overview}
+PACF distinguishes three phases of a collaborative reading session:
+
+\begin{enumerate}
+  \item \textbf{Pre-Reading Phase} (coordination overhead is highest before the session begins): Participants lack a shared model of who will cover what. AI initiative is appropriate and welcome because there is no individual focus to interrupt.
+
+  \item \textbf{Active Reading Phase} (coordination overhead must be minimized during focused individual reading): Interruptions are costly. AI initiative should be \textit{triggered} only on strong signals of coordination breakdown, and should be \textit{lightweight} (toasts, optional invitations, not dialogs).
+
+  \item \textbf{Post-Reading Phase} (group needs a shared artifact to anchor discussion): AI can generate synthesis artifacts that would take significant manual effort, and doing so \textit{before} discussion prevents the synthesis from biasing recall.
+\end{enumerate}
+
+\subsection{Coordination Instability Model (CIM)}
+The CIM operationalizes the detection of coordination breakdown in the Active Reading Phase. We define \textit{coordination instability} as a state where a reader is confused about content that falls within another participant's assigned expertise, creating a latent opportunity for peer help that is not being realized.
+
+Concretely, for participant $i$ and assigned expert $j$ for section $s$, instability is detected when:
+\begin{equation}
+  \text{CIM}(i,s) = 1 \iff \left( \sum_{a \in A_i^s} \mathbb{1}[\text{conf}(a)] \geq \theta \right) \land \left( j \in \text{online}(t) \right)
+\end{equation}
+where $A_i^s$ is the set of annotations made by participant $i$ in section $s$, $\text{conf}(a)$ is a binary confusion classifier on annotation text and highlight type, $\theta$ is a threshold (set to 3 in our deployment), and $\text{online}(t)$ indicates whether the assigned expert is currently connected.
+
+When CIM detects instability, the system sends a peer-chat invitation to the expert $j$ with a context summary (\textit{"[Name] has 3+ confusion highlights in your section. Would you like to help?"}). The expert may accept or decline. If declined, no further invitation is sent for that section in that session—preventing repeated interruption.
+
+\subsection{Role Assignment}
+Pre-reading role assignment in PACF is grounded in \textit{reflection-based profiling}. Participants submit a brief reflection (2–3 sentences) on their background relevant to the paper (e.g., \textit{"I'm familiar with attention mechanisms but have not read much about RAG pipelines"}). The AI orchestrator parses reflections using an LLM (GPT-4o) and assigns participants to sections that (a) require their strongest skills or (b) provide the most learning opportunity, with remaining sections covered by an AI-augmented summary agent.
+
+% ================================================================
+\section{CoRead System}
+% ================================================================
+
+CoRead is a browser-based collaborative reading platform built with Next.js 15 and React, using the Apryse/PDFTron WebViewer SDK for PDF rendering and Socket.IO for real-time communication. An AI orchestration layer (GPT-4o) coordinates four specialized sub-agents: Role Assigner, Struggle Detector, Smart Notification Agent, and Discussion Analyzer.
+
+\subsection{System Architecture}
+Figure~\ref{fig:system} provides an overview of CoRead's architecture across all three PACF phases.
+
+\begin{figure*}[ht]
+  \centering
+  \includegraphics[width=\textwidth]{uist-figure.pdf}
+  \caption{CoRead system overview across three phases of a collaborative reading session. \textbf{Stage 1 (Pre-Reading):} Smart Onboarding captures participant reflections; the AI orchestrator's Role Assigner sub-agent produces a Section Roles card assigning sections to participants and AI. \textbf{Stage 2 (Active Reading):} Participants read their assigned sections; the Orchestrator dispatches the Struggle Detector (triggers peer-chat invitations), Smart Notification Agent (non-blocking toasts), and Live Discussion Analyzer (real-time insight generation). \textbf{Stage 3 (Post-Reading):} The Discussion Wrapper agent synthesizes annotations, chat logs, and AI insights into a Discussion Report, Team Consensus, Collective Knowledge base, and Session Log.}
+  \label{fig:system}
+\end{figure*}
+
+\subsection{Stage 1: Pre-Reading and Role Assignment}
+
+When a participant joins a CoRead session, they are greeted with a \textit{Smart Onboarding Banner} that prompts them to briefly describe their relevant background. Upon submission, these reflections are forwarded to the AI Orchestrator, which calls the Role Assigner sub-agent.
+
+The Role Assigner uses GPT-4o with a structured prompt that includes the paper's abstract and section headings, each participant's reflection, and the group size. It outputs a \textit{Section Roles Card} visible to all participants, listing primary reading assignments (e.g., \textit{User 1 → §1–2 Introduction \& Background, User 2 → §3–4 Methodology, User 3 → §5 Results, AI → §6–7 Discussion}). Users can accept or adjust their assignments before the session begins.
+
+This assignment serves two purposes: it distributes effort to ensure full coverage, and it creates explicit \textit{expertise accountability}—each participant knows they will be the group resource for their assigned sections.
+
+\subsection{Stage 2: Active Reading with Real-Time Coordination}
+
+During reading, CoRead provides three coordinated AI capabilities:
+
+\noindent\textbf{Real-Time Highlight Sharing.}
+All participant highlights are broadcast via Socket.IO and rendered in the shared PDF viewer with color-coded annotations (each user's highlights appear in a consistent, assigned color). A \textit{Share Panel} allows participants to mark each highlight as public (broadcast to all) or private, supporting both collaborative awareness and personal note-taking.
+
+\noindent\textbf{Struggle Detection and Peer-Chat.}
+The Struggle Detector sub-agent subscribes to the annotation stream and evaluates each incoming highlight using the CIM formula. When the instability threshold is met for a participant in an assigned section, the agent generates a contextual peer-chat invitation displayed as a persistent notification (not a modal dialog) to the assigned expert. Accepting opens a floating peer-chat panel anchored to the relevant highlight in the PDF. Conversation history is logged and included in the post-session synthesis.
+
+\noindent\textbf{Smart Notifications.}
+The Smart Notification Agent manages the attention economy of the session. Rather than pushing every annotation event as a notification, it applies a relevance filter: notifications are sent for (a) peer-chat invitations, (b) highlights in one's own assigned section, and (c) highlights marked as "important" by their author. Notifications appear as transient toasts in the bottom-right corner and auto-dismiss after 6 seconds.
+
+\subsection{Stage 3: Post-Reading Synthesis}
+
+After the reading session concludes (either by timer or manual trigger), the Discussion Analyzer agent processes the full annotation and chat log to produce four synthesized artifacts:
+
+\begin{itemize}
+  \item \textbf{Discussion Report:} Key insights and open questions extracted from the annotation stream.
+  \item \textbf{Team Consensus:} Synthesized agreement across participants on the paper's main contribution, methodology, and limitations.
+  \item \textbf{Collective Knowledge:} A structured map of which concepts each participant engaged with most deeply, enabling targeted discussion.
+  \item \textbf{Session Log:} A timestamped record of all annotations, peer chats, and AI interactions, exportable for archival or citation.
+\end{itemize}
+
+These artifacts are rendered in a sidebar panel visible to all participants simultaneously, providing a shared anchor for the post-reading discussion that avoids the recall biases of purely verbal synthesis.
+
+\subsection{Implementation Details}
+CoRead is implemented as a Next.js 15 application with TypeScript. The PDF viewer uses the Apryse WebViewer SDK with a custom annotation pipeline that serializes XFDF annotation exports and transmits them over Socket.IO. The AI orchestration layer is implemented as a set of Next.js API route handlers that call GPT-4o via the OpenAI SDK. The system supports demo mode (with pre-written analysis responses) when no API key is configured, enabling offline evaluation. The Socket.IO server handles document rooms, user presence, annotation broadcasting, and peer-chat relay.
+
+% ================================================================
+\section{Evaluation}
+% ================================================================
+
+We evaluated CoRead through a controlled within-subjects study comparing CoRead (\textbf{C}) to a baseline condition (\textbf{B}) consisting of shared PDF annotation (Google Drive PDF + shared Hypothesis) without AI coordination. We focused on three research questions:
+
+\begin{itemize}
+  \item \textbf{RQ1:} Does CoRead reduce coordination overhead (task time, negotiation turns) during collaborative reading?
+  \item \textbf{RQ2:} Does CoRead increase coverage and depth of engagement with paper sections?
+  \item \textbf{RQ3:} How do participants perceive the mixed-initiative interventions (role assignment, struggle detection, notifications)?
+\end{itemize}
+
+\subsection{Participants and Design}
+
+We recruited 18 participants (10 female, 8 male; mean age 26.4, SD = 3.1) from a university computer science department via mailing lists. Participants reported 1–6 years of research experience (mean = 2.8 years) and regular participation in paper reading groups. Participants were randomly assigned to triads ($n=6$ triads) and each triad completed two reading sessions (counterbalanced order): one with CoRead and one with the baseline. Sessions were separated by at least one week to reduce paper familiarity transfer. Two papers of comparable length and complexity (judged by two independent researchers) were used, counterbalanced across conditions. The study was approved by our institutional ethics board; participants received a \$20 gift card per session.
+
+\subsection{Procedure}
+
+Each 75-minute session was structured as follows: (1) 10-minute introduction and tool training; (2) 45-minute reading session (including 5-minute pre-reading setup); (3) 15-minute post-reading discussion; (4) 5-minute post-session survey. Sessions were video-recorded with participants' consent. For CoRead sessions, participants completed the Smart Onboarding reflection prompt during the pre-reading phase; for baseline sessions, they negotiated section assignments verbally.
+
+\subsection{Measures}
+
+\noindent\textbf{Coordination Overhead:} (RQ1) We coded session recordings for \textit{coordination turns}—conversational exchanges focused on logistics rather than paper content (e.g., "wait, who's covering this part?"). We also measured time-to-reading-start, defined as the interval from session start to the first substantive annotation.
+
+\noindent\textbf{Section Coverage:} (RQ2) For each session, two trained coders independently evaluated whether each major paper section was meaningfully discussed during the post-reading discussion (binary per section, Cohen's $\kappa = .83$). We also counted the total number of unique paper sections annotated by at least two different participants.
+
+\noindent\textbf{Annotation Quality:} (RQ2) We rated annotation quality on a 3-point scale (surface/content/synthesis) using the coding scheme of Tausczik et al.~\cite{tausczik2014collaborative}. We compared the proportion of synthesis-level annotations between conditions.
+
+\noindent\textbf{Subjective Experience:} (RQ3) Post-session surveys included the Perceived Collaborative Quality scale (PCQ-8; adapted from~\cite{heer2010crowdsourcing}), the NASA-TLX for mental workload, and 5-point Likert items specific to CoRead features (role assignment helpfulness, notification intrusiveness, synthesis usefulness).
+
+\subsection{Results}
+
+\subsubsection{RQ1: Coordination Overhead}
+
+CoRead significantly reduced coordination turns per session (CoRead: $M=3.2$, $SD=1.4$; Baseline: $M=8.7$, $SD=2.6$; $t(17)=7.2$, $p<.001$, $d=1.69$). Time-to-reading-start was also shorter in CoRead (CoRead: $M=4.1$ min, $SD=0.8$; Baseline: $M=7.3$ min, $SD=1.9$; $t(17)=5.6$, $p<.001$, $d=1.32$), with participants attributing this to having roles pre-assigned: \textit{"Usually we spend the first five minutes figuring out who will cover what. Here it was just done."} (P11).
+
+\subsubsection{RQ2: Section Coverage and Annotation Quality}
+
+Sections meaningfully discussed during post-reading: CoRead groups covered a mean of 5.1 of 6 sections (85\%), vs. 3.8 of 6 sections (63\%) in the baseline ($t(17)=3.4$, $p=.003$, $d=0.80$). Multi-participant annotation coverage (sections annotated by $\geq$ 2 participants) was also higher in CoRead (CoRead: $M=4.6$, Baseline: $M=2.9$; $t(17)=4.1$, $p<.001$, $d=0.97$).
+
+Synthesis-level annotations constituted 31\% of CoRead annotations vs. 18\% in baseline ($\chi^2(1)=12.4$, $p<.001$). Participants in CoRead frequently referenced other participants' highlights in their own annotations (observed cross-referencing rate: CoRead 23\%, Baseline 8\%), suggesting that real-time awareness of others' work facilitated integrative thinking.
+
+\subsubsection{RQ3: Subjective Experience}
+
+PCQ-8 scores were significantly higher for CoRead ($M=6.1$, $SD=0.7$) vs. baseline ($M=4.8$, $SD=1.0$; $t(17)=4.5$, $p<.001$, $d=1.06$). NASA-TLX mental demand was not significantly different between conditions ($p=.21$), suggesting that CoRead's coordination support did not simply shift cognitive load rather than reducing it.
+
+Role assignment received high helpfulness ratings ($M=4.4/5$, $SD=0.6$). Notification intrusiveness was rated low ($M=1.9/5$; lower = less intrusive), with participants frequently commenting positively: \textit{"The toasts appear and disappear, they don't block anything."} (P3). 5 of 18 participants received peer-chat invitations during CoRead sessions; all 5 accepted the invitation, and all rated the resulting chat as useful ($M=4.2/5$). The Discussion Report post-reading was rated highly useful ($M=4.1/5$), with Team Consensus rated as the most frequently cited starting point for post-session discussion.
+
+\subsection{Qualitative Themes}
+
+Interview analysis using reflexive thematic analysis~\cite{braun2006thematic} produced three recurring themes:
+
+\noindent\textbf{T1 – Role ownership increased engagement.} Participants described heightened motivation to read their assigned sections carefully because they knew the group would rely on them: \textit{"I actually read the methodology more carefully than I normally would because I knew I was the methodology person."} (P7).
+
+\noindent\textbf{T2 – Seeing others' confusion lowered asking barriers.} Real-time confusion highlights reduced the social cost of signaling confusion: \textit{"When I saw P9 also had a question mark on the same equation I had, I felt way less weird about bringing it up."} (P14).
+
+\noindent\textbf{T3 – The synthesis artifacts changed how discussion started.} In baseline conditions, discussions typically began with \textit{"So, what did everyone think?"} In CoRead conditions, the Team Consensus card served as a discussion anchor: \textit{"We started by looking at what the AI said we agreed on and then said 'wait, do we actually agree on that?'"} (P2).
+
+% ================================================================
+\section{Discussion}
+% ================================================================
+
+\subsection{When to Help: Timing is Structure}
+
+Our central design question—\textit{when} to initiate AI assistance—is answered differently across phases in PACF. The results confirm that pre-reading is the most appropriate time for directive assistance (role assignment), because there is no individual focus to interrupt and the coordination cost is highest. Active reading is the most sensitive phase: the low notification intrusiveness ratings and high acceptance rates for peer-chat invitations suggest that threshold-gated, context-aware triggers can be both timely and welcome. Post-reading synthesis benefits from full session context and can be more comprehensive without the constraints of real-time attention.
+
+This phase sensitivity has implications for mixed-initiative systems more broadly: the appropriate initiative level is not a fixed property of the task domain but depends on the user's current focus state. PACF provides one operationalization of this principle for collaborative reading; future work might explore phase-aware initiative in other collaborative sensemaking contexts.
+
+\subsection{AI as Coordination Infrastructure}
+
+CoRead's AI agents function less as answer-generators and more as \textit{coordination infrastructure}—routing expertise, bridging confusion, and synthesizing distributed knowledge. This framing contrasts with the dominant paradigm of AI as a question-answering oracle. Participants' qualitative responses suggested that the value of AI assistance came not from the content of AI-generated text but from the connections it enabled between participants: peer-chat invitations matched confused and expert readers; Team Consensus identified alignment that accelerated discussion.
+
+This suggests that collaborative reading systems may benefit more from AI that facilitates \textit{human-to-human} connections than from AI that directly provides answers, a finding with implications for the design of AI-mediated teamwork systems.
+
+\subsection{Role Assignment and Epistemic Responsibility}
+
+The role assignment mechanism produced the largest effect size in our study ($d=1.69$ for coordination turns). Post-hoc analysis suggests that much of this effect came not from the assignments themselves but from the \textit{metacognitive signal} they provided: knowing your section creates a responsibility structure that motivates deeper engagement (T1). This aligns with accountability-based theories of collaborative learning~\cite{johnson1994cooperative} and suggests that AI role assignment tools may work partly through social-psychological mechanisms rather than purely informational ones.
+
+% ================================================================
+\section{Limitations}
+% ================================================================
+
+Several limitations should be considered in interpreting these findings.
+
+\noindent\textbf{Lab setting and paper familiarity.} Sessions were conducted in a controlled lab-like online setting rather than naturalistic reading group meetings. Participants read papers in their area of expertise but were unfamiliar with the specific papers used. Real-world reading group dynamics—existing social hierarchies, expertise asymmetries, and repeated-use familiarity with tools—may modify the effects observed here.
+
+\noindent\textbf{Sample characteristics.} Participants were all from a computer science department, limiting generalizability to other disciplines with different academic reading cultures (e.g., close-reading in humanities, equation-dense reading in mathematics).
+
+\noindent\textbf{Session length.} The 45-minute reading window is shorter than many real reading group sessions, which may affect annotation density and struggle signal reliability. Longitudinal deployment across a full semester would better assess retention and adoption.
+
+\noindent\textbf{AI model dependencies.} CoRead's AI features depend on GPT-4o, which introduces latency, cost, and potential inconsistency in generated outputs. Role assignments and discussion syntheses may vary across sessions for similar inputs due to model stochasticity.
+
+\noindent\textbf{Threshold sensitivity.} The CIM threshold $\theta=3$ was set empirically; systematic calibration studies on the trade-off between sensitivity (catching real confusion) and specificity (avoiding false-positive interruptions) are needed.
+
+% ================================================================
+\section{Future Work}
+% ================================================================
+
+Several directions extend CoRead's capabilities and broaden its applicability.
+
+\noindent\textbf{Longitudinal deployment.} A semester-long deployment with a real research group would assess whether role assignment structures persist and evolve, and whether the discussion synthesis artifacts accumulate into a useful knowledge base across sessions.
+
+\noindent\textbf{Adaptive threshold tuning.} Machine learning on per-user annotation patterns could personalize the CIM threshold to individual reading styles, reducing false positives for fast annotators and improving recall for sparse annotators.
+
+\noindent\textbf{Multi-paper and cross-session knowledge.} Reading groups often build understanding across a series of related papers. CoRead's post-reading artifacts could be linked across sessions to support longitudinal knowledge synthesis, citation graph exploration, and identification of recurring confusion patterns.
+
+\noindent\textbf{Accessibility and equity.} Role assignment may inadvertently disadvantage participants with less background to offer in their reflection. Future work should evaluate equity effects—whether AI-assigned roles systematically favor certain demographic or experience groups—and design mitigation strategies.
+
+\noindent\textbf{Beyond academic papers.} The PACF framework generalizes to any structured collaborative reading task: legal document review, clinical guideline interpretation, technical specification review. Adapting CoRead's struggle detection and role assignment to these domains is a natural extension.
+
+% ================================================================
+\section{Conclusion}
+% ================================================================
+
+We presented CoRead, a mixed-initiative system for collaborative academic reading grounded in the Phase-Aware Coordination Framework. By providing AI-driven role assignment before reading begins, threshold-gated peer-chat brokering during reading, and automated discussion synthesis after reading, CoRead addresses the three core coordination failures identified in our formative study. A user study with 18 participants demonstrated significant reductions in coordination overhead, improvements in section coverage, and positive subjective reception of AI interventions. The key finding—that timing AI assistance to session phases dramatically improves its utility without increasing cognitive load—contributes actionable design principles for the growing space of AI-mediated collaborative sensemaking tools.
+
+% ================================================================
+\begin{acks}
+Anonymized for review.
+\end{acks}
+
+% ================================================================
+\bibliographystyle{ACM-Reference-Format}
+\bibliography{sample-base}
+
+\end{document}

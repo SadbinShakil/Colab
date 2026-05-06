@@ -11,13 +11,16 @@ const sectionKeys = [
   'year',
   'journal',
   'abstract',
+  'contribution',
   'motivation',
-  'keyFindings',
   'methods',
-  'results',
+  'keyFindings',
+  'validityThreats',
+  'reproducibility',
+  'noveltyAssessment',
   'limitations',
-  'futureWork',
-  'applications',
+  'openQuestions',
+  'reviewerVerdict',
 ]
 
 export async function POST(request: NextRequest) {
@@ -56,193 +59,59 @@ export async function POST(request: NextRequest) {
       const mockSummary = isResearchPaper ? {
         isResearchPaper: true,
         title: paperTitle,
-        authors: documentAuthors || 'Research Team',
+        authors: documentAuthors || 'Authors not extracted — re-upload PDF for full analysis',
         year: documentYear || '2024',
-        journal: documentJournal || 'Academic Journal',
-        abstract: documentAbstract || 'This research presents a comprehensive analysis of the subject matter, employing rigorous methodology to address key questions in the field. The study demonstrates significant findings that contribute to the existing body of knowledge and provide practical implications for future research and applications.',
+        journal: documentJournal || 'Venue not extracted',
+        abstract: documentAbstract || 'Abstract not available — re-upload PDF for full analysis.',
 
-        motivation: `💡 **Research Motivation & Problem Statement**
+        contribution: isComputerScience
+          ? 'A new architecture that reduces inference latency while maintaining accuracy — but note the evaluation is limited to a single English-language benchmark, which constrains the generalizability claim.'
+          : 'A controlled intervention demonstrating a statistically significant short-term effect (N = 247) — though the effect size (d = 0.38) is modest and the absence of a 6-month follow-up limits claims about durability.',
 
-**Research Gap:**
-• Current approaches lack comprehensive understanding of the underlying mechanisms
-• Existing methodologies have significant limitations in real-world applications
-• Critical need for more robust and scalable solutions in the field
+        motivation: isComputerScience
+          ? 'Prior transformer-based approaches incur O(n²) attention cost, making real-time deployment impractical for documents longer than 512 tokens. The authors argue no prior work addresses latency under these constraints without sacrificing >5% accuracy.'
+          : 'Existing interventions were developed for WEIRD (Western, Educated, Industrialized, Rich, Democratic) populations. The authors identify a gap in effectiveness data for community settings with under-resourced facilitators.',
 
-**Problem Statement:**
-• Primary challenge: Addressing the fundamental limitations of current state-of-the-art methods
-• Secondary challenge: Developing practical solutions that can be deployed in real-world settings
-• Tertiary challenge: Establishing new benchmarks for performance evaluation
+        methods: isComputerScience
+          ? `Architecture study: custom attention mechanism, 3-layer transformer variant. Evaluated on 2 benchmarks (not pre-registered). N=5 random seeds; cross-validation across 5 folds. No ablation for all design choices. Code released on GitHub.`
+          : `RCT (N=${documentYear ? '312' : '247'}), double-blind. Pre-registered (OSF). Primary outcome: self-report scale (α = 0.81). Bonferroni correction applied. Dropout: 8.3% intervention arm, 6.1% control. No power analysis reported.`,
 
-**Research Questions:**
-• How can we overcome the current methodological limitations?
-• What novel approaches can provide more robust and scalable solutions?
-• How can we establish new performance benchmarks for the field?
+        keyFindings: isComputerScience
+          ? `Latency reduced by 38% vs. baseline transformer (p < 0.001). Accuracy: +2.1% on Benchmark A (p = 0.03); +0.4% on Benchmark B (p = 0.41, n.s.). The accuracy gain on Benchmark B is not significant — the abstract's claim of "consistent improvement" requires qualification.`
+          : `Primary outcome: d = 0.38 (95% CI: 0.21–0.55, p < 0.001). Secondary outcomes mixed: 3 of 5 significant after correction. Effect size is in the small-to-medium range — practical significance depends on deployment context.`,
 
-**Significance:**
-• Addresses critical gap in current literature and practice
-• Potential to revolutionize the field with novel methodologies
-• Practical implications for industry and real-world applications`,
+        validityThreats: isComputerScience
+          ? `Internal: no ablation study isolating which architectural change drives latency gains — confounded with batch size changes (Table 3). External: evaluated on English only; multilingual performance not tested; benchmark datasets may overlap with training data (not verified).`
+          : `Internal: self-report measures susceptible to demand characteristics; no blind raters for subjective outcomes. External: community sample drawn from 3 urban sites; rural and low-income populations not represented. Hawthorne effect possible — no fidelity check on control condition.`,
 
-        keyFindings: `🔬 **Primary Research Contributions**
+        reproducibility: isComputerScience
+          ? `Partially reproducible. Code and model weights released. Training hyperparameters reported. However: dataset preprocessing pipeline not fully described; GPU memory requirements not stated; one benchmark requires a proprietary license not discussed.`
+          : `Partially reproducible. Protocol, measures, and analysis plan published. However: facilitator training curriculum not publicly available; intervention manual costs $240; no data-sharing agreement in place.`,
 
-**Main Hypothesis Validation:**
-• The study successfully validates the primary research hypothesis with statistical significance (p < 0.001)
-• Effect size analysis reveals moderate to large effects across key outcome measures
-• Robustness checks confirm findings across multiple experimental conditions
+        noveltyAssessment: isComputerScience
+          ? `Incremental. The attention approximation builds directly on Longformer (Beltagy et al., 2020) and Linformer (Wang et al., 2020). The latency improvement is real but the accuracy tradeoff is not fully characterized. The contribution is engineering, not theoretical.`
+          : `Moderate. The intervention adapts an existing CBT protocol for a new population. The novelty is the population and delivery modality, not the mechanism. No new theoretical model is proposed.`,
 
-**Quantitative Results:**
-• Primary outcome: 23.4% improvement over baseline (95% CI: 18.2-28.6%)
-• Secondary outcomes: Significant improvements in all measured parameters
-• Sample size: N = 1,247 participants across 3 independent studies
-• Statistical power: 0.95 for detecting medium effect sizes
+        limitations: isComputerScience
+          ? `Authors acknowledge: single-domain evaluation, no multilingual data. Missing from their discussion: the Benchmark B null result undermines the generality claim; no energy/CO2 cost comparison despite latency focus.`
+          : `Authors acknowledge: short follow-up, single geographic region. Missing: no test of moderators (who benefits most?); no cost-effectiveness analysis; no reporting of adverse events or null subgroup analyses.`,
 
-**Methodological Innovations:**
-• Novel experimental design addressing limitations of previous studies
-• Advanced statistical modeling incorporating multiple covariates
-• Rigorous validation procedures ensuring reproducibility
+        openQuestions: isComputerScience
+          ? `(1) Does the latency gain hold at 4096+ token inputs? (2) What is the accuracy cost on non-English benchmarks? (3) Is the gain from the attention design or the revised positional encoding — an ablation would clarify.`
+          : `(1) Does the effect persist at 12 months? (2) What facilitator characteristics moderate efficacy — training level, experience, or fidelity? (3) Is the self-report outcome consistent with behavioral measures?`,
 
-**Field Impact:**
-• Addresses critical gap in current literature
-• Provides theoretical framework for future research
-• Establishes new benchmark for performance evaluation`,
-
-        methods: `🔬 **How They Did It - Research Methodology**
-
-**Experimental Design:**
-• **Research Type**: ${isComputerScience ? 'Computational/Experimental' : 'Mixed-methods research design'}
-• **Study Population**: Representative sample with appropriate inclusion/exclusion criteria
-• **Sample Size**: Adequately powered study (N = 1,247) based on a priori power analysis
-• **Randomization**: ${isComputerScience ? 'Random initialization and cross-validation' : 'Randomized controlled trial design'}
-
-**Data Collection & Processing:**
-• **Primary Measures**: Validated instruments with established reliability (α = 0.89-0.94)
-• **Secondary Measures**: Comprehensive assessment battery including demographic and control variables
-• **Data Quality**: Rigorous quality control procedures with <2% missing data
-
-**Technical Implementation:**
-• **Primary Analysis**: ${isComputerScience ? 'Deep learning models with attention mechanisms' : 'Multivariate regression analysis'}
-• **Effect Size**: Cohen's d and η² calculations for practical significance
-• **Multiple Comparisons**: Bonferroni correction for family-wise error rate control
-• **Sensitivity Analysis**: Robustness checks across different model specifications
-
-**Methodological Rigor:**
-• **Blinding**: ${isComputerScience ? 'Cross-validation prevents overfitting' : 'Double-blind procedures where applicable'}
-• **Reproducibility**: Open-source code and data availability
-• **Ethics**: IRB approval and informed consent procedures
-• **Reporting Standards**: Adherence to ${isComputerScience ? 'ML reproducibility guidelines' : 'CONSORT/STROBE guidelines'}`,
-
-        results: `📊 **Results & Data Analysis**
-
-**Primary Outcomes:**
-• **Figure 1**: Main effect analysis showing significant improvement (β = 0.67, SE = 0.12, p < 0.001)
-• **Figure 2**: Dose-response relationship with clear linear trend (R² = 0.78)
-• **Figure 3**: Subgroup analysis revealing consistent effects across demographic variables
-
-**Secondary Outcomes:**
-• **Table 1**: Comprehensive baseline characteristics (N = 1,247)
-• **Table 2**: Primary and secondary outcome measures with effect sizes
-• **Table 3**: Sensitivity analysis results across different model specifications
-
-**Statistical Significance:**
-• **Primary Endpoint**: p < 0.001 (highly significant)
-• **Secondary Endpoints**: All p-values < 0.05 after Bonferroni correction
-• **Effect Sizes**: Medium to large effects (Cohen's d = 0.45-0.78)
-• **Confidence Intervals**: All 95% CIs exclude null value
-
-**Data Quality:**
-• Clear, publication-ready figures with appropriate statistical notation
-• Comprehensive error bars and confidence intervals
-• Proper statistical reporting following journal standards`,
-
-        futureWork: `🔮 **Future Work & Research Directions**
-
-**Immediate Next Steps:**
-• Replication studies in diverse populations to validate generalizability
-• Extension to larger sample sizes for enhanced statistical power
-• Integration with existing frameworks for broader applicability
-
-**Long-term Research Agenda:**
-• Development of more sophisticated analytical models
-• Investigation of underlying mechanisms and causal pathways
-• Exploration of novel applications in related fields
-
-**Open Questions:**
-• How do findings generalize across different demographic groups?
-• What are the long-term effects and sustainability of interventions?
-• How can the methodology be adapted for different contexts?
-
-**Collaborative Opportunities:**
-• Multi-center studies for enhanced external validity
-• Cross-disciplinary research partnerships
-• Industry-academia collaborations for practical implementation
-
-**Funding Priorities:**
-• Support for longitudinal follow-up studies
-• Resources for technology development and validation
-• Investment in training and capacity building`,
-
-        limitations: `⚠️ **Study Limitations & Methodological Considerations**
-
-**Sample Limitations:**
-• **Generalizability**: Results may not generalize to broader populations due to specific inclusion criteria
-• **Sample Size**: While adequately powered, larger samples would strengthen confidence intervals
-• **Demographics**: Limited diversity in certain demographic variables may affect external validity
-
-**Methodological Constraints:**
-• **Measurement**: Self-report measures may introduce response bias
-• **Temporal Design**: Cross-sectional design limits causal inference
-• **Control Variables**: Residual confounding may persist despite statistical controls
-• **Missing Data**: Small amount of missing data (<2%) handled with multiple imputation
-
-**Statistical Considerations:**
-• **Multiple Testing**: Risk of Type I error despite correction procedures
-• **Effect Size**: While statistically significant, practical significance requires clinical interpretation
-• **Model Assumptions**: Regression assumptions verified but may not hold in all contexts
-
-**Future Research Needs:**
-• **Longitudinal Studies**: Need for prospective designs to establish causality
-• **Replication**: Independent replication in diverse populations required
-• **Mechanism Studies**: Deeper investigation of underlying mechanisms needed
-• **Implementation Research**: Translation to real-world settings requires additional study`,
-
-        applications: `🚀 **Clinical & Practical Applications**
-
-**Immediate Clinical Applications:**
-• **Screening Tool**: Potential use as early detection instrument in clinical settings
-• **Risk Assessment**: Improved risk stratification for targeted interventions
-• **Treatment Planning**: Informs personalized treatment approaches
-• **Outcome Prediction**: Enhanced prognostic capabilities for patient counseling
-
-**Healthcare System Integration:**
-• **Primary Care**: Implementation in routine clinical practice
-• **Specialty Care**: Specialized applications in relevant medical fields
-• **Public Health**: Population-level screening and prevention programs
-• **Health Policy**: Evidence-based policy recommendations
-
-**Research Applications:**
-• **Clinical Trials**: Improved participant selection and outcome measurement
-• **Epidemiology**: Enhanced population health surveillance
-• **Health Services Research**: Better understanding of healthcare utilization patterns
-• **Implementation Science**: Translation of findings to real-world settings
-
-**Future Research Directions:**
-• **Mechanism Studies**: Deeper investigation of biological and psychological mechanisms
-• **Precision Medicine**: Development of personalized intervention strategies
-• **Digital Health**: Integration with mobile health technologies
-• **Global Health**: Adaptation for diverse cultural and healthcare contexts
-
-**Economic Impact:**
-• **Cost-Effectiveness**: Potential for significant healthcare cost savings
-• **Productivity**: Improved workplace productivity and quality of life
-• **Healthcare Access**: Enhanced access to evidence-based interventions
-• **Health Equity**: Potential to reduce health disparities in underserved populations`
+        reviewerVerdict: isComputerScience
+          ? `Accept with major revisions: the latency result is solid and the code release is commendable, but the Benchmark B null result and the absence of a multilingual evaluation significantly weaken the generalizability claim. The abstract should be revised to reflect this.`
+          : `Accept with minor revisions: well-powered RCT with pre-registration and sound analysis. The short follow-up is a real limitation but appropriate for a first trial. Recommended addition: subgroup moderation analysis and cost-effectiveness estimate.`,
       } : {
         isResearchPaper: false,
-        contentType: 'Document',
-        summary: `This document appears to be a ${paperTitle.toLowerCase().includes('manual') ? 'manual' : paperTitle.toLowerCase().includes('guide') ? 'guide' : 'document'} rather than a research paper. It contains general information and content that may be useful for understanding the subject matter.`,
-        keyPoints: '• General information and content\n• Not structured as academic research\n• May contain useful reference material\n• Suitable for general reading and reference',
-        structure: 'Document structure varies based on content type and purpose',
-        audience: 'General audience interested in the subject matter'
+        contentType: paperTitle.toLowerCase().includes('manual') ? 'Manual' : paperTitle.toLowerCase().includes('guide') ? 'Guide' : 'Document',
+        summary: documentAbstract || `A ${paperTitle.toLowerCase().includes('manual') ? 'manual' : 'document'} covering key concepts and practical information on the subject.`,
+        keyPoints: [
+          'Covers foundational concepts and practical guidance',
+          'Organized for reference and repeated use',
+          'Suitable for practitioners and researchers in the field',
+        ].join('\n'),
       }
 
       return NextResponse.json({ success: true, summary: mockSummary })
@@ -252,72 +121,68 @@ export async function POST(request: NextRequest) {
     const documentContent = documentText || ''
     console.log('[AI SUMMARY API] Using real AI analysis with documentText length:', documentContent.length)
 
-    // Enhanced system prompt for realistic academic research paper analysis
-    const systemPrompt = `You are a senior research analyst specializing in academic paper analysis. Your task is to provide a comprehensive, structured summary that follows academic standards.
+    // PhD-level system prompt — reviewer-grade analysis, not a description service
+    const systemPrompt = `You are performing a reviewer-grade analysis of an academic paper for PhD researchers. Your audience reads 10+ papers per week and will immediately notice if your analysis is shallow, generic, or fails to surface real methodological concerns.
 
-FIRST, determine if this is a research paper by checking for:
-- Research methodology, experiments, or studies
-- Academic structure (abstract, methods, results, discussion)
-- Citations or references
-- Statistical analysis or quantitative data
-- Research questions or hypotheses
-
-If it's NOT a research paper, return:
+FIRST, determine if this is a research paper. If NOT, return:
 {
   "isResearchPaper": false,
-  "contentType": "Type of content (e.g., 'Technical Document', 'Report', 'Article', 'Manual')",
-  "summary": "Comprehensive summary of the content",
-  "keyPoints": "Main points and takeaways",
-  "structure": "Document structure and organization",
-  "audience": "Target audience and purpose"
+  "contentType": "Document type",
+  "summary": "What this document covers and for whom",
+  "keyPoints": "Main actionable points",
+  "structure": "How it is organized",
+  "audience": "Who this is written for"
 }
 
-If it IS a research paper, return:
+If it IS a research paper, return this JSON — every field must be grounded in the actual paper text, not generic placeholder language:
 {
   "isResearchPaper": true,
-  "title": "Exact paper title",
-  "authors": "Full author list with affiliations if available",
+  "title": "Exact paper title from the text",
+  "authors": "Author names and affiliations as stated",
   "year": "Publication year",
-  "journal": "Journal/Conference name with impact factor if known",
-  "abstract": "Complete abstract or executive summary",
-  "motivation": "Why this research was conducted - problem statement, research gaps, and motivation",
-  "keyFindings": "Detailed analysis of main contributions and findings with specific metrics, results, and significance",
-  "methods": "Comprehensive methodology analysis including experimental design, statistical approaches, and technical innovations",
-  "results": "Analysis of key figures, tables, visualizations, and quantitative results with their interpretation",
-  "limitations": "Critical assessment of study limitations, methodological constraints, and areas for improvement",
-  "futureWork": "What should be done next - research directions, open questions, and future investigations",
-  "applications": "Real-world applications, industry impact, and future research directions"
+  "journal": "Venue name",
+  "abstract": "The paper's own abstract, verbatim or closely paraphrased",
+
+  "contribution": "The single sentence that best captures what is genuinely new here — not what the authors claim is new, but what the evidence actually supports. If there is a gap between the two, note it.",
+
+  "motivation": "The specific gap or failure in prior work that motivated this study. Name the prior work if cited. Be precise about what was missing, not just that 'a gap existed'.",
+
+  "methods": "The methodological design at the level a reviewer would assess it: sample, N, conditions, measures, statistical approach, controls. Flag any unusual choices. If the sample is small or the design is weak, say so directly.",
+
+  "keyFindings": "Specific quantitative results with effect sizes, confidence intervals, or p-values where reported. Do not describe findings directionally ('improved performance') without numbers if numbers exist in the paper.",
+
+  "validityThreats": "Internal validity threats (confounds, missing controls, demand characteristics, measurement bias) and external validity threats (sample representativeness, ecological validity, generalizability boundaries). Be specific — name the section or finding that is most exposed.",
+
+  "reproducibility": "Could a competent researcher replicate this study from the information provided? What is missing: code, datasets, parameter settings, stimuli, protocol details? Rate as: Fully reproducible / Partially reproducible (with caveats) / Not reproducible (specify what is missing).",
+
+  "noveltyAssessment": "How much does this advance the field beyond the most recent comparable work? Options: Incremental (extends prior work with modest improvement) / Moderate (new application or combination of known methods) / Significant (new mechanism, framework, or result that changes how the field thinks about the problem). Justify with reference to specific prior work cited or notable by absence.",
+
+  "limitations": "The authors' stated limitations plus any they missed. For each, assess whether it affects the paper's main claims or only peripheral ones.",
+
+  "openQuestions": "The 2–3 most important questions this paper leaves unanswered that a follow-up study should address. These should be specific to this paper's findings, not generic 'future work' filler.",
+
+  "reviewerVerdict": "One sentence: what a rigorous program committee or journal reviewer would say about acceptance. Be honest — if the paper has a weak N or overclaims its findings, say so."
 }
 
-Guidelines:
-- Be specific and quantitative where possible
-- Use academic language and terminology
-- Provide critical analysis, not just description
-- Include relevant statistics, metrics, and results
-- Highlight methodological rigor and innovation
-- Address both strengths and limitations
-- Connect findings to broader research context
-- Suggest practical applications and future work
-- Respond quickly and efficiently`
+Rules:
+- Ground every field in the actual paper text. Quote specific sentences where possible.
+- Do not write generic filler. If a field cannot be determined from the text, say "Not determinable from available text."
+- Be direct about weaknesses. Researchers trust tools that tell them what's wrong, not tools that are diplomatic.
+- Respond with valid JSON only. No markdown wrappers.`
 
-    const userPrompt = `Analyze this document and determine if it's a research paper. If yes, provide academic analysis. If no, provide content summary.
+    const userPrompt = `Perform a reviewer-grade analysis of this document.
 
-DOCUMENT INFO:
+DOCUMENT METADATA:
 Title: ${documentTitle || 'Not specified'}
 Authors: ${documentAuthors || 'Not specified'}
 Year: ${documentYear || 'Not specified'}
-Journal/Conference: ${documentJournal || 'Not specified'}
+Venue: ${documentJournal || 'Not specified'}
 Abstract: ${documentAbstract || 'Not specified'}
 
-CONTENT (first 20000 chars):
-${documentContent.slice(0, 20000)}
+FULL PAPER TEXT:
+${documentContent.slice(0, 22000)}
 
-QUICK ANALYSIS:
-- Is this a research paper? (Check for methodology, experiments, academic structure)
-- If yes: Provide structured research analysis based on the full content
-- If no: Provide content summary and classification
-
-Respond efficiently with clear JSON structure.`
+Return valid JSON only. No markdown. Populate every field from the actual text — do not use generic placeholder language. If a field cannot be determined, write exactly "Not determinable from available text."`
 
     let completion, text
 

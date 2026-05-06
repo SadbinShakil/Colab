@@ -5,7 +5,8 @@ import { motion, AnimatePresence } from 'framer-motion'
 import {
   X, ChevronRight, Users, BookMarked, Wrench, AlertTriangle,
   MessageSquare, Send, ThumbsUp, ThumbsDown, Sparkles, Microscope,
-  GitBranch, FileSearch
+  GitBranch, FileSearch, ChevronDown, ChevronUp, Layers,
+  AlertCircle, Link2, Eye, Zap, Scale, FlaskConical, CheckCircle
 } from 'lucide-react'
 
 /**
@@ -37,12 +38,34 @@ export interface ImplicitHelpTrigger {
   stage: 1 | 2 | 3
 }
 
+export interface PageSectionInfo {
+  id: string
+  name: string
+  fullText: string
+}
+
+interface SectionIntelligence {
+  id: string
+  name: string
+  argument: string
+  evidence: string | null
+  assumptions: string | null
+  connects: string | null
+  watchOut: string | null
+  keyTension: string | null
+}
+
 interface ImplicitHelpCardProps {
   trigger: ImplicitHelpTrigger | null
   onDismiss: () => void
   onHelpChosen: (type: 'explain' | 'example' | 'question', text: string) => void
   documentTitle?: string
   documentContent?: string
+  pageSections?: PageSectionInfo[]
+  /** Navigate the PDF viewer to a given page, optionally with an amber highlight */
+  onNavigate?: (page: number, highlight?: string) => void
+  /** All paper sections with page ranges — used for cross-section navigation links */
+  allSections?: Array<{ name: string; startPage: number }>
 }
 
 // ─── Stage 1: Ambient Pulse ───────────────────────────────────────────────────
@@ -54,7 +77,7 @@ function AmbientDot({ onClick }: { onClick: () => void }) {
       exit={{ scale: 0, opacity: 0 }}
       transition={{ type: 'spring', damping: 20, stiffness: 300 }}
       onClick={onClick}
-      className="fixed bottom-6 right-6 z-[200] w-9 h-9 rounded-full flex items-center justify-center"
+      className="w-9 h-9 rounded-full flex items-center justify-center"
       style={{
         background: 'linear-gradient(135deg, #4f46e5 0%, #7c3aed 100%)',
         boxShadow: '0 0 0 0 rgba(79, 70, 229, 0.5)',
@@ -98,7 +121,7 @@ function SectionChip({
       animate={{ x: 0, opacity: 1 }}
       exit={{ x: 80, opacity: 0 }}
       transition={{ type: 'spring', damping: 22, stiffness: 280 }}
-      className="fixed bottom-6 right-6 z-[200] flex items-center gap-2"
+      className="flex items-center gap-2"
     >
       <motion.button
         onClick={onClick}
@@ -145,6 +168,453 @@ function PulseSkeleton({ lines = 2 }: { lines?: number }) {
   )
 }
 
+// ─── Shared sub-components for structured + prose results ────────────────────
+
+function StructuredField({
+  icon, label, value, accent, tc,
+}: { icon: React.ReactNode; label: string; value: string | null | undefined; accent: string; tc: string }) {
+  if (!value) return null
+  return (
+    <div className={`rounded-lg border px-2.5 py-2 bg-white ${accent.replace(/bg-\S+/g, '')}`}>
+      <div className={`flex items-center gap-1.5 mb-1 ${tc}`}>
+        <div className="w-3 h-3 shrink-0">{icon}</div>
+        <p className="text-[10px] font-bold uppercase tracking-wider">{label}</p>
+      </div>
+      <p className="text-[12px] text-slate-700 leading-relaxed">{value}</p>
+    </div>
+  )
+}
+
+// Three-level depth selector for structured content analysis.
+// Level 1 — Orient: what is this and what do the authors say it shows
+// Level 2 — Interrogate: does the evidence hold up, cross-references, statistical read
+// Level 3 — Challenge: reviewer objections, alternative explanations, what breaks
+type DepthLevel = 1 | 2 | 3
+
+const DEPTH_LABELS: Record<DepthLevel, { label: string; sub: string; color: string; active: string }> = {
+  1: { label: 'Orient',      sub: 'What is this?',        color: 'text-slate-500 border-slate-200',              active: 'text-indigo-700 border-indigo-500 bg-indigo-50' },
+  2: { label: 'Interrogate', sub: 'Does it hold up?',     color: 'text-slate-500 border-slate-200',              active: 'text-amber-700 border-amber-500 bg-amber-50'   },
+  3: { label: 'Challenge',   sub: 'Where does it break?', color: 'text-slate-500 border-slate-200',              active: 'text-rose-700 border-rose-500 bg-rose-50'      },
+}
+
+function DepthLeveledResult({ type, data }: { type: string; data: any }) {
+  const [depth, setDepth] = useState<DepthLevel>(1)
+
+  // Field definitions per content type per level
+  const LEVELS: Record<string, Record<DepthLevel, Array<{
+    icon: React.ReactNode; label: string; field: string; accent: string; tc: string
+  }>>> = {
+    figure: {
+      1: [
+        { icon: <Eye className="w-3 h-3" />,       label: 'What it shows',       field: 'whatItShows',      accent: 'bg-violet-50 border-violet-100', tc: 'text-violet-700' },
+        { icon: <Zap className="w-3 h-3" />,        label: 'What authors claim',  field: 'whatAuthorsClaim', accent: 'bg-indigo-50 border-indigo-100', tc: 'text-indigo-700' },
+      ],
+      2: [
+        { icon: <Scale className="w-3 h-3" />,      label: 'Evidence sufficiency', field: 'evidenceSufficiency', accent: 'bg-amber-50 border-amber-100', tc: 'text-amber-700' },
+        { icon: <Link2 className="w-3 h-3" />,      label: 'Cross-reference',      field: 'crossReference',      accent: 'bg-teal-50 border-teal-100',  tc: 'text-teal-700'  },
+      ],
+      3: [
+        { icon: <FlaskConical className="w-3 h-3" />, label: 'Alternative read', field: 'alternativeInterpretation', accent: 'bg-rose-50 border-rose-100', tc: 'text-rose-700' },
+      ],
+    },
+    table: {
+      1: [
+        { icon: <BookMarked className="w-3 h-3" />, label: 'What it compares',   field: 'whatItCompares',  accent: 'bg-blue-50 border-blue-100',    tc: 'text-blue-700'   },
+        { icon: <Zap className="w-3 h-3" />,        label: 'Headline result',    field: 'headlineResult',  accent: 'bg-indigo-50 border-indigo-100', tc: 'text-indigo-700' },
+      ],
+      2: [
+        { icon: <Scale className="w-3 h-3" />,      label: 'Statistical read',   field: 'statisticalInterpretation', accent: 'bg-amber-50 border-amber-100',   tc: 'text-amber-700'   },
+        { icon: <Link2 className="w-3 h-3" />,      label: 'Cross-reference',    field: 'crossReference',            accent: 'bg-teal-50 border-teal-100',     tc: 'text-teal-700'    },
+      ],
+      3: [
+        { icon: <CheckCircle className="w-3 h-3" />, label: 'Conclusion warranted?', field: 'conclusionWarranted', accent: 'bg-emerald-50 border-emerald-100', tc: 'text-emerald-700' },
+        { icon: <FlaskConical className="w-3 h-3" />, label: 'Alternative read',      field: 'alternativeRead',     accent: 'bg-rose-50 border-rose-100',      tc: 'text-rose-700'    },
+      ],
+    },
+    equation: {
+      1: [
+        { icon: <Zap className="w-3 h-3" />,        label: 'Role in argument',    field: 'role',              accent: 'bg-amber-50 border-amber-100',  tc: 'text-amber-700'  },
+        { icon: <BookMarked className="w-3 h-3" />, label: 'Paper-specific use',  field: 'paperSpecificUse',  accent: 'bg-indigo-50 border-indigo-100', tc: 'text-indigo-700' },
+      ],
+      2: [
+        { icon: <Link2 className="w-3 h-3" />,      label: 'Connection to claim', field: 'connectionToMainClaim', accent: 'bg-violet-50 border-violet-100', tc: 'text-violet-700' },
+        { icon: <Scale className="w-3 h-3" />,      label: 'Numerical intuition', field: 'numericalIntuition',    accent: 'bg-teal-50 border-teal-100',    tc: 'text-teal-700'   },
+      ],
+      3: [
+        { icon: <AlertTriangle className="w-3 h-3" />, label: 'Reading pitfall', field: 'readingPitfall', accent: 'bg-rose-50 border-rose-100', tc: 'text-rose-700' },
+      ],
+    },
+    algorithm: {
+      1: [
+        { icon: <Wrench className="w-3 h-3" />,     label: 'Input → Output',      field: 'inputOutputContract', accent: 'bg-emerald-50 border-emerald-100', tc: 'text-emerald-700' },
+        { icon: <Zap className="w-3 h-3" />,        label: 'Key decision step',   field: 'keyDecisionStep',     accent: 'bg-teal-50 border-teal-100',      tc: 'text-teal-700'    },
+      ],
+      2: [
+        { icon: <BookMarked className="w-3 h-3" />, label: 'Design rationale',    field: 'designRationale',         accent: 'bg-indigo-50 border-indigo-100', tc: 'text-indigo-700' },
+        { icon: <Link2 className="w-3 h-3" />,      label: 'Evaluation',          field: 'connectionToEvaluation',  accent: 'bg-violet-50 border-violet-100', tc: 'text-violet-700' },
+      ],
+      3: [
+        { icon: <AlertTriangle className="w-3 h-3" />, label: 'Unstated limitations', field: 'limitationsNotStated', accent: 'bg-rose-50 border-rose-100', tc: 'text-rose-700' },
+      ],
+    },
+  }
+
+  const contentLevels = LEVELS[type] || LEVELS.figure
+  const fields = contentLevels[depth] || []
+
+  return (
+    <div className="space-y-2.5">
+      {/* Depth selector tabs */}
+      <div className="flex gap-1.5">
+        {([1, 2, 3] as DepthLevel[]).map(lvl => {
+          const cfg = DEPTH_LABELS[lvl]
+          const isActive = depth === lvl
+          return (
+            <button
+              key={lvl}
+              onClick={() => setDepth(lvl)}
+              className={`flex-1 py-1.5 px-2 rounded-lg border text-center transition-all ${isActive ? cfg.active : cfg.color + ' bg-white hover:bg-slate-50'}`}
+            >
+              <p className="text-[10px] font-bold leading-none">{cfg.label}</p>
+              <p className="text-[9px] opacity-70 mt-0.5 leading-none">{cfg.sub}</p>
+            </button>
+          )
+        })}
+      </div>
+
+      {/* Fields for current depth */}
+      <AnimatePresence mode="wait">
+        <motion.div
+          key={depth}
+          initial={{ opacity: 0, y: 4 }}
+          animate={{ opacity: 1, y: 0 }}
+          exit={{ opacity: 0, y: -4 }}
+          transition={{ duration: 0.15 }}
+          className="space-y-2"
+        >
+          {fields.map(f => (
+            <StructuredField key={f.field} icon={f.icon} label={f.label} value={data[f.field]} accent={f.accent} tc={f.tc} />
+          ))}
+
+          {/* Equation type badge at orient level */}
+          {type === 'equation' && depth === 1 && data.equationType && (
+            <span className="inline-flex items-center gap-1 bg-amber-100 text-amber-800 text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full">
+              {data.equationType}
+            </span>
+          )}
+
+          {/* No content fallback */}
+          {fields.every(f => !data[f.field]) && (
+            <p className="text-[12px] text-slate-400 text-center py-2">No data for this level</p>
+          )}
+        </motion.div>
+      </AnimatePresence>
+    </div>
+  )
+}
+
+function ProseResponse({ text }: { text: string }) {
+  // Split on [Label] markers produced by handleAction's markdown conversion
+  const segments = text.split(/(\[[^\]]+\])/)
+  return (
+    <div className="space-y-2">
+      {segments.reduce<React.ReactNode[]>((acc, seg, i) => {
+        if (/^\[[^\]]+\]$/.test(seg)) {
+          // This is a section label — render as a pill header
+          const label = seg.slice(1, -1)
+          const labelColors: Record<string, string> = {
+            Analysis: 'text-indigo-600 bg-indigo-50',
+            Tension:  'text-amber-700 bg-amber-50',
+            Source:   'text-emerald-700 bg-emerald-50',
+          }
+          const color = labelColors[label] || 'text-slate-600 bg-slate-100'
+          acc.push(
+            <p key={i} className={`text-[10px] font-bold uppercase tracking-widest px-2 py-0.5 rounded-md inline-block ${color}`}>
+              {label}
+            </p>
+          )
+        } else if (seg.trim()) {
+          acc.push(
+            <p key={i} className="text-[12.5px] text-slate-800 leading-relaxed whitespace-pre-wrap">
+              {seg.trim()}
+            </p>
+          )
+        }
+        return acc
+      }, [])}
+    </div>
+  )
+}
+
+function FeedbackRow({
+  feedback, setFeedback, activeAction, sectionName,
+}: {
+  feedback: 'up' | 'down' | null
+  setFeedback: (v: 'up' | 'down') => void
+  activeAction: string | null
+  sectionName: string
+}) {
+  return (
+    <div className="flex items-center gap-2 pt-2 mt-2 border-t border-slate-100">
+      <span className="text-[10px] text-slate-400 font-medium">Useful?</span>
+      <div className="flex gap-1">
+        {(['up', 'down'] as const).map(dir => (
+          <button
+            key={dir}
+            onClick={() => {
+              setFeedback(dir)
+              fetch('/api/telemetry', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                  type: 'ai_feedback',
+                  payload: { rating: dir, action: activeAction, section: sectionName },
+                }),
+              })
+            }}
+            className={`p-1 rounded transition-colors ${
+              feedback === dir
+                ? dir === 'up' ? 'text-emerald-600 bg-emerald-50' : 'text-red-500 bg-red-50'
+                : 'text-slate-400 hover:text-slate-600'
+            }`}
+          >
+            {dir === 'up' ? <ThumbsUp className="w-3.5 h-3.5" /> : <ThumbsDown className="w-3.5 h-3.5" />}
+          </button>
+        ))}
+      </div>
+      {feedback && <span className="text-[10px] text-indigo-500 font-medium ml-auto">Logged</span>}
+    </div>
+  )
+}
+
+// ─── Cross-section linkifier ─────────────────────────────────────────────────
+// Parses AI text like "defined in §Introduction" or "see Table 2 on page 5"
+// and renders section/page references as clickable chips.
+function LinkifiedText({
+  text,
+  allSections,
+  onNavigate,
+}: {
+  text: string
+  allSections?: Array<{ name: string; startPage: number }>
+  onNavigate?: (page: number, highlight?: string) => void
+}) {
+  if (!onNavigate || !allSections || allSections.length === 0) {
+    return <span>{text}</span>
+  }
+
+  const sectionPattern = /§([A-Za-z][^\s,;:.!?]{1,40})/g
+  const pagePattern = /\bp\.?\s*(\d+)\b/gi
+
+  const matches: Array<{ start: number; end: number; label: string; page: number; highlight: string }> = []
+
+  // Section name matches — highlight the full section name so the PDF flashes the heading
+  for (const m of text.matchAll(sectionPattern)) {
+    const sectionName = m[1].trim()
+    const found = allSections.find(s =>
+      s.name.toLowerCase().startsWith(sectionName.toLowerCase()) ||
+      sectionName.toLowerCase().startsWith(s.name.toLowerCase())
+    )
+    if (found) {
+      matches.push({ start: m.index!, end: m.index! + m[0].length, label: m[0], page: found.startPage, highlight: found.name })
+    }
+  }
+
+  // Page number matches — no passage text to highlight, use empty string (just navigates)
+  for (const m of text.matchAll(pagePattern)) {
+    const page = parseInt(m[1], 10)
+    if (page > 0) {
+      matches.push({ start: m.index!, end: m.index! + m[0].length, label: m[0], page, highlight: '' })
+    }
+  }
+
+  if (matches.length === 0) return <span>{text}</span>
+
+  matches.sort((a, b) => a.start - b.start)
+  const deduped = matches.filter((m, i) => i === 0 || m.start >= matches[i - 1].end)
+
+  let cursor = 0
+  const nodes: React.ReactNode[] = []
+  deduped.forEach((m, i) => {
+    if (m.start > cursor) nodes.push(<span key={`t${i}`}>{text.slice(cursor, m.start)}</span>)
+    nodes.push(
+      <button
+        key={`l${i}`}
+        onClick={() => onNavigate(m.page, m.highlight || undefined)}
+        className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded-md bg-indigo-50 border border-indigo-200 text-indigo-700 text-[10.5px] font-semibold hover:bg-indigo-100 active:bg-amber-50 active:border-amber-300 active:text-amber-700 transition-colors mx-0.5"
+        title={`Jump to page ${m.page}`}
+      >
+        {m.label}
+        <ChevronRight className="w-2.5 h-2.5 opacity-60" />
+      </button>
+    )
+    cursor = m.end
+  })
+  if (cursor < text.length) nodes.push(<span key="tail">{text.slice(cursor)}</span>)
+
+  return <>{nodes}</>
+}
+
+// ─── Section Intelligence Panel ──────────────────────────────────────────────
+function SectionIntelligencePanel({
+  sections,
+  documentTitle,
+  documentContent,
+  currentPage,
+  onNavigate,
+  allSections,
+}: {
+  sections: PageSectionInfo[]
+  documentTitle?: string
+  documentContent?: string
+  currentPage?: string
+  onNavigate?: (page: number, highlight?: string) => void
+  allSections?: Array<{ name: string; startPage: number }>
+}) {
+  const [intelligence, setIntelligence] = useState<SectionIntelligence[]>([])
+  const [loading, setLoading] = useState(true)
+  const [expandedId, setExpandedId] = useState<string | null>(null)
+  const hasFetched = useRef(false)
+
+  useEffect(() => {
+    if (hasFetched.current || sections.length === 0) return
+    hasFetched.current = true
+
+    const load = async () => {
+      setLoading(true)
+      try {
+        const res = await fetch('/api/section-intelligence', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            sections: sections.map(s => ({ id: s.id, name: s.name, fullText: s.fullText })),
+            paperTitle: documentTitle,
+            paperContent: documentContent?.slice(0, 4000),
+          }),
+        })
+        if (res.ok) {
+          const data = await res.json()
+          const results: SectionIntelligence[] = data.sections || []
+          setIntelligence(results)
+          // Auto-expand first section
+          if (results.length > 0) setExpandedId(results[0].id)
+        }
+      } catch {
+        // silently fail — don't block the rest of the card
+      } finally {
+        setLoading(false)
+      }
+    }
+
+    load()
+  }, []) // eslint-disable-line react-hooks/exhaustive-deps
+
+  const FIELD_ROWS: Array<{
+    key: keyof SectionIntelligence
+    label: string
+    icon: React.ReactNode
+    color: string
+    textColor: string
+  }> = [
+    { key: 'argument',    label: 'Core move',      icon: <Zap className="w-3 h-3" />,          color: 'bg-indigo-50 border-indigo-100',  textColor: 'text-indigo-700' },
+    { key: 'evidence',    label: 'Evidence',        icon: <FileSearch className="w-3 h-3" />,    color: 'bg-emerald-50 border-emerald-100', textColor: 'text-emerald-700' },
+    { key: 'assumptions', label: 'Silent premises', icon: <AlertCircle className="w-3 h-3" />,   color: 'bg-amber-50 border-amber-100',    textColor: 'text-amber-700' },
+    { key: 'connects',    label: 'Connects to',     icon: <Link2 className="w-3 h-3" />,         color: 'bg-violet-50 border-violet-100',  textColor: 'text-violet-700' },
+    { key: 'watchOut',    label: 'Watch out for',   icon: <Eye className="w-3 h-3" />,           color: 'bg-rose-50 border-rose-100',      textColor: 'text-rose-700' },
+    { key: 'keyTension',  label: 'Key tension',     icon: <AlertTriangle className="w-3 h-3" />, color: 'bg-slate-50 border-slate-200',    textColor: 'text-slate-600' },
+  ]
+
+  return (
+    <div className="space-y-2">
+      {/* Section header */}
+      <div className="flex items-center gap-1.5">
+        <Layers className="w-3 h-3 text-slate-400" />
+        <p className="text-[10px] font-semibold text-slate-400 uppercase tracking-widest">
+          {sections.length === 1 ? '1 section on this page' : `${sections.length} sections on this page`}
+        </p>
+      </div>
+
+      {loading && (
+        <div className="space-y-1.5 pt-0.5">
+          {sections.map((_, i) => (
+            <div key={i} className="rounded-xl border border-slate-100 overflow-hidden">
+              <div className="px-3 py-2.5 flex items-center gap-2 bg-slate-50">
+                <motion.div
+                  className="h-2 rounded-full bg-slate-200 flex-1"
+                  animate={{ opacity: [0.5, 1, 0.5] }}
+                  transition={{ duration: 1.4, repeat: Infinity, delay: i * 0.2 }}
+                />
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {!loading && intelligence.map((sec) => {
+        const isOpen = expandedId === sec.id
+        return (
+          <div
+            key={sec.id}
+            className="rounded-xl border border-slate-100 overflow-hidden"
+            style={{ background: 'rgba(255,255,255,0.9)' }}
+          >
+            {/* Section name row — click to expand */}
+            <button
+              onClick={() => setExpandedId(isOpen ? null : sec.id)}
+              className="w-full flex items-center justify-between gap-2 px-3 py-2.5 text-left hover:bg-slate-50/80 transition-colors"
+            >
+              <div className="flex items-center gap-2 min-w-0">
+                <div
+                  className="w-1.5 h-4 rounded-full shrink-0"
+                  style={{ background: 'linear-gradient(to bottom, #4f46e5, #7c3aed)' }}
+                />
+                <p className="text-[12px] font-semibold text-slate-800 truncate">§{sec.name}</p>
+              </div>
+              {isOpen
+                ? <ChevronUp className="w-3.5 h-3.5 text-slate-400 shrink-0" />
+                : <ChevronDown className="w-3.5 h-3.5 text-slate-400 shrink-0" />}
+            </button>
+
+            {/* Expanded intelligence */}
+            {isOpen && (
+              <motion.div
+                initial={{ height: 0, opacity: 0 }}
+                animate={{ height: 'auto', opacity: 1 }}
+                exit={{ height: 0, opacity: 0 }}
+                transition={{ duration: 0.2 }}
+                className="border-t border-slate-100 px-3 py-2.5 space-y-2"
+              >
+                {FIELD_ROWS.map(({ key, label, icon, color, textColor }) => {
+                  const value = sec[key]
+                  if (!value) return null
+                  const isNavigable = key === 'connects'
+                  return (
+                    <div key={key} className={`rounded-lg border px-2.5 py-2 ${color}`}>
+                      <div className={`flex items-center gap-1.5 mb-1 ${textColor}`}>
+                        {icon}
+                        <p className="text-[10px] font-bold uppercase tracking-wider">{label}</p>
+                      </div>
+                      <p className="text-[12px] text-slate-700 leading-relaxed">
+                        {isNavigable ? (
+                          <LinkifiedText
+                            text={value as string}
+                            allSections={allSections}
+                            onNavigate={onNavigate}
+                          />
+                        ) : (value as string)}
+                      </p>
+                    </div>
+                  )
+                })}
+              </motion.div>
+            )}
+          </div>
+        )
+      })}
+    </div>
+  )
+}
+
 // ─── Stage 3: Full Research Card ──────────────────────────────────────────────
 function FullHelpCard({
   trigger,
@@ -152,12 +622,18 @@ function FullHelpCard({
   onHelpChosen,
   documentTitle,
   documentContent,
+  pageSections,
+  onNavigate,
+  allSections,
 }: {
   trigger: ImplicitHelpTrigger
   onDismiss: () => void
   onHelpChosen: (type: 'explain' | 'example' | 'question', text: string) => void
   documentTitle?: string
   documentContent?: string
+  pageSections?: PageSectionInfo[]
+  onNavigate?: (page: number, highlight?: string) => void
+  allSections?: Array<{ name: string; startPage: number }>
 }) {
   // ── State ──────────────────────────────────────────────────────────────────
   const [diagnostic, setDiagnostic] = useState<string | null>(null)
@@ -171,12 +647,24 @@ function FullHelpCard({
 
   const [activeAction, setActiveAction] = useState<string | null>(null)
   const [responseText, setResponseText] = useState<string | null>(null)
+  const [structuredResult, setStructuredResult] = useState<any | null>(null)
   const [isFetching, setIsFetching] = useState(false)
   const [questionInput, setQuestionInput] = useState('')
   const [showQuestion, setShowQuestion] = useState(false)
   const [feedback, setFeedback] = useState<'up' | 'down' | null>(null)
 
   const dismissTimer = useRef<NodeJS.Timeout | null>(null)
+
+  // ── Auto-analyse on structured focus selection ─────────────────────────────
+  // When researcher selects a figure / table / equation / algorithm focus point,
+  // immediately fire the structured analysis without waiting for an action click.
+  const STRUCTURED_TYPES = ['figure', 'table', 'equation', 'algorithm']
+  useEffect(() => {
+    if (!selectedFocus) return
+    if (!STRUCTURED_TYPES.includes(selectedFocus.type)) return
+    if (structuredResult || isFetching || responseText) return
+    handleAction('mechanism')
+  }, [selectedFocus?.id]) // eslint-disable-line react-hooks/exhaustive-deps
 
   // ── Auto-dismiss ───────────────────────────────────────────────────────────
   const resetTimer = useCallback(() => {
@@ -213,34 +701,55 @@ function FullHelpCard({
       const clean = (t: string) =>
         t.replace(/\s+/g, ' ').replace(/(?:\b\d+\b\s*){4,}/g, ' ').trim()
 
-      // sectionText now contains page-labeled context: "[Page N]: ..."
-      // Allow up to 2400 chars to include prev/current/next page content
-      const sectionText = trigger.sectionText?.trim().length > 60
-        ? clean(trigger.sectionText).slice(0, 2400)
+      // sectionText contains page-labeled context: "[Page N]: ..."
+      // Strip the [Page N]: labels before any further processing so they
+      // don't leak into claim quotes or prompts as garbage metadata.
+      const stripPageLabels = (t: string) =>
+        t.replace(/\[Page\s+\d+\]:\s*/gi, ' ').replace(/\s+/g, ' ').trim()
+
+      const rawSectionText = trigger.sectionText?.trim().length > 60
+        ? trigger.sectionText
         : null
 
-      const fallbackContext = documentContent
-        ? clean(documentContent).slice(0, 1200)
-        : trigger.sectionName
+      const sectionText = rawSectionText
+        ? clean(stripPageLabels(rawSectionText)).slice(0, 2400)
+        : null
 
-      const context = sectionText ?? fallbackContext
+      // Keep the page-labeled version intact for the GPT prompt context (it helps GPT orient)
+      const contextForPrompt = rawSectionText
+        ? clean(rawSectionText).slice(0, 2400)
+        : documentContent
+          ? clean(documentContent).slice(0, 1200)
+          : trigger.sectionName
 
-      // Extract the densest claim from the section text for the quote block
+      const context = contextForPrompt
+
+      // Extract the densest claim from the STRIPPED section text — no metadata
       const extractClaim = (text: string): string | null => {
-        const sentences = text.match(/[^.!?]+[.!?]+/g) || []
-        // Prefer sentences that contain numbers, equations, or technical density markers
+        // Skip any remaining label-like fragments at the start
+        const cleaned = text.replace(/^\s*\[?Page\s*\d+\]?[:\s]*/i, '').trim()
+        const sentences = cleaned.match(/[^.!?]+[.!?]+/g) || []
+        // Prefer sentences with technical density markers (numbers, greek, operators)
+        // AND high letter ratio (excludes citation strings like "CHI EA '24, May 11–16")
         const dense = sentences.find(s => {
           const hasNumber = /\d/.test(s)
           const hasGreek = /[α-ωΑ-Ωτμσ]/.test(s)
           const hasFormula = /[=≥≤<>]/.test(s)
-          const longEnough = s.trim().length > 40
+          const longEnough = s.trim().length > 45
           const letters = (s.match(/[a-zA-Z]/g) || []).length
           const letterRatio = letters / s.length
-          return longEnough && letterRatio > 0.35 && (hasNumber || hasGreek || hasFormula)
+          // Reject citation-like strings (high punctuation, many numbers, low words)
+          const wordCount = (s.match(/\b[a-zA-Z]{3,}\b/g) || []).length
+          const isCitationLike = wordCount < 4 && /\d{4}/.test(s)
+          return longEnough && letterRatio > 0.45 && !isCitationLike && (hasNumber || hasGreek || hasFormula)
         })
-        // Fallback: longest sentence that reads like a claim
+        // Fallback: longest sentence with enough real words
         const fallback = sentences
-          .filter(s => s.trim().length > 50 && (s.match(/[a-zA-Z]/g) || []).length / s.length > 0.45)
+          .filter(s => {
+            const words = (s.match(/\b[a-zA-Z]{3,}\b/g) || []).length
+            const letters = (s.match(/[a-zA-Z]/g) || []).length
+            return s.trim().length > 55 && words >= 6 && letters / s.length > 0.50
+          })
           .sort((a, b) => b.length - a.length)[0]
 
         const chosen = dense || fallback
@@ -414,6 +923,7 @@ Also: does this content contradict or underqualify a claim elsewhere in the pape
     setShowQuestion(false)
     setIsFetching(true)
     setResponseText(null)
+    setStructuredResult(null)
 
     const clean = (t: string) =>
       t.replace(/\s+/g, ' ').replace(/(?:\b\d+\b\s*){4,}/g, ' ').trim()
@@ -425,6 +935,40 @@ Also: does this content contradict or underqualify a claim elsewhere in the pape
         ? clean(documentContent).slice(0, 1200)
         : trigger.sectionName
 
+    const fullDoc = documentContent?.trim() || ''
+
+    // ── Structured path: figure / table / equation / algorithm focus points ──
+    // When the researcher has selected a specific content element, route to the
+    // dedicated structured endpoint instead of the generic prose path.
+    const STRUCTURED_TYPES = ['figure', 'table', 'equation', 'algorithm']
+    if (selectedFocus && STRUCTURED_TYPES.includes(selectedFocus.type) && actionId !== 'question') {
+      try {
+        const res = await fetch('/api/content-explainer', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            contentType: selectedFocus.type,
+            sectionText: ctx,
+            sectionName: trigger.sectionName,
+            paperTitle: documentTitle,
+            paperContent: fullDoc.slice(0, 3000),
+          }),
+        })
+        if (res.ok) {
+          const data = await res.json()
+          setStructuredResult({ type: selectedFocus.type, data })
+        } else {
+          setResponseText('Structured analysis failed — check connection.')
+        }
+      } catch {
+        setResponseText('Request failed. Please retry.')
+      } finally {
+        setIsFetching(false)
+      }
+      return
+    }
+
+    // ── Prose path: claims, methods, results, or no focus selected ──
     const action = actions.find(a => a.id === actionId)
 
     // Append selected focus point as the specific anchor for this query
@@ -432,8 +976,6 @@ Also: does this content contradict or underqualify a claim elsewhere in the pape
       ? `\n\nFOCUS: The researcher has selected "${selectedFocus.label}" (${selectedFocus.type}) as their specific point of interest: ${selectedFocus.description}\nAnchor your entire response to this specific element.`
       : ''
 
-    // For custom questions: anchor the response to the current page.
-    const fullDoc = documentContent?.trim() || ''
     const prompt = actionId === 'question' && customQuery
       ? `You are helping a PhD researcher reading ${trigger.sectionName} of "${documentTitle || 'this paper'}".
 
@@ -452,7 +994,7 @@ Rules:
 - Be direct and precise. PhD-level language. No filler.`
       : (action?.prompt?.(ctx) || '') + focusAnchor
 
-    if (!prompt) return
+    if (!prompt) { setIsFetching(false); return }
 
     try {
       const res = await fetch('/api/ai-help', {
@@ -467,11 +1009,13 @@ Rules:
 
       if (res.ok) {
         const data = await res.json()
-        let text: string = data.response?.answer || ''
-        text = text.replace(/^#+\s*/gm, '').replace(/\*\*/g, '').trim()
+        const raw: string = data.response?.answer || ''
+        // Preserve **Section:** headers by converting to readable labels instead of stripping
+        const text = raw
+          .replace(/\*\*([^*]+):\*\*/g, '[$1]')   // **Label:** → [Label]
+          .replace(/^#+\s+/gm, '')                  // strip markdown headings
+          .trim()
         setResponseText(text)
-        // Response stays inside ImplicitHelpCard — do NOT call onHelpChosen here.
-        // onHelpChosen is only used for peer routing (handled above).
       } else {
         setResponseText('Could not retrieve analysis. Check your connection.')
       }
@@ -504,7 +1048,7 @@ Rules:
       animate={{ x: 0, opacity: 1, scale: 1 }}
       exit={{ x: 110, opacity: 0, scale: 0.94 }}
       transition={{ type: 'spring', damping: 26, stiffness: 290 }}
-      className="fixed bottom-6 right-6 z-[200] w-[348px] max-h-[calc(100vh-5rem)] flex flex-col"
+      className="w-[348px] max-h-[calc(100vh-12rem)] flex flex-col"
       onMouseEnter={resetTimer}
     >
       <div
@@ -596,6 +1140,7 @@ Rules:
                         onClick={() => {
                           setSelectedFocus(isSelected ? null : fp)
                           setResponseText(null)
+                          setStructuredResult(null)
                           setActiveAction(null)
                         }}
                         title={fp.description}
@@ -611,11 +1156,7 @@ Rules:
                   })}
                 </div>
                 {selectedFocus && (
-                  <motion.p
-                    initial={{ opacity: 0 }}
-                    animate={{ opacity: 1 }}
-                    className="text-[11.5px] text-slate-500 leading-snug"
-                  >
+                  <motion.p initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="text-[11.5px] text-slate-500 leading-snug">
                     {selectedFocus.description}
                   </motion.p>
                 )}
@@ -642,6 +1183,20 @@ Rules:
               ) : null}
             </AnimatePresence>
           </div>
+
+          {/* ── Section Intelligence — PhD-level per-section breakdown ── */}
+          {pageSections && pageSections.length > 0 && !isLoading && (
+            <div className="border-t border-slate-100 pt-3">
+              <SectionIntelligencePanel
+                sections={pageSections}
+                documentTitle={documentTitle}
+                documentContent={documentContent}
+                currentPage={trigger.sectionName}
+                onNavigate={onNavigate}
+                allSections={allSections}
+              />
+            </div>
+          )}
 
           {/* ── Inline Response Area ── */}
           <AnimatePresence mode="popLayout">
@@ -674,66 +1229,80 @@ Rules:
                   </button>
                 </div>
               </motion.div>
-            ) : isFetching || responseText ? (
+
+            ) : isFetching ? (
+              /* ── Loading ── */
+              <motion.div key="loading" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
+                <div className="rounded-xl border border-slate-100 bg-slate-50/60 px-3 py-3">
+                  <PulseSkeleton lines={4} />
+                  <p className="text-[10.5px] text-slate-400 mt-2">
+                    {selectedFocus && ['figure','table','equation','algorithm'].includes(selectedFocus.type)
+                      ? `Analysing ${selectedFocus.type}…`
+                      : 'Analysing…'}
+                  </p>
+                </div>
+              </motion.div>
+
+            ) : structuredResult ? (
+              /* ── Structured result (figure / table / equation / algorithm) ── */
+              <motion.div
+                key="structured"
+                initial={{ opacity: 0, y: 6 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0 }}
+              >
+                <div className="rounded-xl border border-slate-100 overflow-hidden">
+                  {/* Header */}
+                  <div className="flex items-center justify-between px-3 py-2 bg-slate-50 border-b border-slate-100">
+                    <div className="flex items-center gap-1.5">
+                      <Sparkles className="w-3 h-3 text-indigo-500" />
+                      <span className="text-[10px] font-bold text-indigo-600 uppercase tracking-widest">
+                        {structuredResult.type} analysis · A6
+                      </span>
+                    </div>
+                    <button
+                      onClick={() => { setStructuredResult(null); setActiveAction(null) }}
+                      className="p-0.5 text-slate-400 hover:text-slate-600 rounded"
+                    >
+                      <X className="w-3 h-3" />
+                    </button>
+                  </div>
+
+                  {/* Depth-leveled structured fields */}
+                  <div className="px-3 py-2.5">
+                    <DepthLeveledResult type={structuredResult.type} data={structuredResult.data} />
+                  </div>
+
+                  {/* Feedback footer */}
+                  <FeedbackRow feedback={feedback} setFeedback={setFeedback} activeAction={activeAction} sectionName={trigger.sectionName} />
+                </div>
+              </motion.div>
+
+            ) : responseText ? (
+              /* ── Prose result with visible section headers ── */
               <motion.div
                 key="response"
-                initial={{ opacity: 0, height: 0 }}
-                animate={{ opacity: 1, height: 'auto' }}
+                initial={{ opacity: 0, y: 6 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0 }}
               >
-                <div className="rounded-xl border border-slate-100 bg-slate-50/60 relative">
-                  <button
-                    onClick={() => { setResponseText(null); setActiveAction(null); setIsFetching(false) }}
-                    className="absolute top-2 right-2 p-0.5 text-slate-400 hover:text-slate-600 rounded"
-                  >
-                    <X className="w-3.5 h-3.5" />
-                  </button>
-                  <div className="px-3 py-3 pr-7">
-                    {isFetching ? (
-                      <PulseSkeleton lines={3} />
-                    ) : (
-                      <div className="space-y-2.5">
-                        <p className="text-[12.5px] text-slate-800 leading-relaxed whitespace-pre-wrap max-h-[180px] overflow-y-auto pr-1">
-                          {responseText}
-                        </p>
-                        <div className="flex items-center gap-2 pt-1.5 border-t border-slate-100">
-                          <span className="text-[10px] text-slate-400 font-medium">Useful?</span>
-                          <div className="flex gap-1">
-                            {(['up', 'down'] as const).map(dir => (
-                              <button
-                                key={dir}
-                                onClick={() => {
-                                  setFeedback(dir)
-                                  fetch('/api/telemetry', {
-                                    method: 'POST',
-                                    headers: { 'Content-Type': 'application/json' },
-                                    body: JSON.stringify({
-                                      type: 'ai_feedback',
-                                      payload: { rating: dir, action: activeAction, section: trigger.sectionName },
-                                    }),
-                                  })
-                                }}
-                                className={`p-1 rounded transition-colors ${
-                                  feedback === dir
-                                    ? dir === 'up' ? 'text-emerald-600 bg-emerald-50' : 'text-red-500 bg-red-50'
-                                    : 'text-slate-400 hover:text-slate-600'
-                                }`}
-                              >
-                                {dir === 'up'
-                                  ? <ThumbsUp className="w-3.5 h-3.5" />
-                                  : <ThumbsDown className="w-3.5 h-3.5" />
-                                }
-                              </button>
-                            ))}
-                          </div>
-                          {feedback && (
-                            <span className="text-[10px] text-indigo-500 font-medium ml-auto">Logged</span>
-                          )}
-                        </div>
-                      </div>
-                    )}
+                <div className="rounded-xl border border-slate-100 overflow-hidden">
+                  <div className="flex items-center justify-between px-3 py-2 bg-slate-50 border-b border-slate-100">
+                    <span className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Analysis</span>
+                    <button
+                      onClick={() => { setResponseText(null); setActiveAction(null) }}
+                      className="p-0.5 text-slate-400 hover:text-slate-600 rounded"
+                    >
+                      <X className="w-3 h-3" />
+                    </button>
+                  </div>
+                  <div className="px-3 py-3">
+                    <ProseResponse text={responseText} />
+                    <FeedbackRow feedback={feedback} setFeedback={setFeedback} activeAction={activeAction} sectionName={trigger.sectionName} />
                   </div>
                 </div>
               </motion.div>
+
             ) : (
               /* ── Action grid ── */
               <motion.div
@@ -806,6 +1375,9 @@ export default function ImplicitHelpCard({
   onHelpChosen,
   documentTitle,
   documentContent,
+  pageSections,
+  onNavigate,
+  allSections,
 }: ImplicitHelpCardProps) {
   const [stage, setStage] = useState<0 | 1 | 2 | 3>(0)
   const prevSection = useRef<string | null>(null)
@@ -844,6 +1416,9 @@ export default function ImplicitHelpCard({
           onHelpChosen={onHelpChosen}
           documentTitle={documentTitle}
           documentContent={documentContent}
+          pageSections={pageSections}
+          onNavigate={onNavigate}
+          allSections={allSections}
         />
       )}
     </AnimatePresence>

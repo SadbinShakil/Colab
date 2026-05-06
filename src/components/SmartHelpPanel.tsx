@@ -1,9 +1,9 @@
 // components/SmartHelpPanel.tsx
 'use client'
 
-import { useState, useEffect } from 'react'
-import { X, Bot, Users, MessageCircle, Send, UserPlus } from 'lucide-react'
-import { toast } from 'sonner'
+import { useState, useEffect, useRef } from 'react'
+import { X, Send, ChevronLeft, Loader2, Brain, Users, BookOpen, AlertTriangle, Wrench, FileSearch, MessageSquare, Map } from 'lucide-react'
+import ReadingTrajectoryMap from './ReadingTrajectoryMap'
 
 interface ConfusedHighlight {
   id: string
@@ -29,11 +29,14 @@ interface SmartHelpPanelProps {
   availablePeers: PeerInfo[]
   documentId: string
   sectionId?: string
-  sectionText?: string // ✅ ADDED: Capture full text content for context
+  sectionText?: string
+  initialQuestion?: string
   onSendInvitation?: (peerId: string, peerName: string) => void
 }
 
-type TabType = 'ai' | 'peers' | 'group'
+type Tab = 'ai' | 'peers' | 'group' | 'map'
+
+interface Message { role: 'user' | 'ai'; content: string }
 
 export default function SmartHelpPanel({
   isOpen,
@@ -46,790 +49,478 @@ export default function SmartHelpPanel({
   documentId,
   sectionId,
   sectionText,
-  onSendInvitation
+  initialQuestion,
+  onSendInvitation,
 }: SmartHelpPanelProps) {
-  const [activeTab, setActiveTab] = useState<TabType>('ai')
-  const [message, setMessage] = useState('')
-  const [aiMessages, setAiMessages] = useState<Array<{ role: 'user' | 'ai', content: string }>>([])
-  const [peerMessages, setPeerMessages] = useState<Array<{ userId: string, userName: string, message: string, timestamp: number }>>([])
-  const [isAiLoading, setIsAiLoading] = useState(false)
+  const [tab, setTab] = useState<Tab>('ai')
+  const [messages, setMessages] = useState<Message[]>([])
+  const [input, setInput] = useState('')
+  const [loading, setLoading] = useState(false)
   const [selectedPeer, setSelectedPeer] = useState<PeerInfo | null>(null)
-  const [hasInitialized, setHasInitialized] = useState(false)
-
-  // Auto-select best default tab and reset state when panel opens
-  // useEffect(() => {
-  //   if (isOpen) {
-  //     // Reset messages when panel opens
-  //     setAiMessages([])
-  //     setPeerMessages([])
-  //     setMessage('')
-  //     setSelectedPeer(null)
-
-  //     const onlineProficientPeers = availablePeers.filter(p => p.status === 'online' && p.isProficient)
-
-  //     if (onlineProficientPeers.length > 0) {
-  //       setActiveTab('peers')
-  //       setSelectedPeer(onlineProficientPeers[0])
-  //     } else {
-  //       setActiveTab('ai')
-  //     }
-
-  //     // Generate initial AI greeting with context (always show greeting, even if no highlights)
-  //     generateInitialAIGreeting()
-  //   }
-  // }, [isOpen, availablePeers, confusedHighlights])
+  const [invitedPeers, setInvitedPeers] = useState<Set<string>>(new Set())
+  const messagesEndRef = useRef<HTMLDivElement>(null)
+  const inputRef = useRef<HTMLInputElement>(null)
+  const initializedRef = useRef(false)
 
   useEffect(() => {
-    if (isOpen && !hasInitialized) {
-      // Reset messages when panel opens
-      setAiMessages([])
-      setPeerMessages([])
-      setMessage('')
+    if (isOpen && !initializedRef.current) {
+      initializedRef.current = true
+      setMessages([])
       setSelectedPeer(null)
-
-      const onlineProficientPeers = availablePeers.filter(p => p.status === 'online' && p.isProficient)
-
-      if (onlineProficientPeers.length > 0) {
-        setActiveTab('peers')
-        setSelectedPeer(onlineProficientPeers[0])
-      } else {
-        setActiveTab('ai')
+      setTab('ai')
+      if (initialQuestion) {
+        setTimeout(() => sendMessage(initialQuestion), 100)
       }
-
-      // Generate initial AI greeting
-      generateInitialAIGreeting()
-
-      setHasInitialized(true)
     }
-
-    // Reset initialization flag when panel closes
-    if (!isOpen && hasInitialized) {
-      setHasInitialized(false)
+    if (!isOpen) {
+      initializedRef.current = false
     }
-  }, [isOpen]) // ✅ ONLY isOpen dependency
+  }, [isOpen]) // eslint-disable-line react-hooks/exhaustive-deps
 
-  const generateInitialAIGreeting = () => {
+  useEffect(() => {
+    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
+  }, [messages])
+
+  const buildContext = () => {
     if (confusedHighlights.length > 0) {
-      const highlightTexts = confusedHighlights.map(h => `"${h.text.substring(0, 50)}..."`).join(', ')
-
-      setAiMessages([{
-        role: 'ai',
-        content: `Hi! I see you're working on **${sectionName}** and marked ${confusedHighlights.length} section${confusedHighlights.length > 1 ? 's' : ''} as confusing.\n\nI'm here to help explain these concepts in simpler terms. What would you like to understand better?`
-      }])
-    } else {
-      // ✅ Don't auto-send message when just section struggle is detected
-      // Instead, we'll let the user choose from the "Welcome Options" UI
-      setAiMessages([])
+      return confusedHighlights.map(h => `"${h.text}"`).join('\n')
     }
+    return sectionText || `§${sectionName}`
   }
 
-  const handleQuickAction = async (text: string) => {
-    // Directly send message without setting input state
-    await sendAIMessage(text)
-  }
+  const sendMessage = async (text: string) => {
+    const trimmed = text.trim()
+    if (!trimmed || loading) return
 
-  const sendAIMessage = async (textToSend: string) => {
-    if (!textToSend.trim() || isAiLoading) return
-
-    setAiMessages(prev => [...prev, { role: 'user', content: textToSend }])
-    setIsAiLoading(true)
+    setMessages(prev => [...prev, { role: 'user', content: trimmed }])
+    setInput('')
+    setLoading(true)
 
     try {
-      // Prepare context from confused highlights
-      const context = confusedHighlights.length > 0
-        ? confusedHighlights.map(h => h.text).join('\n\n')
-        : (sectionText && sectionText.length > 20 ? `Section Text from PDF:\n${sectionText}` : `User is asking about section: ${sectionName}`)
-
-      console.log('🤖 [AI Help] Sending message:', textToSend)
-      console.log('📋 [AI Help] Context:', context.substring(0, 200))
-
-      const response = await fetch('/api/ai-tutor', {
+      const res = await fetch('/api/ai-tutor', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          message: textToSend,
-          context: context,
-          sectionName: sectionName,
-          documentContent: sectionText, // ✅ Pass full section text separately
-          conversationHistory: aiMessages,
-          userId: userId,
-          userName: userName
-        })
+          message: trimmed,
+          context: buildContext(),
+          sectionName,
+          documentContent: sectionText,
+          conversationHistory: messages,
+          userId,
+          userName,
+        }),
       })
-
-      if (!response.ok) {
-        const errorData = await response.json().catch(() => ({}))
-        throw new Error(errorData.error || `API error: ${response.status}`)
-      }
-
-      const data = await response.json()
-
-      if (data.response) {
-        setAiMessages(prev => [...prev, { role: 'ai', content: data.response }])
-      } else if (data.error) {
-        throw new Error(data.error)
-      } else {
-        throw new Error('No response from AI service')
-      }
-    } catch (error: any) {
-      console.error('❌ [AI Help] Error:', error)
-      const errorMessage = error?.message || 'Unknown error'
-      setAiMessages(prev => [...prev, {
+      const data = await res.json()
+      setMessages(prev => [...prev, {
         role: 'ai',
-        content: `Sorry, I encountered an error: ${errorMessage}\n\nPlease try:\n• Checking your internet connection\n• Refreshing the page\n• Trying again in a moment`
+        content: data.response || 'A6 returned no response.',
       }])
-      toast.error('AI Help Error', {
-        description: errorMessage || 'Failed to get AI response'
-      })
+    } catch {
+      setMessages(prev => [...prev, { role: 'ai', content: 'A6 error — check console.' }])
     } finally {
-      setIsAiLoading(false)
+      setLoading(false)
+      setTimeout(() => inputRef.current?.focus(), 50)
     }
   }
 
-  const handleSendAIMessage = async () => {
-    if (!message.trim()) return
-    const msg = message
-    setMessage('')
-    await sendAIMessage(msg)
-  }
-
-  const handleSendPeerMessage = () => {
-    if (!message.trim() || !selectedPeer) return
-
-    const peerMessage = {
-      userId: userId,
-      userName: userName,
-      message: message,
-      timestamp: Date.now()
-    }
-
-    setPeerMessages(prev => [...prev, peerMessage])
-    setMessage('')
-
-    // TODO: Send via Socket.io to the peer
-    // socket.emit('peer-message', {
-    //   to: selectedPeer.userId,
-    //   from: userId,
-    //   message: message,
-    //   documentId: documentId
-    // })
-  }
-
-  const onlinePeersCount = availablePeers.filter(p => p.status === 'online').length
-  const strugglingCount = availablePeers.filter(p => !p.isProficient).length
+  const onlinePeers = availablePeers.filter(p => p.status === 'online')
+  const sharedStruggle = availablePeers.filter(p => !p.isProficient && p.status === 'online')
 
   if (!isOpen) return null
 
   return (
-    <>
-      {/* Overlay - Only covers right side where panel is */}
+    <div className="fixed inset-0 z-50 flex items-stretch justify-end pointer-events-none">
+      {/* Backdrop */}
       <div
-        className="fixed top-0 right-0 bottom-0 w-[450px] bg-black bg-opacity-20 z-40 transition-opacity"
+        className="absolute inset-0 pointer-events-auto"
         onClick={onClose}
       />
 
       {/* Panel */}
-      <div className="fixed top-0 right-0 h-full w-[450px] bg-white shadow-2xl z-50 flex flex-col animate-slide-in">
-        {/* Header */}
-        <div className="bg-white border-b border-gray-200 px-4 py-3 flex items-center justify-between">
-          <div className="flex items-center gap-2.5">
-            <div className="w-7 h-7 bg-blue-600 rounded-lg flex items-center justify-center">
-              <Bot className="w-4 h-4 text-white" />
-            </div>
+      <div
+        className="relative pointer-events-auto flex flex-col bg-white h-full w-[440px] shadow-2xl"
+        style={{ borderLeft: '1px solid rgba(0,0,0,0.08)' }}
+        onClick={e => e.stopPropagation()}
+      >
+        {/* ── Header ── */}
+        <div className="px-5 pt-4 pb-3.5 border-b border-slate-100">
+          <div className="flex items-start justify-between">
             <div>
-              <h2 className="text-sm font-semibold text-gray-900">Smart Help</h2>
-              <p className="text-[11px] text-gray-400 leading-none mt-0.5 truncate max-w-[240px]">{sectionName}</p>
-            </div>
-          </div>
-          <button
-            onClick={onClose}
-            className="p-1.5 rounded-lg hover:bg-gray-100 text-gray-400 transition-colors"
-          >
-            <X className="w-4 h-4" />
-          </button>
-        </div>
-
-        {/* Confused Highlights Summary */}
-        {confusedHighlights.length > 0 && (
-          <div className="bg-yellow-50 border-b border-yellow-200 p-3">
-            <p className="text-xs font-semibold text-yellow-800 mb-2">
-              📍 Your confused highlights ({confusedHighlights.length}):
-            </p>
-            <div className="space-y-1 max-h-24 overflow-y-auto">
-              {confusedHighlights.slice(0, 3).map((h, idx) => (
-                <div key={idx} className="text-xs text-yellow-700 bg-yellow-100 px-2 py-1 rounded">
-                  • {h.text.substring(0, 60)}...
+              <div className="flex items-center gap-2 mb-0.5">
+                <div
+                  className="w-6 h-6 rounded-md flex items-center justify-center"
+                  style={{ background: 'linear-gradient(135deg, #4f46e5 0%, #7c3aed 100%)' }}
+                >
+                  <Brain className="w-3.5 h-3.5 text-white" />
                 </div>
-              ))}
-              {confusedHighlights.length > 3 && (
-                <p className="text-xs text-yellow-600 italic">
-                  +{confusedHighlights.length - 3} more
+                <span className="text-[10px] font-bold text-indigo-500 uppercase tracking-widest">A6 · Section Analysis</span>
+              </div>
+              <h2 className="text-[15px] font-semibold text-slate-900 leading-tight">§{sectionName}</h2>
+              {confusedHighlights.length > 0 && (
+                <p className="text-[11px] text-amber-600 mt-0.5">
+                  {confusedHighlights.length} confusion mark{confusedHighlights.length > 1 ? 's' : ''} in this section
                 </p>
               )}
             </div>
+            <button
+              onClick={onClose}
+              className="w-7 h-7 rounded-full bg-slate-100 flex items-center justify-center text-slate-400 hover:text-slate-600 hover:bg-slate-200 transition-colors mt-0.5"
+            >
+              <X className="w-3.5 h-3.5" />
+            </button>
           </div>
-        )}
 
-        {/* Tabs */}
-        <div className="flex border-b border-gray-200 bg-gray-50">
-          <button
-            onClick={() => setActiveTab('ai')}
-            className={`flex-1 py-3 px-4 text-sm font-medium transition flex items-center justify-center gap-2 ${activeTab === 'ai'
-              ? 'bg-white text-blue-600 border-b-2 border-blue-600'
-              : 'text-gray-600 hover:text-gray-800 hover:bg-gray-100'
-              }`}
-          >
-            <Bot className="w-4 h-4" />
-            AI Help
-          </button>
-
-          <button
-            onClick={() => setActiveTab('peers')}
-            className={`flex-1 py-3 px-4 text-sm font-medium transition flex items-center justify-center gap-2 relative ${activeTab === 'peers'
-              ? 'bg-white text-blue-600 border-b-2 border-blue-600'
-              : 'text-gray-600 hover:text-gray-800 hover:bg-gray-100'
-              }`}
-          >
-            <MessageCircle className="w-4 h-4" />
-            Peers
-            {onlinePeersCount > 0 && (
-              <span className="absolute -top-1 -right-1 bg-green-500 text-white text-xs rounded-full w-5 h-5 flex items-center justify-center">
-                {onlinePeersCount}
-              </span>
-            )}
-          </button>
-
-          <button
-            onClick={() => setActiveTab('group')}
-            className={`flex-1 py-3 px-4 text-sm font-medium transition flex items-center justify-center gap-2 ${activeTab === 'group'
-              ? 'bg-white text-blue-600 border-b-2 border-blue-600'
-              : 'text-gray-600 hover:text-gray-800 hover:bg-gray-100'
-              }`}
-            disabled={strugglingCount < 2}
-          >
-            <Users className="w-4 h-4" />
-            Group
-            {strugglingCount >= 2 && (
-              <span className="ml-1 text-xs">({strugglingCount})</span>
-            )}
-          </button>
+          {/* Tab bar */}
+          <div className="flex gap-0 mt-3.5 rounded-xl bg-slate-100 p-0.5">
+            {([
+              { id: 'ai', icon: Brain, label: 'AI Analysis' },
+              { id: 'peers', icon: Users, label: `Peers${onlinePeers.length > 0 ? ` · ${onlinePeers.length}` : ''}` },
+              { id: 'group', icon: BookOpen, label: 'Group' },
+              { id: 'map', icon: Map, label: 'Map' },
+            ] as { id: Tab; icon: any; label: string }[]).map(({ id, icon: Icon, label }) => (
+              <button
+                key={id}
+                onClick={() => { setTab(id); setSelectedPeer(null) }}
+                className={`flex-1 flex items-center justify-center gap-1.5 py-1.5 rounded-lg text-[11.5px] font-medium transition-all ${
+                  tab === id
+                    ? 'bg-white text-slate-900 shadow-sm'
+                    : 'text-slate-500 hover:text-slate-700'
+                }`}
+              >
+                <Icon className="w-3 h-3" />
+                {label}
+                {id === 'group' && sharedStruggle.length >= 2 && (
+                  <span className="ml-0.5 w-1.5 h-1.5 rounded-full bg-amber-400 inline-block" />
+                )}
+              </button>
+            ))}
+          </div>
         </div>
 
-        {/* Content Area */}
-        <div className="flex-1 overflow-y-auto bg-gray-50">
-          {/* AI Tab */}
-          {activeTab === 'ai' && (
-            <div className="h-full flex flex-col">
-              <div className="flex-1 overflow-y-auto p-4 space-y-4">
-                {/* ✅ WELCOME OPTIONS - Show when no messages */}
-                {aiMessages.length === 0 && (
-                  <div className="flex flex-col gap-3 mt-4 animate-slide-in">
-                    <p className="text-sm text-gray-600 mb-2 text-center">
-                      I noticed you might be stuck on <strong>{sectionName}</strong>.<br />
-                      How can I help you?
-                    </p>
-
+        {/* ── AI Tab ── */}
+        {tab === 'ai' && (
+          <>
+            <div className="flex-1 overflow-y-auto px-4 py-3 space-y-3">
+              {messages.length === 0 && (
+                <div className="space-y-2 pt-1">
+                  <p className="text-[10px] font-semibold text-slate-400 uppercase tracking-widest px-0.5">
+                    Analysis angles
+                  </p>
+                  {[
+                    {
+                      icon: Wrench,
+                      label: 'Unpack the mechanism',
+                      sub: 'Causal chain + implicit assumptions',
+                      color: 'border-indigo-100 hover:bg-indigo-50/60 text-indigo-700',
+                      query: `In §${sectionName}: trace the complete causal mechanism step by step. For each step name what is happening, why, and what the authors leave implicit. Where does this mechanism connect to elsewhere in the paper?`,
+                    },
+                    {
+                      icon: AlertTriangle,
+                      label: 'Evaluate rigour',
+                      sub: 'Sample size, controls, statistics',
+                      color: 'border-amber-100 hover:bg-amber-50/60 text-amber-700',
+                      query: `In §${sectionName}: what is the weakest methodological choice? Assess sample size, controls, measures, and statistical approach. Be direct — do not soften the critique.`,
+                    },
+                    {
+                      icon: FileSearch,
+                      label: 'Position in the literature',
+                      sub: 'Prior work, novelty, gap',
+                      color: 'border-violet-100 hover:bg-violet-50/60 text-violet-700',
+                      query: `In §${sectionName}: what prior work does this claim most directly build on or contradict? What exactly changes about our understanding of this problem?`,
+                    },
+                    {
+                      icon: MessageSquare,
+                      label: 'Find the overreach',
+                      sub: 'Evidence-to-claim gap',
+                      color: 'border-rose-100 hover:bg-rose-50/60 text-rose-700',
+                      query: `In §${sectionName}: identify the claim with the largest gap between the evidence presented and the conclusion drawn. Quote the specific sentence and explain what additional evidence would be needed.`,
+                    },
+                  ].map(({ icon: Icon, label, sub, color, query }) => (
                     <button
-                      onClick={() => handleQuickAction('Explain this section in simple terms')}
-                      className="text-left p-4 bg-white border border-blue-200 rounded-xl hover:bg-blue-50 hover:border-blue-300 transition shadow-sm group"
+                      key={label}
+                      onClick={() => sendMessage(query)}
+                      className={`w-full text-left px-3.5 py-3 bg-white border rounded-xl transition-all ${color}`}
                     >
-                      <div className="flex items-center gap-3">
-                        <div className="bg-blue-100 p-2 rounded-lg group-hover:bg-blue-200 text-blue-600">
-                          <Bot className="w-5 h-5" />
-                        </div>
+                      <div className="flex items-start gap-3">
+                        <Icon className="w-4 h-4 mt-0.5 shrink-0 opacity-70" />
                         <div>
-                          <p className="font-semibold text-gray-800 text-sm">Explain Content</p>
-                          <p className="text-xs text-gray-500">Get a simple summary of this section</p>
+                          <p className="text-[12.5px] font-semibold leading-tight text-slate-800">{label}</p>
+                          <p className="text-[10.5px] text-slate-400 mt-0.5">{sub}</p>
                         </div>
                       </div>
                     </button>
+                  ))}
 
-                    <button
-                      onClick={() => handleQuickAction('Define key terms in this section')}
-                      className="text-left p-4 bg-white border border-purple-200 rounded-xl hover:bg-purple-50 hover:border-purple-300 transition shadow-sm group"
-                    >
-                      <div className="flex items-center gap-3">
-                        <div className="bg-purple-100 p-2 rounded-lg group-hover:bg-purple-200 text-purple-600">
-                          <MessageCircle className="w-5 h-5" />
-                        </div>
-                        <div>
-                          <p className="font-semibold text-gray-800 text-sm">Definitions</p>
-                          <p className="text-xs text-gray-500">Clarify difficult vocabulary</p>
-                        </div>
-                      </div>
-                    </button>
-
-                    <button
-                      onClick={() => handleQuickAction('Give me a real-world example')}
-                      className="text-left p-4 bg-white border border-green-200 rounded-xl hover:bg-green-50 hover:border-green-300 transition shadow-sm group"
-                    >
-                      <div className="flex items-center gap-3">
-                        <div className="bg-green-100 p-2 rounded-lg group-hover:bg-green-200 text-green-600">
-                          <Send className="w-5 h-5" />
-                        </div>
-                        <div>
-                          <p className="font-semibold text-gray-800 text-sm">Give Example</p>
-                          <p className="text-xs text-gray-500">See a practical scenario</p>
-                        </div>
-                      </div>
-                    </button>
-
-                    <button
-                      onClick={() => handleQuickAction('Visualize this concept')}
-                      className="text-left p-4 bg-white border border-orange-200 rounded-xl hover:bg-orange-50 hover:border-orange-300 transition shadow-sm group"
-                    >
-                      <div className="flex items-center gap-3">
-                        <div className="bg-orange-100 p-2 rounded-lg group-hover:bg-orange-200 text-orange-600">
-                          <Users className="w-5 h-5" />
-                        </div>
-                        <div>
-                          <p className="font-semibold text-gray-800 text-sm">Visualize</p>
-                          <p className="text-xs text-gray-500">Create a mental model or diagram</p>
-                        </div>
-                      </div>
-                    </button>
-                  </div>
-                )}
-
-                {aiMessages.map((msg, idx) => (
-                  <div
-                    key={idx}
-                    className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}
-                  >
-                    <div
-                      className={`max-w-[80%] rounded-lg p-3 ${msg.role === 'user'
-                        ? 'bg-blue-600 text-white'
-                        : 'bg-white border border-gray-200 text-gray-800'
-                        }`}
-                    >
-                      {msg.role === 'ai' && (
-                        <div className="flex items-center gap-2 mb-2">
-                          <Bot className="w-4 h-4 text-blue-600" />
-                          <span className="text-xs font-semibold text-blue-600">AI Assistant</span>
-                        </div>
-                      )}
-                      <div className="text-sm whitespace-pre-wrap">{msg.content}</div>
-                    </div>
-                  </div>
-                ))}
-
-                {isAiLoading && (
-                  <div className="flex justify-start">
-                    <div className="bg-white border border-gray-200 rounded-lg p-3">
-                      <div className="flex items-center gap-2">
-                        <div className="w-2 h-2 bg-blue-600 rounded-full animate-bounce" />
-                        <div className="w-2 h-2 bg-blue-600 rounded-full animate-bounce" style={{ animationDelay: '0.1s' }} />
-                        <div className="w-2 h-2 bg-blue-600 rounded-full animate-bounce" style={{ animationDelay: '0.2s' }} />
-                      </div>
-                    </div>
-                  </div>
-                )}
-              </div>
-
-              {/* Quick Actions */}
-              <div className="border-t border-gray-200 bg-white p-2">
-                <div className="flex gap-2 mb-2 flex-wrap">
-                  <button
-                    onClick={async () => {
-                      const msg = 'Explain this in simpler terms'
-                      setAiMessages(prev => [...prev, { role: 'user', content: msg }])
-                      setIsAiLoading(true)
-                      try {
-                        const context = confusedHighlights.length > 0
-                          ? confusedHighlights.map(h => h.text).join('\n\n')
-                          : (sectionText ? `Section Text:\n${sectionText}` : `Section: ${sectionName}`)
-                        const response = await fetch('/api/ai-tutor', {
-                          method: 'POST',
-                          headers: { 'Content-Type': 'application/json' },
-                          body: JSON.stringify({
-                            message: msg,
-                            context: context,
-                            sectionName: sectionName,
-                            documentContent: sectionText, // ✅ Pass full section text
-                            conversationHistory: aiMessages,
-                            userId: userId,
-                            userName: userName
-                          })
-                        })
-                        const data = await response.json()
-                        setAiMessages(prev => [...prev, { role: 'ai', content: data.response || 'Sorry, I encountered an error.' }])
-                      } catch (error) {
-                        setAiMessages(prev => [...prev, { role: 'ai', content: 'Sorry, I encountered an error. Please try again.' }])
-                      } finally {
-                        setIsAiLoading(false)
-                      }
-                    }}
-                    disabled={isAiLoading}
-                    className="text-xs bg-gray-100 hover:bg-gray-200 px-3 py-1 rounded-full transition disabled:opacity-50"
-                  >
-                    🔄 Simpler
-                  </button>
-                  <button
-                    onClick={async () => {
-                      const msg = 'Give me an example'
-                      setAiMessages(prev => [...prev, { role: 'user', content: msg }])
-                      setIsAiLoading(true)
-                      try {
-                        const context = confusedHighlights.length > 0
-                          ? confusedHighlights.map(h => h.text).join('\n\n')
-                          : (sectionText ? `Section Text:\n${sectionText}` : `Section: ${sectionName}`)
-                        const response = await fetch('/api/ai-tutor', {
-                          method: 'POST',
-                          headers: { 'Content-Type': 'application/json' },
-                          body: JSON.stringify({
-                            message: msg,
-                            context: context,
-                            sectionName: sectionName,
-                            conversationHistory: aiMessages,
-                            userId: userId,
-                            userName: userName
-                          })
-                        })
-                        const data = await response.json()
-                        setAiMessages(prev => [...prev, { role: 'ai', content: data.response || 'Sorry, I encountered an error.' }])
-                      } catch (error) {
-                        setAiMessages(prev => [...prev, { role: 'ai', content: 'Sorry, I encountered an error. Please try again.' }])
-                      } finally {
-                        setIsAiLoading(false)
-                      }
-                    }}
-                    disabled={isAiLoading}
-                    className="text-xs bg-gray-100 hover:bg-gray-200 px-3 py-1 rounded-full transition disabled:opacity-50"
-                  >
-                    💡 Example
-                  </button>
-                  <button
-                    onClick={async () => {
-                      const msg = 'Can you visualize this?'
-                      setAiMessages(prev => [...prev, { role: 'user', content: msg }])
-                      setIsAiLoading(true)
-                      try {
-                        const context = confusedHighlights.length > 0
-                          ? confusedHighlights.map(h => h.text).join('\n\n')
-                          : (sectionText ? `Section Text:\n${sectionText}` : `Section: ${sectionName}`)
-                        const response = await fetch('/api/ai-tutor', {
-                          method: 'POST',
-                          headers: { 'Content-Type': 'application/json' },
-                          body: JSON.stringify({
-                            message: msg,
-                            context: context,
-                            sectionName: sectionName,
-                            documentContent: sectionText, // ✅ Pass full section text
-                            conversationHistory: aiMessages,
-                            userId: userId,
-                            userName: userName
-                          })
-                        })
-                        const data = await response.json()
-                        setAiMessages(prev => [...prev, { role: 'ai', content: data.response || 'Sorry, I encountered an error.' }])
-                      } catch (error) {
-                        setAiMessages(prev => [...prev, { role: 'ai', content: 'Sorry, I encountered an error. Please try again.' }])
-                      } finally {
-                        setIsAiLoading(false)
-                      }
-                    }}
-                    disabled={isAiLoading}
-                    className="text-xs bg-gray-100 hover:bg-gray-200 px-3 py-1 rounded-full transition disabled:opacity-50"
-                  >
-                    📊 Visualize
-                  </button>
                   {confusedHighlights.length > 0 && (
-                    <button
-                      onClick={async () => {
-                        const highlightText = confusedHighlights[0].text.substring(0, 100)
-                        const msg = `Explain this: "${highlightText}..."`
-                        setAiMessages(prev => [...prev, { role: 'user', content: msg }])
-                        setIsAiLoading(true)
-                        try {
-                          const context = confusedHighlights.map(h => h.text).join('\n\n')
-                          const response = await fetch('/api/ai-tutor', {
-                            method: 'POST',
-                            headers: { 'Content-Type': 'application/json' },
-                            body: JSON.stringify({
-                              message: msg,
-                              context: context,
-                              sectionName: sectionName,
-                              documentContent: sectionText, // ✅ Pass full section text
-                              conversationHistory: aiMessages,
-                              userId: userId,
-                              userName: userName
-                            })
-                          })
-                          const data = await response.json()
-                          setAiMessages(prev => [...prev, { role: 'ai', content: data.response || 'Sorry, I encountered an error.' }])
-                        } catch (error) {
-                          setAiMessages(prev => [...prev, { role: 'ai', content: 'Sorry, I encountered an error. Please try again.' }])
-                        } finally {
-                          setIsAiLoading(false)
-                        }
-                      }}
-                      disabled={isAiLoading}
-                      className="text-xs bg-blue-100 hover:bg-blue-200 text-blue-700 px-3 py-1 rounded-full transition disabled:opacity-50"
-                    >
-                      📍 Explain Highlight
-                    </button>
+                    <div className="mt-2 pt-2 border-t border-slate-100">
+                      <p className="text-[10px] font-semibold text-slate-400 uppercase tracking-widest mb-1.5 px-0.5">
+                        Your marked passages
+                      </p>
+                      {confusedHighlights.slice(0, 3).map((h, i) => (
+                        <button
+                          key={h.id}
+                          onClick={() => sendMessage(`Interrogate this passage from §${sectionName}: "${h.text.slice(0, 120)}". What is the load-bearing assumption and what evidence would be needed to validate it?`)}
+                          className="w-full text-left mb-1.5 px-3 py-2 rounded-lg border border-amber-100 bg-amber-50/40 hover:bg-amber-50 text-[11.5px] text-slate-700 leading-snug transition-colors"
+                        >
+                          <span className="text-amber-500 font-mono mr-1">#{i + 1}</span>
+                          "{h.text.slice(0, 80)}{h.text.length > 80 ? '…' : ''}"
+                        </button>
+                      ))}
+                    </div>
                   )}
                 </div>
+              )}
+
+              {messages.map((msg, i) => (
+                <div key={i} className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
+                  <div
+                    className={`max-w-[86%] rounded-2xl px-3.5 py-2.5 text-[13px] leading-relaxed ${
+                      msg.role === 'user'
+                        ? 'bg-indigo-600 text-white rounded-br-sm'
+                        : 'bg-slate-50 border border-slate-100 text-slate-800 rounded-bl-sm'
+                    }`}
+                  >
+                    {msg.role === 'ai' && (
+                      <p className="text-[9.5px] font-bold text-indigo-400 uppercase tracking-widest mb-1.5">A6 · CoRead</p>
+                    )}
+                    <p className="whitespace-pre-wrap">{msg.content}</p>
+                  </div>
+                </div>
+              ))}
+
+              {loading && (
+                <div className="flex justify-start">
+                  <div className="bg-slate-50 border border-slate-100 rounded-2xl rounded-bl-sm px-3.5 py-2.5">
+                    <div className="flex items-center gap-1.5">
+                      <Loader2 className="w-3 h-3 text-indigo-400 animate-spin" />
+                      <span className="text-[11px] text-slate-400">A6 · analysing</span>
+                    </div>
+                  </div>
+                </div>
+              )}
+              <div ref={messagesEndRef} />
+            </div>
+
+            {/* Input */}
+            <div className="px-4 py-3 border-t border-slate-100 bg-white">
+              <div className="flex gap-2 items-center bg-slate-50 rounded-xl border border-slate-200 px-3 py-2">
+                <input
+                  ref={inputRef}
+                  type="text"
+                  value={input}
+                  onChange={e => setInput(e.target.value)}
+                  onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendMessage(input) } }}
+                  placeholder="Ask about this section…"
+                  className="flex-1 bg-transparent text-[13px] text-slate-800 placeholder-slate-400 outline-none"
+                  disabled={loading}
+                />
+                <button
+                  onClick={() => sendMessage(input)}
+                  disabled={!input.trim() || loading}
+                  className="w-7 h-7 rounded-lg bg-indigo-600 flex items-center justify-center text-white hover:bg-indigo-700 disabled:opacity-40 transition-colors shrink-0"
+                >
+                  <Send className="w-3 h-3" />
+                </button>
               </div>
             </div>
-          )}
+          </>
+        )}
 
-          {/* Peers Tab */}
-          {activeTab === 'peers' && (
-            <div className="h-full flex flex-col">
-              {!selectedPeer ? (
-                <div className="p-4 space-y-2">
-                  <p className="text-sm font-semibold text-gray-700 mb-3">Available Peers:</p>
-                  {availablePeers.length === 0 ? (
-                    <div className="text-center py-8 text-gray-500">
-                      <Users className="w-12 h-12 mx-auto mb-2 opacity-50" />
-                      <p className="text-sm">No peers available right now</p>
-                      <button
-                        onClick={() => setActiveTab('ai')}
-                        className="mt-4 text-sm text-blue-600 hover:text-blue-700"
-                      >
-                        Try AI Help instead →
-                      </button>
+        {/* ── Peers Tab ── */}
+        {tab === 'peers' && (
+          <div className="flex-1 overflow-y-auto">
+            {!selectedPeer ? (
+              <div className="px-4 py-3 space-y-2">
+                {onlinePeers.length === 0 ? (
+                  <div className="flex flex-col items-center justify-center py-16 text-center gap-3">
+                    <div className="w-12 h-12 rounded-full bg-slate-100 flex items-center justify-center">
+                      <Users className="w-5 h-5 text-slate-400" />
                     </div>
-                  ) : (
-                    availablePeers.map(peer => (
+                    <div>
+                      <p className="text-[13px] font-semibold text-slate-700">No collaborators online</p>
+                      <p className="text-[11.5px] text-slate-400 mt-1 max-w-[220px] mx-auto">
+                        Peer routing activates when another researcher joins this session
+                      </p>
+                    </div>
+                    <button
+                      onClick={() => setTab('ai')}
+                      className="text-[12px] text-indigo-600 hover:text-indigo-700 font-medium"
+                    >
+                      Use A6 analysis instead →
+                    </button>
+                  </div>
+                ) : (
+                  <>
+                    <p className="text-[10px] font-semibold text-slate-400 uppercase tracking-widest pt-1 px-0.5">
+                      {onlinePeers.length} collaborator{onlinePeers.length > 1 ? 's' : ''} in session
+                    </p>
+                    {onlinePeers.map(peer => (
                       <div
                         key={peer.userId}
-                        className="w-full p-3 bg-white border border-gray-200 rounded-lg hover:border-blue-300 hover:bg-blue-50 transition"
+                        className="bg-white border border-slate-100 rounded-xl p-3.5 hover:border-slate-200 transition-colors"
                       >
-                        <div className="flex items-center justify-between">
-                          <button
-                            onClick={() => setSelectedPeer(peer)}
-                            className="flex-1 text-left"
-                          >
-                            <div>
-                              <p className="font-medium text-gray-900">{peer.userName}</p>
-                              <p className="text-xs text-gray-600">
-                                {peer.isProficient ? '✅ Already understood this' : '⚠️ Also struggling'}
+                        <div className="flex items-center justify-between gap-3">
+                          <div className="flex items-center gap-2.5 min-w-0">
+                            <div className="relative shrink-0">
+                              <div className="w-8 h-8 rounded-full bg-indigo-100 flex items-center justify-center text-[13px] font-semibold text-indigo-700">
+                                {peer.userName.charAt(0).toUpperCase()}
+                              </div>
+                              <span className="absolute -bottom-0.5 -right-0.5 w-2.5 h-2.5 rounded-full bg-emerald-400 border-2 border-white" />
+                            </div>
+                            <div className="min-w-0">
+                              <p className="text-[13px] font-semibold text-slate-800 leading-tight">{peer.userName}</p>
+                              <p className="text-[11px] text-slate-400 leading-tight mt-0.5">
+                                {peer.isProficient
+                                  ? 'Passed this section — can explain'
+                                  : 'Also reading this section'}
                               </p>
                             </div>
-                          </button>
-                          <div className="flex items-center gap-2">
-                            <span className={`w-2 h-2 rounded-full ${peer.status === 'online' ? 'bg-green-500' :
-                              peer.status === 'busy' ? 'bg-yellow-500' : 'bg-gray-400'
-                              }`} />
-                            <span className="text-xs text-gray-500 capitalize">{peer.status}</span>
-                            {peer.status === 'online' && onSendInvitation && (
+                          </div>
+                          <div className="flex gap-1.5 shrink-0">
+                            <button
+                              onClick={() => setSelectedPeer(peer)}
+                              className="px-2.5 py-1.5 rounded-lg bg-slate-100 hover:bg-slate-200 text-[11.5px] font-medium text-slate-700 transition-colors"
+                            >
+                              Message
+                            </button>
+                            {onSendInvitation && !invitedPeers.has(peer.userId) && (
                               <button
-                                onClick={(e) => {
-                                  e.stopPropagation()
+                                onClick={() => {
                                   onSendInvitation(peer.userId, peer.userName)
-                                  toast.success(`Invitation sent to ${peer.userName}!`, {
-                                    description: 'They will receive a notification to join you.'
-                                  })
+                                  setInvitedPeers(prev => new Set(prev).add(peer.userId))
                                 }}
-                                className="ml-2 px-3 py-1 text-xs bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition flex items-center gap-1"
-                                title="Send invitation to chat"
+                                className="px-2.5 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-700 text-[11.5px] font-medium text-white transition-colors"
                               >
-                                <UserPlus className="w-3 h-3" />
-                                Invite
+                                Route
                               </button>
+                            )}
+                            {invitedPeers.has(peer.userId) && (
+                              <span className="px-2.5 py-1.5 rounded-lg bg-emerald-50 text-[11.5px] font-medium text-emerald-600">
+                                Routed ✓
+                              </span>
                             )}
                           </div>
                         </div>
                       </div>
-                    ))
-                  )}
-                </div>
-              ) : (
-                <div className="h-full flex flex-col">
-                  {/* Peer Chat Header */}
-                  <div className="bg-white border-b border-gray-200 p-3 flex items-center justify-between">
-                    <div className="flex items-center gap-2">
-                      <button
-                        onClick={() => setSelectedPeer(null)}
-                        className="text-gray-600 hover:text-gray-800"
-                      >
-                        ←
-                      </button>
-                      <div>
-                        <p className="font-medium text-gray-900">{selectedPeer.userName}</p>
-                        <p className="text-xs text-gray-600 flex items-center gap-1">
-                          <span className={`w-1.5 h-1.5 rounded-full ${selectedPeer.status === 'online' ? 'bg-green-500' : 'bg-gray-400'
-                            }`} />
-                          {selectedPeer.status}
-                        </p>
-                      </div>
-                    </div>
-                    <button
-                      onClick={() => setActiveTab('ai')}
-                      className="text-xs text-blue-600 hover:text-blue-700 flex items-center gap-1"
-                    >
-                      <Bot className="w-3 h-3" />
-                      Invite AI
-                    </button>
-                  </div>
-
-                  {/* Chat Messages */}
-                  <div className="flex-1 overflow-y-auto p-4 space-y-3">
-                    {peerMessages.length === 0 && (
-                      <div className="text-center py-8 text-gray-500">
-                        <MessageCircle className="w-12 h-12 mx-auto mb-2 opacity-50" />
-                        <p className="text-sm">Start the conversation!</p>
-                        <p className="text-xs text-gray-400 mt-1">
-                          {selectedPeer.userName} can see your confused highlights
-                        </p>
-                      </div>
-                    )}
-
-                    {peerMessages.map((msg, idx) => (
-                      <div
-                        key={idx}
-                        className={`flex ${msg.userId === userId ? 'justify-end' : 'justify-start'}`}
-                      >
-                        <div
-                          className={`max-w-[80%] rounded-lg p-3 ${msg.userId === userId
-                            ? 'bg-blue-600 text-white'
-                            : 'bg-white border border-gray-200 text-gray-800'
-                            }`}
-                        >
-                          <p className="text-xs font-semibold mb-1 opacity-75">
-                            {msg.userName}
-                          </p>
-                          <p className="text-sm">{msg.message}</p>
-                        </div>
-                      </div>
                     ))}
-                  </div>
-                </div>
-              )}
-            </div>
-          )}
-
-          {/* Group Tab */}
-          {activeTab === 'group' && (
-            <div className="p-4">
-              {strugglingCount < 2 ? (
-                <div className="text-center py-8 text-gray-500">
-                  <Users className="w-12 h-12 mx-auto mb-3 opacity-50" />
-                  <p className="text-sm font-semibold mb-2">Group Study Not Available Yet</p>
-                  <p className="text-xs text-gray-400 mb-4">
-                    Group study becomes available when 2 or more people are struggling with the same section.
-                  </p>
-                  <div className="bg-gray-50 rounded-lg p-3 text-left">
-                    <p className="text-xs font-semibold text-gray-700 mb-2">How it works:</p>
-                    <ul className="text-xs text-gray-600 space-y-1 list-disc list-inside">
-                      <li>When multiple people mark sections as confusing</li>
-                      <li>You can join a group discussion</li>
-                      <li>Learn together and help each other</li>
-                      <li>Share insights and questions</li>
-                    </ul>
-                  </div>
-                  <p className="text-xs text-gray-400 mt-4">Currently: {strugglingCount} person{strugglingCount !== 1 ? 's' : ''} struggling</p>
-                </div>
-              ) : (
-                <div className="space-y-4">
-                  <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
-                    <p className="text-sm font-semibold text-blue-900 flex items-center gap-2">
-                      <Users className="w-4 h-4" />
-                      Group Study Available!
+                    <p className="text-[10.5px] text-slate-400 px-0.5 pt-1 leading-relaxed">
+                      A2 · Peer routing — CoRead will suggest the best collaborator based on section expertise and D_s alignment.
                     </p>
-                    <p className="text-xs text-blue-700 mt-2">
-                      {strugglingCount} student{strugglingCount !== 1 ? 's are' : ' is'} working on this section. Join them to learn together!
-                    </p>
-                  </div>
-
-                  <div className="bg-gray-50 rounded-lg p-3">
-                    <p className="text-xs font-semibold text-gray-700 mb-2">What you can do:</p>
-                    <ul className="text-xs text-gray-600 space-y-1 list-disc list-inside">
-                      <li>Ask questions and get help from peers</li>
-                      <li>Share your understanding</li>
-                      <li>Discuss difficult concepts together</li>
-                      <li>Learn from different perspectives</li>
-                    </ul>
-                  </div>
-
+                  </>
+                )}
+              </div>
+            ) : (
+              <div className="h-full flex flex-col">
+                <div className="px-4 py-3 border-b border-slate-100 flex items-center gap-2">
                   <button
-                    onClick={() => {
-                      // Switch to peers tab to see all struggling users
-                      setActiveTab('peers')
-                      toast.success('Group Study Started!', {
-                        description: `You can now see and connect with ${strugglingCount} other student${strugglingCount !== 1 ? 's' : ''} working on this section.`
-                      })
-                    }}
-                    className="w-full bg-blue-600 text-white py-3 rounded-lg hover:bg-blue-700 transition font-medium"
+                    onClick={() => setSelectedPeer(null)}
+                    className="w-6 h-6 flex items-center justify-center text-slate-400 hover:text-slate-600"
                   >
-                    Join Group Study
+                    <ChevronLeft className="w-4 h-4" />
                   </button>
-
-                  {/* Show list of struggling peers */}
-                  <div className="mt-4 space-y-2">
-                    <p className="text-xs font-semibold text-gray-700">Struggling Students:</p>
-                    {availablePeers.filter(p => !p.isProficient).map(peer => (
-                      <div key={peer.userId} className="flex items-center justify-between p-2 bg-gray-50 rounded">
-                        <div className="flex items-center gap-2">
-                          <span className={`w-2 h-2 rounded-full ${peer.status === 'online' ? 'bg-green-500' : 'bg-gray-400'}`} />
-                          <span className="text-sm text-gray-700">{peer.userName}</span>
-                        </div>
-                        {peer.status === 'online' && onSendInvitation && (
-                          <button
-                            onClick={() => {
-                              onSendInvitation(peer.userId, peer.userName)
-                              toast.success(`Invited ${peer.userName} to group study!`)
-                            }}
-                            className="text-xs px-2 py-1 bg-blue-600 text-white rounded hover:bg-blue-700"
-                          >
-                            Invite
-                          </button>
-                        )}
-                      </div>
-                    ))}
+                  <div className="flex-1 min-w-0">
+                    <p className="text-[13px] font-semibold text-slate-800">{selectedPeer.userName}</p>
+                    <p className="text-[11px] text-emerald-500">online</p>
                   </div>
                 </div>
-              )}
-            </div>
-          )}
-        </div>
+                <div className="flex-1 flex flex-col items-center justify-center gap-2 text-center px-8">
+                  <MessageSquare className="w-8 h-8 text-slate-300" />
+                  <p className="text-[13px] font-semibold text-slate-600">Peer chat</p>
+                  <p className="text-[11.5px] text-slate-400 leading-relaxed">
+                    Direct peer messaging via Socket.IO will be connected here.
+                    Use the chat panel (bottom toolbar) to reach {selectedPeer.userName} in real time.
+                  </p>
+                </div>
+              </div>
+            )}
+          </div>
+        )}
 
-        {/* Input Area */}
-        {(activeTab === 'ai' || (activeTab === 'peers' && selectedPeer)) && (
-          <div className="border-t border-gray-200 bg-white p-4">
-            <div className="flex gap-2">
-              <input
-                type="text"
-                value={message}
-                onChange={(e) => setMessage(e.target.value)}
-                onKeyPress={(e) => {
-                  if (e.key === 'Enter' && !e.shiftKey) {
-                    e.preventDefault()
-                    activeTab === 'ai' ? handleSendAIMessage() : handleSendPeerMessage()
-                  }
-                }}
-                placeholder={activeTab === 'ai' ? 'Ask AI anything...' : 'Type a message...'}
-                className="flex-1 px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:border-blue-500"
-                disabled={isAiLoading}
-              />
-              <button
-                onClick={activeTab === 'ai' ? handleSendAIMessage : handleSendPeerMessage}
-                disabled={!message.trim() || isAiLoading}
-                className="bg-blue-600 text-white p-2 rounded-lg hover:bg-blue-700 transition disabled:opacity-50 disabled:cursor-not-allowed"
-              >
-                <Send className="w-5 h-5" />
-              </button>
-            </div>
+        {/* ── Map Tab ── */}
+        {tab === 'map' && (
+          <div className="flex-1 overflow-y-auto px-4 py-3">
+            <ReadingTrajectoryMap
+              documentId={documentId}
+              currentUserId={userId}
+              currentSectionId={sectionId}
+            />
+          </div>
+        )}
+
+        {/* ── Group Tab ── */}
+        {tab === 'group' && (
+          <div className="flex-1 overflow-y-auto px-4 py-3 space-y-3">
+            {sharedStruggle.length < 2 ? (
+              <div className="flex flex-col items-center justify-center py-14 text-center gap-3">
+                <div className="w-12 h-12 rounded-full bg-slate-100 flex items-center justify-center">
+                  <BookOpen className="w-5 h-5 text-slate-400" />
+                </div>
+                <div>
+                  <p className="text-[13px] font-semibold text-slate-700">Group study mode inactive</p>
+                  <p className="text-[11.5px] text-slate-400 mt-1 max-w-[240px] mx-auto leading-relaxed">
+                    Activates when ≥2 readers in the same session have elevated D_s on this section simultaneously
+                  </p>
+                </div>
+                <div className="w-full rounded-xl bg-slate-50 border border-slate-100 px-4 py-3 text-left mt-1">
+                  <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-2">Current signals</p>
+                  <div className="flex items-center justify-between">
+                    <span className="text-[12px] text-slate-600">Readers on §{sectionName}</span>
+                    <span className="text-[12px] font-semibold text-slate-800">{availablePeers.length + 1}</span>
+                  </div>
+                  <div className="flex items-center justify-between mt-1">
+                    <span className="text-[12px] text-slate-600">D_s elevated</span>
+                    <span className="text-[12px] font-semibold text-slate-800">{sharedStruggle.length + 1}</span>
+                  </div>
+                  <div className="flex items-center justify-between mt-1">
+                    <span className="text-[12px] text-slate-600">Threshold</span>
+                    <span className="text-[12px] font-semibold text-slate-400">≥2 required</span>
+                  </div>
+                </div>
+              </div>
+            ) : (
+              <div className="space-y-3">
+                <div
+                  className="rounded-xl p-4"
+                  style={{ background: 'linear-gradient(135deg, rgba(79,70,229,0.06) 0%, rgba(124,58,237,0.06) 100%)', border: '1px solid rgba(79,70,229,0.12)' }}
+                >
+                  <p className="text-[10px] font-bold text-indigo-500 uppercase tracking-widest mb-1">A3 · Group study mode</p>
+                  <p className="text-[13px] font-semibold text-slate-800">Shared confusion detected</p>
+                  <p className="text-[11.5px] text-slate-500 mt-1 leading-relaxed">
+                    {sharedStruggle.length + 1} readers have elevated D_s on §{sectionName} simultaneously.
+                    This is a strong signal — route to a peer, not AI.
+                  </p>
+                </div>
+
+                <p className="text-[10px] font-semibold text-slate-400 uppercase tracking-widest px-0.5">
+                  Readers with elevated D_s
+                </p>
+                {sharedStruggle.map(peer => (
+                  <div key={peer.userId} className="flex items-center justify-between px-3.5 py-2.5 bg-white border border-slate-100 rounded-xl">
+                    <div className="flex items-center gap-2.5">
+                      <div className="w-7 h-7 rounded-full bg-amber-100 flex items-center justify-center text-[12px] font-semibold text-amber-700">
+                        {peer.userName.charAt(0).toUpperCase()}
+                      </div>
+                      <p className="text-[13px] font-medium text-slate-800">{peer.userName}</p>
+                    </div>
+                    <span className="text-[10.5px] text-amber-600 font-medium">D_s elevated</span>
+                  </div>
+                ))}
+
+                <button
+                  onClick={() => setTab('peers')}
+                  className="w-full py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white text-[13px] font-semibold transition-colors"
+                >
+                  Route to peers →
+                </button>
+
+                <p className="text-[10.5px] text-slate-400 leading-relaxed px-0.5">
+                  A3 will surface a paper-specific discussion prompt anchored to §{sectionName} to seed the group conversation.
+                </p>
+              </div>
+            )}
           </div>
         )}
       </div>
-
-      <style jsx>{`
-        @keyframes slide-in {
-          from {
-            transform: translateX(100%);
-          }
-          to {
-            transform: translateX(0);
-          }
-        }
-        
-        .animate-slide-in {
-          animation: slide-in 0.3s ease-out;
-        }
-      `}</style>
-    </>
+    </div>
   )
 }
